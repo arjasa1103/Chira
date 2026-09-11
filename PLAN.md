@@ -31,7 +31,14 @@ Portfolio artifact first. The output is a published writeup with charts, not jus
       `matplotlib`, `nba_api`.
 - [ ] HTTP layer: on-disk response cache, rate limiter with fixed delay, exponential
       backoff on 429, resumable state so a block mid-census is not fatal.
-- [ ] `PREREGISTRATION.md` committed. Contents fixed in the design doc: sealed holdout,
+- [ ] **ORDERING (corrected by eng review):** the Phase 4 modeling decision and the
+      noise-floor simulation are strict PREDECESSORS of the pre-registration.
+      `PREREGISTRATION.md` is the **LAST** artifact of Phase 0, not the first. A
+      pre-registration committed before the decisions that determine its contents, then
+      amended, is worth nothing — and the git hash makes the amendment permanent.
+- [ ] Rate-limit calibration probe (10 min): ramp until the first 429, record reset
+      behaviour. A blind fixed delay is the difference between a 4-hour and a 3-day census.
+- [ ] `PREREGISTRATION.md` committed LAST. Contents fixed in the design doc: sealed holdout,
       Brier primary with log loss clipped to [0.01, 0.99], one designated primary test,
       home-side-only calibration convention, Clark-West with date-block bootstrap, the
       numeric integrity gate, risk tiers at [0.02,0.05)/[0.05,0.10)/>=0.10, dev-side
@@ -81,18 +88,24 @@ Answers whether the project is viable, and in which sport.
       primary.
 - [ ] **Chart 2: the market's own calibration curve.** Home side only, one observation per
       game, equal-count or LOESS bins with bootstrap bands, Murphy decomposition of Brier
-      into reliability, resolution and uncertainty. Checked against the pre-registered
-      integrity thresholds. This is both the benchmark line and a pipeline self-test: if a
-      real-money market does not come out near-calibrated, the label join or the
-      closing-price extraction is broken.
+      into reliability, resolution and uncertainty.
+      **This is a REPORTED RESULT, not a gate** (corrected by eng review). The earlier
+      framing — "if the market is not near-calibrated, the pipeline is broken" — is an
+      invalid inference, because a miscalibrated result is ambiguous between a bug and the
+      Approach C headline finding, and the literature says bias IS concentrated in specific
+      categories. Pipeline validity is established instead by tests that do not assume the
+      market is calibrated: label agreement vs nba_api, complementarity, reconciliation,
+      shuffled-join collapse, and the synthetic scorer.
 - [ ] **Write the one-paragraph answer: which sport is the better primary, and why.**
 
 ## Phase 3 — Ingestion and feature store
 
 - [ ] DuckDB store. Game key: `nba_api` `GAME_ID` joined to Polymarket `conditionId` via
       an explicit, auditable join table keyed on (sport, ET date, away abbr, home abbr).
-- [ ] Price table grain: one row per token per minute, ~69M rows across three seasons and
-      two sports.
+- [ ] Price table grain: one row per token per minute. **~94.6M rows** (5,084 games x 2
+      tokens x ~9,300 points). Earlier drafts said 46M/69M by counting one token; corrected.
+      **Partition the Parquet release by sport and season** — GitHub caps a single release
+      asset at 2GB.
 - [ ] **Point-in-time correctness enforced structurally.** Every feature query takes a
       mandatory `as_of`; no unqualified read path exists in the API. Regression test: a
       query with `as_of=T` returns byte-identical results against a DB truncated at T and
@@ -103,15 +116,15 @@ Answers whether the project is viable, and in which sport.
 
 ## Phase 4 — Model
 
-> **BLOCKING DECISION, surfaced by the two-season finding.** Sealing 2025-26 as the holdout
-> leaves exactly ONE dev season (2024-25), so the pre-registered **rolling-origin dev
-> protocol across seasons is impossible**. Resolve before writing numpyro code. Candidates:
-> (a) a rolling pre-game team-strength state (Elo-like / state-space) updated game by game,
-> which needs no season intercepts, removes the holdout identifiability hole entirely, and
-> better models a domain where strength moves within a season; (b) within-season splits,
-> holding out the last 20% of each season; (c) keep team-season intercepts plus the mandatory
-> random walk and accept a single dev season. Recommended: (a). This is a taste decision
-> escalated to the Final Gate.
+> **RESOLVED by the eng review — adopt (a), a rolling pre-game team-strength state**
+> (Elo-like / state-space) updated game by game. Sealing 2025-26 leaves one dev season, so
+> the cross-season rolling-origin protocol is impossible. Option (c), team-season intercepts
+> plus the "mandatory" random walk, is **arithmetically the thing it was meant to avoid**:
+> with two seasons the holdout intercept is the dev intercept plus a zero-mean increment, so
+> its posterior mean IS the shrunk dev estimate and only the variance changes. Option (a) is
+> the only candidate that produces a holdout-season team effect from information available
+> before each holdout game, and it removes the model-fit leakage path as a side effect.
+> Two independent voices converged on (a). No longer a gate item.
 
 - [ ] Hierarchical logistic in `numpyro`. Non-centered parameterization, R-hat and
       divergence diagnostics, posterior predictive checks.
@@ -141,9 +154,12 @@ Answers whether the project is viable, and in which sport.
 - [ ] Report B against **both** nulls: the identity market price and a fitted
       recalibration `a + b*logit(p)`. Winning only against the identity null is a
       recalibration finding about a public market tilt, not private information.
-- [ ] Run the nested test under **both** closing-price constructions (last value, and
-      trailing-15-minute VWAP). A gain existing only under the last-trade construction is
+- [ ] Run the nested test under **two closing-price constructions that actually differ**:
+      the last pre-tipoff value, and the **T-1h value**. A gain existing only under one is
       measurement error in the benchmark.
+      **A VWAP is not computable and was removed:** `prices-history` points carry only
+      `{t, p}` with no volume field (verified by probe), so there are no weights; and under
+      carry-forward a trailing average equals the last value on most games anyway.
 - [ ] Risk tiers reported with frequency, hit rate, calibration and bootstrap intervals per
       pre-registered bucket. State expected top-tier shrinkage up front.
 
@@ -955,3 +971,416 @@ The design doc's architecture description now conflicts with this review on two 
 with finding 2 independently confirmed by live API probe and findings 6-7 corroborated by
 published literature. Phase 2 skipped (no UI scope). Phase 2.5 skipped (no DX scope).
 Passing to Phase 3 (Eng).
+
+---
+
+<!-- /autoplan Phase 3 — ENG REVIEW (runs last, reviews the amended plan) -->
+# ENG REVIEW (Phase 3)
+
+Voices: Claude subagent only. Codex binary not installed → `[subagent-only]`.
+
+## Step 0: Scope Challenge
+
+**1. What existing code solves each sub-problem?** Zero code in repo. External leverage is
+mapped in the CEO phase 0B. One new **[Layer 1]** finding this phase, below.
+
+**2. Minimum set of changes:** Phases 0-2 (census + two charts) is the minimum that produces
+a publishable result. Phases 3-5 are the model. Phase 6 is severable. This is the substance
+of the two User Challenges already escalated.
+
+**3. Complexity check: TRIGGERED.** The plan introduces 7 modules (`ingest`, `store`,
+`model`, `scoring`, `charts`, `collector`, `tests`) and far more than 8 files.
+**Auto-decided: proceed as-is, no reduction** (autoplan override, P2 boil lakes). The module
+count is essential complexity for a data pipeline, not accidental. Logged, not reduced.
+
+**4. Search check — [Layer 1] finding:**
+
+> **DuckDB has a native `ASOF JOIN`**, purpose-built for "give me the value of this property
+> as of this time." The plan proposes to hand-roll point-in-time assembly behind a mandatory
+> `as_of` parameter and never mentions it. The documented feature-store pattern also carries
+> an `availability_delay` concept, which is exactly the primitive Phase 6 needs to encode an
+> announcement timestamp versus an event timestamp.
+
+Auto-decided (P4 DRY, reuse ladder rung 3 "native platform feature"): keep the mandatory
+`as_of` **API discipline** (it is what prevents an unqualified read path), but implement
+feature assembly with `ASOF JOIN` rather than hand-rolled filtering, and model announcement
+lag as `availability_delay`. The discipline and the built-in are complementary, not
+competing.
+
+**5. TODOS cross-reference:** `TODOS.md` written this session, 4 items. None block this plan.
+Two (soccer extension, multinomial scoring) depend on plan tasks T3 and T7.
+
+**6. Completeness check:** the plan is doing the complete version. No shortcut recommended.
+
+**7. Distribution check:** the plan introduces a new artifact (a public Parquet dataset
+release) and T11 covers the pipeline. **Gap found:** neither document states whether
+redistributing Polymarket price history is permitted by their terms of service. Flagged as
+a P2 task, not deferred silently.
+
+## Step 0.5 — Dual Voices
+
+**CODEX SAYS (eng — architecture challenge):** `[codex-unavailable: binary not found]`.
+
+**CLAUDE SUBAGENT (eng — independent review):** 17 findings, 9 P1, 6 P2, 2 P3, each with a
+confidence score and a quoted motivating line. Two of its numeric claims were independently
+verified by probe this session and both were correct against the plan (see R6, R12 below).
+
+### ENG DUAL VOICES — CONSENSUS TABLE
+
+```
+═══════════════════════════════════════════════════════════════════════════
+  Dimension                              Claude      Codex   Consensus
+  ──────────────────────────────────────  ──────────  ─────   ──────────
+  1. Architecture sound?                  NO          N/A     FLAGGED
+                                          (R1 ordering,       (1 voice; R7
+                                           R7 random walk)     converges with
+                                                               CEO finding 12)
+  2. Test coverage sufficient?            NO          N/A     FLAGGED
+                                          (7 more tests,      (adds to CEO
+                                           R2 label check)     Section 6 gaps)
+  3. Performance risks addressed?         NO          N/A     FLAGGED
+                                          (R12 2x row         (verified by
+                                           undercount)         probe)
+  4. Security threats covered?            PARTIAL     N/A     FLAGGED
+                                          (R9 non-JSON 200,
+                                           R13 fork secrets,
+                                           ToS unchecked)
+  5. Error paths handled?                 NO          N/A     FLAGGED
+                                          (R9 cache poison,
+                                           R5 dead-man)
+  6. Deployment risk manageable?          NO          N/A     FLAGGED
+                                          (R13 Actions
+                                           economics)
+═══════════════════════════════════════════════════════════════════════════
+0/6 CONFIRMED (no second voice). 6/6 FLAGGED by the available voice.
+Two findings independently verified by live probe rather than by a second model.
+```
+
+## Section 1: Architecture Review — 6 findings
+
+**[P1] (confidence 9/10) PLAN.md:34-38 vs :107-108 — the pre-registration is scheduled
+before the two decisions that determine its contents.** Phase 0 commits
+`PREREGISTRATION.md` including "dev-side rolling-origin protocol" and "the numeric integrity
+gate", while Phase 4 states the rolling-origin protocol "across seasons is impossible" and
+the Reviewer Concerns state the thresholds "would fail a working pipeline." A
+pre-registration amended after the fact is worth nothing, and "the git hash is the timestamp"
+makes the amendment permanently visible.
+**Auto-decided (P1 completeness):** move the Phase 4 blocking decision and the noise-floor
+simulation into Phase 0 as strict predecessors. `PREREGISTRATION.md` becomes the LAST
+artifact of Phase 0, not the first.
+
+**[P1] (confidence 9/10) PLAN.md:67 — the ground-truth label comes from the same third
+party being benchmarked, and a free independent label is never cross-checked.** The chain is
+slug abbr → `outcomes` nickname array → index-aligned `clobTokenIds` → `p_home`, under a
+home-side-only convention, so an orientation flip mirrors the calibration curve about 0.5
+instead of crashing. `nba_api` box scores give the winner independently, for free, for every
+game.
+**Auto-decided (P1; this is the strongest self-test available in the project and costs one
+join):** assert per game that the resolved `outcomePrices` winner equals the box-score
+winner, AND that the nickname at the `p_home` index maps to the slug's home abbreviation.
+Require 100% agreement; enumerate mismatches, never tolerate them.
+
+**[P1] (confidence 8/10) PLAN.md:85-87 — the integrity gate conflates pipeline validation
+with the project's own scientific finding.** The plan says "if a real-money market does not
+come out near-calibrated, the label join or the closing-price extraction is broken." That
+inference is invalid, and the plan contains its own refutation: bias is "concentrated in
+specific categories." A miscalibrated result is ambiguous between a broken pipeline and the
+headline result of Approach C, and failure kills the project.
+**Auto-decided (P5 explicit over clever) — this REVISES the earlier E9/T8 decision, which
+kept the wrong framing:** market calibration gets **no gate authority at all**. Pipeline
+validity is established only by tests that do not assume the market is calibrated (label
+cross-check, complementarity, reconciliation, shuffled-join, synthetic scorer). Market
+calibration becomes a reported result.
+
+**[P1] (confidence 9/10) PLAN.md:152 vs :159 — Phase 6 is titled "the only path to the
+availability hypothesis" and specifies only price capture.** No endpoint, publication
+cadence, or format is named anywhere for NBA injury reports or NHL starting goalies. Six
+months of collection yielding prices and no availability timestamps voids the entire forward
+experiment.
+**Auto-decided (P1):** name the source and prove it before late October 2026. Run one day of
+end-to-end capture and diff two consecutive pulls to confirm a status *change* is observable
+with a timestamp.
+
+**[P1] (confidence 9/10) PLAN.md:163-164 vs :698-699 — the zero-capture alert cannot fire
+for the collector's most likely failure.** The plan names the cause it cannot catch:
+Actions "auto-disabled after 60 days of repo inactivity." A workflow that does not run emits
+nothing, so an in-workflow heartbeat is structurally unable to report its own absence.
+**Auto-decided (P1):** dead-man's switch. The collector pings an external monitor on
+success; the monitor alerts on *absence* of a ping. Plus a keepalive to defeat the 60-day
+disable, and a pre-season dry run.
+
+**[P2] (confidence 8/10) PLAN.md:65-67 and :133 — the dev/holdout split confounds market
+regime with model quality.** The model is developed on the thin 2024-25 season (~$500k/game)
+and scored on the sharp 2025-26 one (~$1.9M/game). The pass band was derived from a market
+Brier observed in the sharp window, so it is applied where the benchmark is hardest and
+estimated where it is easiest. The single integrity window `[0.165, 0.195]` likewise spans
+two regimes.
+**Auto-decided (P1):** report market Brier on dev and holdout side by side, state the gap as
+a difference against the regime, and pre-register per-regime bands rather than one.
+
+## Section 2: Code Quality Review — 3 findings
+
+**[P1] (confidence 8/10) PLAN.md:121-124 — the "mandatory" random walk is arithmetically
+identical to the thing it was introduced to avoid.** With two seasons, the holdout-season
+intercept is the dev-season intercept plus a zero-mean increment; its posterior mean IS the
+shrunk dev-season estimate, and only the variance changes. The design doc explicitly rejects
+that substitution as "the exact roster-turnover problem team-season indexing was introduced
+to fix."
+**Auto-decided — this RESOLVES the escalated taste item, it is not a taste call:** adopt
+option **(a)**, a rolling pre-game team-strength state (Elo-like / state-space) updated game
+by game. It is the only option that produces a holdout-season team effect from information
+available before each holdout game, it removes the identifiability hole, and it better models
+a domain where strength moves within a season. **Cross-phase convergence:** the CEO subagent
+independently recommended (a) as finding 12.
+
+**[P1] (confidence 8/10) PLAN.md:96-99 — the point-in-time mechanism validates the read
+path and nothing else.** The truncation test is passed by any `WHERE ts <= as_of`, including
+one over rows whose timestamps are wrong. Three leaks sit outside it: (i) timestamp
+provenance, since `nba_api` publishes no game *end* time and a completion time inferred as
+tipoff-plus-constant mis-orders late-finishing games; (ii) model-fit leakage, since
+season-level intercepts fitted on a full season and scored inside it use future games to
+predict past ones, and feature-store `as_of` does not touch model parameters; (iii)
+retroactive mutation, since Gamma metadata is mutable when UMA disputes resolve.
+**Auto-decided (P1):** add a **leakage canary that is allowed to fail** — fit once with a
+deliberately leaked feature (final margin) and assert Brier collapses below ~0.05, proving
+the harness can detect leakage at all. Add a `source_observed_at` column distinct from event
+time. Freeze labels in the snapshot with a content hash. Note option (a) above also removes
+leak (ii) by construction.
+
+**[P1] (confidence 8/10) PLAN.md:31-32 and :835 — the response cache can poison the census
+and the reconciliation assert still balances.** Two compounding problems. First, caching
+misses: an early run with an incomplete per-season abbreviation map produces thousands of
+empty responses, and if the cache keys on URL, fixing the map does not invalidate them.
+Second, non-JSON 200s: these endpoints sit behind a WAF, and a challenge page returns HTTP
+200 with an HTML body; classified by shape rather than content-type that becomes
+`no_market`, and `scheduled == priced + misses` balances perfectly with a fabricated miss.
+The plan's one safety net is blind to its most likely systematic corruption.
+**Auto-decided (P1):** cache only responses passing a content-type AND schema check; key the
+cache on abbreviation-map version; treat any non-JSON or shape-unexpected response as a
+transient error and never as a miss; re-probe every `no_market` row in a second pass and
+assert the two passes agree.
+
+## Section 3: Test Review — coverage diagram
+
+```
+CODE PATHS                                          DATA / ANALYSIS FLOWS
+[+] ingest/                                         [+] Census correctness
+  ├── build_slug()                                    ├── [GAP] Label agreement vs nba_api
+  │   ├── [GAP] per-season abbr (no/nop)              │         ← STRONGEST self-test
+  │   ├── [GAP] ET date from schedule field           ├── [GAP] Shuffled-join collapse
+  │   ├── [GAP] DST boundary (Mar/Nov)                │         ← validates the gate itself
+  │   └── [GAP] neutral-site / play-in / Cup          ├── [GAP] Reconciliation fault injection
+  ├── fetch_market()                                  │         ← assert the assert fires
+  │   ├── [GAP] HTTP 200 + []                         └── [GAP] Non-JSON 200 (WAF page)
+  │   ├── [GAP] non-JSON 200 body
+  │   └── [GAP] 429 / 403 / 503 backoff             [+] Modeling integrity
+  ├── fetch_history()                                 ├── [GAP] Leakage canary (must fail)
+  │   ├── [★★ ] complementarity assert (partial)      ├── [GAP] MCMC divergence raises
+  │   └── [GAP] empty history                         └── [GAP] as_of truncation  ← only
+  └── cache                                                     test in the original plan
+      └── [GAP] invalidation on abbr-map bump
+[+] scoring/                                        [+] Chart integrity
+  ├── closing_price()                                 ├── [GAP] Murphy sums to Brier
+  │   ├── [GAP] last pre-tipoff value                 └── [GAP] Synthetic calibrated market
+  │   ├── [GAP] flat-run staleness flag                         → near-zero miscalibration
+  │   └── [GAP] second construction (see R6)
+  ├── [GAP] clark_west() known-input regression     [+] Golden fixtures
+  └── [GAP] edge bucketing boundaries                 └── [GAP] 3 probed games as JSON
+                                                              w/ hand-computed closes
+
+COVERAGE: 1/24 paths tested (4%)  |  the single planned test is as_of truncation
+QUALITY: ★★:1 (partial)  |  GAPS: 23
+```
+
+**[P1] (confidence 9/10) — the plan specifies 1 test for 24 identifiable paths.** The CEO
+phase raised this to 10 rows; the eng voice adds 7 more, and this diagram totals 24.
+**Auto-decided (P1, and the stated preference "I'd rather have too many tests than too
+few"):** all 23 gaps become the test plan. Designated P1: label agreement, shuffled-join,
+leakage canary, non-JSON 200, cache invalidation, ET/DST boundary, closing-price extraction.
+
+**[P2] (confidence 8/10) PLAN.md:145-146 — "trailing-15-minute VWAP" is not computable, and
+the average it replaces is approximately the last value anyway. VERIFIED BY PROBE:**
+`prices-history` points carry only `{t, p}` — no volume field, so there are no weights.
+Volume exists only as a market-level aggregate. And under the documented carry-forward
+behaviour (the final 8 pre-tipoff values were identical), a trailing average equals the last
+value on most games, so the second construction cannot detect the measurement error it exists
+to detect.
+**Auto-decided (P3 pragmatic):** replace with two constructions that actually differ — the
+last pre-tipoff value, and the **T-1h value** (or the last value that differs from the
+terminal flat run). Drop "VWAP" from the vocabulary. Also confirm the `fidelity` unit before
+fixing any window at 15 points; it is currently inferred from observed gaps, not documented.
+
+**[P2] (confidence 7/10) PLAN.md:140-142 — Clark-West against a fitted null needs its own
+specification.** CW's adjustment term is defined relative to the null's fitted values, so the
+two nulls give two different statistics, and B must literally nest the recalibration (B =
+`a + b·logit(p) + f(x)` with free `a, b`) or CW does not apply to the second comparison.
+PLAN.md also never carries forward the design doc's family-wise policy.
+**Auto-decided (P1):** write B's linear predictor explicitly, and carry the primary-test
+designation into PLAN.md with everything else labeled exploratory.
+
+**[P3] (confidence 8/10) PLAN.md:98-99 and :851 — "byte-identical" will flake and the two
+uses contradict each other.** DuckDB parallel aggregation does not guarantee float summation
+order, and T13 requires per-request telemetry with latency and timestamps, which makes a
+resumed run byte-different by design.
+**Auto-decided (P5):** define equality on a canonically sorted frame with an explicit
+tolerance, and exclude run metadata from the comparison.
+
+**[P3] (confidence 8/10) — neutral-site, play-in, and NBA Cup slug cases were dropped
+between the design doc and PLAN.md.** These are exactly the games where the away-home slug
+convention and the home-side calibration convention both break, and being a handful per
+season they will be silently diagnosed as slug misses.
+**Auto-decided (P1):** enumerate them from the schedule up front and route them to an
+explicit reason enum.
+
+## Section 4: Performance Review — 3 findings
+
+**[P2] (confidence 8/10) PLAN.md:94-95 and :675-676 — the price row count is understated
+2x in both places it appears. VERIFIED BY PROBE:** the plan says ~46M rows at two seasons,
+but that counts one token. At one row per **token** per minute over 5,084 games at ~9,300
+points, the real figure is **94.6M rows**.
+**Auto-decided (P1):** correct both figures, partition the Parquet release by sport and
+season, and estimate compressed size before committing to a release mechanism.
+**Knock-on:** GitHub caps a single release asset at 2GB, and T11 publishes this. Partitioning
+is now load-bearing, not cosmetic.
+
+**[P2] (confidence 7/10) PLAN.md:155-157 — Actions economics for the collector are
+unexamined and will kill it mid-season.** An 11-hour ET game window polled every 5 minutes is
+~130 runs/day for ~180 days. On a private repo that exceeds the free minute allowance many
+times over, so the collector dies from quota, not from the delay the plan does model. Actions
+also cannot self-schedule per game; a job that sleeps to tipoff burns billed minutes and hits
+the 6-hour job cap. And the season window plus daily window are ET concepts on a UTC cron, so
+March and November shift by an hour and clip the first or last game of the slate — the same
+DST class of bug the plan carefully fixed for slugs.
+**Auto-decided (P3 pragmatic):** one long-running job per day chained 2-3 times, or a cheap
+always-on host. Pin the cron in UTC with an explicit ET conversion in code. With a public
+repo, keep store credentials out of any fork-triggerable workflow and scope the token
+append-only.
+
+**[P2] (confidence 8/10) PLAN.md:31-32 — rate limits are the project's schedule risk and no
+step measures them.** A conservative fixed delay is the difference between a 4-hour census
+and a 3-day one, and it is chosen blind. Backoff is specified for 429 only; WAF blocks arrive
+as 403, 503, or the R9 200.
+**Auto-decided (P1):** a 10-minute Phase 0 calibration probe that ramps until the first 429
+and records reset behaviour; 429 count as first-class telemetry; a circuit breaker so an
+unattended run parks instead of backing off for days.
+
+**Not flagged after examination:** N+1 queries (no ORM), connection-pool pressure (single
+embedded DuckDB), and caching opportunities (an on-disk HTTP cache is already the design).
+DuckDB at 94.6M rows on a laptop is comfortable; the bottleneck is the API, not compute.
+
+## Section 2 addendum: NHL schedule source
+
+**[P2] (confidence 9/10) PLAN.md:30-31 vs :54 — the NHL schedule source is never named.**
+Dependencies list `nba_api` only, while Phase 1 requires "the NHL schedule's `gameDate`."
+Half the census, and possibly the *primary* sport, rests on an unidentified dependency.
+Related: `nba_api` hits stats.nba.com, which commonly blocks cloud egress, so it must not be
+called from GitHub Actions.
+**Auto-decided (P1):** name the NHL endpoint, probe it, and vendor both schedules to CSV in
+the snapshot release so neither dependency can invalidate a collected census.
+
+### Eng Review — Completion Summary
+
+- **Step 0: Scope Challenge** — scope accepted as-is. Complexity check TRIGGERED (7 modules,
+  8+ files); auto-decided proceed, no reduction (autoplan override, P2). One **[Layer 1]**
+  reuse finding: DuckDB native `ASOF JOIN`.
+- **Architecture Review** — 6 issues found (5 P1, 1 P2)
+- **Code Quality Review** — 3 issues found (all P1) + 1 P2 addendum (NHL schedule source)
+- **Test Review** — diagram produced, **23 gaps** identified against 24 paths (4% coverage)
+- **Performance Review** — 3 issues found (all P2), 2 verified by live probe
+- **NOT in scope** — written (CEO phase, 8 items)
+- **What already exists** — written (CEO phase 0B, plus the ASOF JOIN finding)
+- **TODOS.md updates** — 4 items written
+- **Failure modes** — 8 critical gaps flagged (CEO phase registry), all with auto-decided fixes
+- **Outside voice** — ran (claude subagent). Codex `[codex-unavailable: binary not found]`
+- **Test plan artifact** — written to
+  `~/.gstack/projects/Chira/arva-main-eng-review-test-plan-20260911-162634.md`
+- **Lake Score** — 20/20 recommendations chose the complete option
+- **Parallelization** — 3 lanes: (1) ingest + census, (2) scoring + charts, (3) collector.
+  Lanes 1 and 3 are parallel; lane 2 is sequential after lane 1.
+
+## Decision Audit Trail
+
+| # | Phase | Decision | Classification | Principle | Rationale | Rejected |
+|---|-------|----------|----------------|-----------|-----------|----------|
+| 1 | CEO | Mode = SELECTIVE EXPANSION | Mechanical | override | autoplan default | other 3 modes |
+| 2 | CEO | Exclude 2023-24 season | Mechanical | P1 | $0-volume markets have no calibrated price (probed) | 3-season span |
+| 3 | CEO | Close 8 silent-failure gaps with a misses table | Mechanical | P1 | Prime Directive 1, zero silent failures | bare skips |
+| 4 | CEO | Per-season abbreviation map | Mechanical | P1 | `no` vs `nop` proves drift | one-time map |
+| 5 | CEO | Raise on MCMC divergence / R-hat | Mechanical | P1 | non-converged posterior yields a real-looking Brier | warn-only |
+| 6 | CEO | Census idempotency via PK + upsert | Mechanical | P1 | re-run double-inserts change a VWAP silently | re-run as-is |
+| 7 | CEO | Pin deps + vendor schedule to CSV | Mechanical | P1 | `nba_api` is an unofficial scraper | unpinned |
+| 8 | CEO | Immutable snapshot week 1 (E4) | Taste | P2 | SPOF on one third-party endpoint | live-API reads |
+| 9 | CEO | Public dataset release (E1) | Taste | P1+P2 | near-zero marginal cost, cannot produce a null | plumbing-only |
+| 10 | CEO | Liquidity/time-to-close strata (E2) | Mechanical | P1+P2 | literature: bias is category-concentrated | pooled only |
+| 11 | CEO | GBM as reported ceiling (E3) | Taste | P1 | converts an assertion into a measurement | assertion only |
+| 12 | CEO | Cross-validate vs public datasets (E5) | Mechanical | P4 | two large public datasets existed unevaluated | build blind |
+| 13 | CEO | Prior-art positioning (E6) | Mechanical | P1 | 4 relevant papers uncited | no positioning |
+| 14 | CEO | Decouple Phase 6 (E7) | Mechanical | P6 | 10-month calendar on a maybe-unresolvable test | gated completion |
+| 15 | CEO | Synthetic-market scorer test (E8) | Mechanical | P1 | instrument never validated before judging | unvalidated |
+| 16 | CEO | Narrow `game_prices` table | Mechanical | P3 | 94.6M rows scanned for ~5 values/game | raw scans |
+| 17 | CEO | Structured run log + manifest | Mechanical | P1 | 20k requests with no telemetry | silent run |
+| 18 | CEO | Collector heartbeat | Mechanical | P1 | 6 months unattended, no alerting | none |
+| 19 | ENG | Proceed without scope reduction | Mechanical | P2 | module count is essential complexity | reduce to 3 modules |
+| 20 | ENG | Implement PIT with DuckDB `ASOF JOIN` | Mechanical | P4 | native built-in exists; reuse rung 3 | hand-rolled filter |
+| 21 | ENG | `PREREGISTRATION.md` becomes LAST Phase 0 artifact | Mechanical | P1 | committed before the decisions that define it | commit first |
+| 22 | ENG | Label agreement assert vs `nba_api` | Mechanical | P1 | label came from the benchmarked party itself | trust Gamma |
+| 23 | ENG | **REVISES #E9/T8** — market calibration gets NO gate authority | Mechanical | P5 | miscalibration is ambiguous between bug and finding | split-but-still-gating |
+| 24 | ENG | Adopt rolling pre-game team-strength state (a) | Mechanical | P5 | random walk over 2 seasons IS the rejected substitution; 2 voices converged | team-season + RW |
+| 25 | ENG | Leakage canary that must fail | Mechanical | P1 | "no leakage detected" otherwise unfalsifiable | as_of test only |
+| 26 | ENG | Cache hardening (content-type, schema, version key, 2nd pass) | Mechanical | P1 | WAF 200s become fabricated misses that keep the assert balanced | URL-keyed cache |
+| 27 | ENG | Name + prove the availability source pre-season | Mechanical | P1 | Phase 6 specifies only price capture | price-only capture |
+| 28 | ENG | Dead-man's switch for the collector | Mechanical | P1 | in-workflow heartbeat cannot report its own absence | in-workflow alert |
+| 29 | ENG | Replace VWAP with T-1h construction | Mechanical | P3 | no volume field exists (probed); carry-forward makes it a no-op | VWAP |
+| 30 | ENG | Correct row count to 94.6M + partition release | Mechanical | P1 | 2x undercount; 2GB release-asset cap | 46M, single asset |
+| 31 | ENG | Rate-limit calibration probe + circuit breaker | Mechanical | P1 | blind delay = 4 hours vs 3 days | fixed blind delay |
+| 32 | ENG | Rework collector scheduling (1 chained job/day, UTC cron) | Mechanical | P3 | 130 runs/day x 180 days exceeds free tier | 5-min polling |
+| 33 | ENG | B must literally nest the recalibration null | Mechanical | P1 | CW adjustment is defined against the null's fitted values | unspecified B |
+| 34 | ENG | Per-regime Brier bands | Mechanical | P1 | dev season is 4x thinner than holdout | one band |
+| 35 | ENG | Check Polymarket ToS before publishing the dataset | Mechanical | P1 | redistribution permission unstated | publish blind |
+| 36 | ENG | Enumerate neutral-site / play-in / Cup games | Mechanical | P1 | dropped between docs; conventions break there | silent misses |
+| 37 | ENG | Resume equality on sorted frame with tolerance | Mechanical | P5 | byte-identical flakes by design | byte-identical |
+
+**Totals: 37 auto-decisions logged.** 34 mechanical, 3 taste (#8, #9, #11).
+2 User Challenges are NOT in this table because they were never auto-decided.
+1 previously-escalated taste item (dev/holdout split) was RESOLVED by decision #24.
+
+## Cross-Phase Themes
+
+**Theme: the integrity gate is broken** — flagged independently in the spec-review round
+(noise-floor arithmetic), the CEO phase (subagent finding 11, "a kill switch calibrated to
+false-fire"), and the eng phase (R3, "conflates pipeline validation with the project's own
+finding"). Three independent passes, three different arguments, same conclusion.
+**High-confidence signal.** Resolution escalated from "split the gate" to "remove its gate
+authority entirely" (decision #23).
+
+**Theme: the forward collector is the weakest component** — CEO phase (subagent finding 4,
+decouple it) plus eng phase (R4 no named data source, R5 alerting cannot fire, R13
+unaffordable on Actions). Four findings across two phases converge on the same component.
+**High-confidence signal.**
+
+**Theme: the rolling pre-game state is the right model** — CEO subagent finding 12 and eng
+R7 arrived at option (a) independently, by different routes (domain realism vs the
+arithmetic of a 2-season random walk). **High-confidence signal**, and it retired a gate item.
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 (via autoplan) | issues_open | 13 findings, 8 critical gaps, 1 premise falsified |
+| Codex Review | `/codex review` | Independent 2nd opinion | 0 | skipped | codex binary not installed |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 (via autoplan) | issues_open | 17 findings (9 P1), 23 test gaps |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | skipped | no UI scope (1 false-positive match) |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | skipped | no developer-facing scope (3 false-positive matches) |
+
+- **CROSS-MODEL:** not available. Codex absent, so both phases ran `[subagent-only]`. In
+  place of a second model, four findings were settled by live API probe rather than by
+  agreement: the 2023-24 dead-market window, the two-token row count, the absent volume
+  field, and the ET-date convention across DST.
+- **VERDICT:** CEO + ENG reviewed, both `issues_open`. 37 findings auto-decided and logged;
+  3 items remain for the user. Not yet clear to implement — the Final Approval Gate must
+  resolve the 2 User Challenges first.
+
+**UNRESOLVED DECISIONS:**
+- **User Challenge 1** — invert A/B ordering: ship census + calibration as its own artifact, model becomes the earned extension.
+- **User Challenge 2** — promote the miscalibration hunt (Approach C) to co-headline rather than keeping NBA/NHL moneyline as the sole frame.
+- **Taste** — 3 accepted expansions touch user-stated scope or the user's interpretability constraint (E1 dataset release, E3 GBM ceiling, E4 snapshot-first); confirm or override.
