@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.uv/
+
+# Data stores — the plan explicitly forbids committing a growing DuckDB file
+*.duckdb
+*.duckdb.wal
+data/
+cache/
+.http-cache/
+
+# Outputs
+*.png
+*.svg
+!docs/**/*.png
+!docs/**/*.svg
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
