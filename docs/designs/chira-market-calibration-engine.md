@@ -333,7 +333,8 @@ Three things "transfer" could have meant:
   construction, closing-price extraction, label joins, calibration scoring, edge bucketing
   are sport-agnostic. One `Sport` adapter interface; NBA and NHL are implementations.
 - **Team-BY-SEASON partial pooling (CHOSEN).** Pool team effects within a sport at the
-  **team-season** level: J ≈ 90 for NBA and ≈ 96 for NHL across three seasons, with 82
+  **team-season** level: J = 60 for NBA and 64 for NHL across the **two usable seasons**
+  (corrected from "≈90/≈96 across three seasons" — see Superseded note), with 82
   games per team-season, which is ample for pooling to pay. Sport enters as a fixed effect.
   *Revised twice. The first draft pooled at the sport level with J=2, where the hyper-SD is
   essentially unidentified, the posterior is driven by an unstated prior, and the fit
@@ -558,3 +559,28 @@ recommendation.
   answer once you saw a better one.
 - You asked for the startup questions on a project you framed as portfolio work. That is
   the instinct to stress-test something before being attached to it.
+
+
+---
+
+## Superseded by /autoplan CEO review (2026-09-11)
+
+Corrections applied after live probing during the CEO phase. The plan file
+(`PLAN.md`) carries the full review; the deltas that invalidate text above:
+
+1. **The usable window is 2024-25 and 2025-26 only, not 2023-24 through 2025-26.**
+   Probed: Dec-2023 NBA markets carry $6/$0/$0/$0 volume; Mar-2024 has zero sports slugs.
+   Dead markets have no calibrated price. Census drops to ~2,460 NBA / ~2,624 NHL games,
+   ~15,300 requests, and team-season pooling drops to J = 60 / 64.
+2. **Sealing 2025-26 leaves one dev season, so the rolling-origin dev protocol is
+   impossible as written.** Blocking modeling decision, see PLAN.md Phase 4.
+3. **Per-game liquidity quadrupled between the two usable seasons** (~$500k → ~$1.9M).
+   Report seasons separately as well as pooled; price sharpness is not constant.
+4. **Abbreviation conventions drift across seasons** (`no` in 2023 vs `nop` in 2025), so
+   the learn-the-map probe runs per season.
+5. **`statsmodels` removed as an option.** numpyro outright.
+6. **The favorite-longshot direction may not exist in these categories.** Literature
+   reports no general longshot bias on Polymarket, with bias concentrated in specific
+   categories, so the integrity gate must accept "no detectable tilt" as a pass.
+7. **Prior art exists and was uncited.** Reichenbach & Walther (SSRN 5910522); arXiv
+   2602.19520; Wilkens 2026; arXiv 2410.21484.
