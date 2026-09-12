@@ -3,7 +3,7 @@
 
 Branch: main
 Design doc: [docs/designs/chira-market-calibration-engine.md](docs/designs/chira-market-calibration-engine.md)
-Status: REVIEWED (autoplan: CEO + Eng), User Challenges resolved
+Status: **APPROVED** 2026-09-11 (autoplan: CEO + Eng + Eng re-review). All decisions closed.
 **HARD DEADLINE: end of November 2026.** Semester project. ~11 weeks from 2026-09-11.
 
 ## Deadline, and what that excludes
@@ -1643,9 +1643,9 @@ arithmetic of a 2-season random walk). **High-confidence signal**, and it retire
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 (via autoplan) | issues_open | 13 findings, 8 critical gaps, 1 premise falsified |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 (via autoplan) | clean | 13 findings, 8 critical gaps, 1 premise falsified — all dispositioned |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | skipped | codex binary not installed |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 (via autoplan) | issues_open | 17 findings (9 P1), 23 test gaps |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 2 (initial + re-review) | clean | 17 + 22 findings, 23 test gaps — all dispositioned |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | skipped | no UI scope (1 false-positive match) |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | skipped | no developer-facing scope (3 false-positive matches) |
 
@@ -1656,8 +1656,7 @@ arithmetic of a 2-season random walk). **High-confidence signal**, and it retire
 - **VERDICT:** CEO + ENG reviewed, plus a focused Eng re-review of the amended plan (22
   further findings). Both User Challenges RESOLVED by the user: Challenge 1 rejected
   (Approach B stands), Challenge 2 accepted (miscalibration is a co-headline). 60 decisions
-  auto-decided and logged. **CEO + ENG CLEARED pending confirmation of the 3 taste items at
-  the re-presented gate.**
+  auto-decided and logged. **CEO + ENG CLEARED — ready to implement.** All 3 taste items
+  confirmed by the user (E1 dataset release, E3 GBM ceiling, E4 snapshot-first all kept).
 
-**UNRESOLVED DECISIONS:**
-- **Taste** — 3 accepted expansions touch user-stated scope or the user's interpretability constraint (E1 dataset release, E3 GBM ceiling, E4 snapshot-first); confirm or override at the re-presented gate.
+NO UNRESOLVED DECISIONS
