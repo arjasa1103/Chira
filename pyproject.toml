@@ -3,11 +3,12 @@ name = "chira"
 version = "0.1.0"
 description = "Cross-sport market calibration and win-probability engine, benchmarked against Polymarket closing prices"
 requires-python = ">=3.12,<3.13"
-# Only what weeks 1-2 actually import. duckdb/pyarrow/matplotlib land with the
-# store and the charts (weeks 3+); keeping them out means week-1 install time
-# matches week-1 code.
+# Only what weeks 1-2 actually import. pyarrow/matplotlib land with the Parquet
+# snapshot and the charts (weeks 3+); duckdb moved in here in week 2, when the
+# census store became real code rather than a planned one.
 dependencies = [
     "requests>=2.32",
+    "duckdb>=1.1",
     "numpy>=2.0",
     "scipy>=1.14",
     # nba_api is a community-maintained unofficial client for an undocumented
@@ -17,9 +18,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Weeks 3+: the DuckDB store, the Parquet snapshot, and the charts.
+# Weeks 3+: the Parquet snapshot and the charts.
 store = [
-    "duckdb>=1.1",
     "pyarrow>=17.0",
     "matplotlib>=3.9",
 ]
@@ -47,6 +47,24 @@ packages = ["src/chira"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+# Pinned explicitly rather than inherited. Ruff's default rule set moves between
+# releases, and a lint set that changes under you is a lint set you start
+# ignoring. E402 is off because every script in scripts/ has to insert src/ on
+# sys.path before importing chira.
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "SIM", "UP", "RUF", "PL"]
+ignore = [
+    "E402",       # scripts must extend sys.path before importing chira
+    "PLR2004",    # magic values in comparisons; the constants module covers the real ones
+    "PLR0912", "PLR0915", "PLR0913", "PLR0911", "PLR0917",  # shape metrics, not defects
+    "PLC0415",    # deferred imports are deliberate: nba_api is heavy, email.utils is cold
+    "SIM108",     # ternaries are not always clearer than if/else
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on literals and build deliberately odd inputs.
+"tests/*" = ["PLR2004", "B011"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

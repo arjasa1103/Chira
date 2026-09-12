@@ -4,8 +4,13 @@ Feeds the noise-floor simulation with a real price distribution instead of an
 assumed one, and exercises the whole orientation chain on live data.
 """
 from __future__ import annotations
-import json, pathlib, random, sys
+
+import json
+import pathlib
+import random
+import sys
 from collections import Counter
+
 from chira.extract import closing_price, label_agreement
 from chira.http import Client
 from chira.schedule import nba_games, slug_candidates
@@ -51,7 +56,8 @@ def main() -> int:
                      "stale": bool(r.get("stale_flat_run"))})
         if (i + 1) % 25 == 0:
             print(f"  {i+1}/{len(pool)} ... {dict(tally)}", flush=True)
-    d = pathlib.Path("data"); d.mkdir(exist_ok=True)
+    d = pathlib.Path("data")
+    d.mkdir(exist_ok=True)
     (d / "price_sample.json").write_text(json.dumps(rows, indent=2))
     print(f"\n=== {len(rows)} games extracted ===")
     for k, v in sorted(tally.items()):

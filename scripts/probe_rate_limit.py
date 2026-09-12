@@ -99,7 +99,9 @@ def measure_recovery(url: str, session: requests.Session, max_wait: int = 70) ->
     while time.perf_counter() - t0 < max_wait:
         time.sleep(1.0)
         try:
-            if session.get(url, timeout=20, headers={"accept": "application/json"}).status_code == 200:
+            r = session.get(url, timeout=20,
+                            headers={"accept": "application/json"})
+            if r.status_code == 200:
                 return round(time.perf_counter() - t0, 1)
         except requests.RequestException:
             pass
@@ -127,7 +129,9 @@ def probe(name: str, url: str) -> dict:
         )
         if res.rate_limited:
             hit_limit = True
-            print(f"  {name:6} 429 at {rate} rps. Retry-After={res.retry_after!r}. Measuring recovery...", flush=True)
+            print(f"  {name:6} 429 at {rate} rps. "
+                  f"Retry-After={res.retry_after!r}. Measuring recovery...",
+                  flush=True)
             recovery = measure_recovery(url, session)
             print(f"  {name:6} recovered after {recovery}s", flush=True)
             break

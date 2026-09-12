@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import UTC, datetime
 from collections import Counter
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode
 
 import requests
 
+from .cache import Cache
 from .constants import CLOB, FIDELITY_MINUTES, GAMMA, GAMMA_LIMIT_CAP
 
 RATE_RPS = 5.0
@@ -53,17 +54,72 @@ class TransientError(RuntimeError):
 
 
 class CircuitOpen(RuntimeError):
-    """Too many consecutive failures. Aborts; NO state is saved.
+    """Too many consecutive failures. Aborts the run.
 
-    Resumability is week-2 work. Until it lands this class only stops the run,
-    so the message must not imply a checkpoint exists.
+    The census writes every completed game to the store as it goes and resumes
+    from what is already there (see census.py), so an abort here loses at most
+    the in-flight game, not the run.
     """
 
 
+class SchemaError(RuntimeError):
+    """The endpoint returned valid JSON in an unexpected SHAPE.
+
+    Deliberately NOT a TransientError and deliberately NOT a miss. A shape
+    change means the upstream contract moved, and the correct response is to
+    stop the census and look, not to retry 15,000 times or to record 15,000
+    fabricated "no market exists" rows.
+    """
+
+
+def validate_events(payload: Any) -> bool:
+    """/events?slug= -> list of events. Returns True if the payload is cacheable.
+
+    An empty list is VALID and NOT cacheable: it is the ambiguous case (no
+    market vs upstream hiccup), and freezing it into the cache is how a
+    transient failure becomes a permanent fabricated miss.
+    """
+    if not isinstance(payload, list):
+        raise SchemaError(f"/events expected a list, got {type(payload).__name__}")
+    for ev in payload:
+        if not isinstance(ev, dict):
+            raise SchemaError(f"/events element is {type(ev).__name__}, not an object")
+        markets = ev.get("markets")
+        if markets is not None and not isinstance(markets, list):
+            raise SchemaError("/events markets is not a list")
+    return bool(payload)
+
+
+def validate_prices(payload: Any) -> bool:
+    """/prices-history -> {"history": [{t, p}, ...]}.
+
+    An empty history is a real, stable answer for pre-CLOB markets, but it is
+    still not cached: the cost of re-probing a handful of empties is one extra
+    request each, and the cost of caching a transient empty is a silent hole in
+    the price series.
+    """
+    if not isinstance(payload, dict):
+        raise SchemaError(f"prices-history expected an object, got {type(payload).__name__}")
+    history = payload.get("history")
+    if not isinstance(history, list):
+        raise SchemaError("prices-history has no history list")
+    for pt in history:
+        if not isinstance(pt, dict):
+            raise SchemaError("prices-history point is not an object")
+    return bool(history)
+
+
+def validate_markets(payload: Any) -> bool:
+    if not isinstance(payload, list):
+        raise SchemaError(f"/markets expected a list, got {type(payload).__name__}")
+    return bool(payload)
+
+
 class Client:
-    def __init__(self, rate_rps: float = RATE_RPS) -> None:
+    def __init__(self, rate_rps: float = RATE_RPS, *, cache: Cache | None = None) -> None:
         if rate_rps <= 0:
             raise ValueError("rate_rps must be positive")
+        self.cache = cache
         self._interval = 1.0 / rate_rps
         self._last = 0.0
         self._consecutive_failures = 0
@@ -78,9 +134,27 @@ class Client:
             time.sleep(wait)
         self._last = time.perf_counter()
 
-    def get_json(self, url: str, *, max_attempts: int = 4) -> Any:
+    def get_json(self, url: str, *, max_attempts: int = 4,
+                 validator: Any = None, bypass_cache: bool = False) -> Any:
+        """Fetch and validate. Serves from cache when one is attached.
+
+        The validator runs on CACHED payloads too. A cache written under an
+        older upstream schema is exactly as wrong as a fresh bad response, and
+        it is worse for being invisible.
+
+        `bypass_cache` ignores an existing entry but still writes the fresh one:
+        the E6 re-probe exists to distinguish a real miss from a transient one,
+        and a recovered market should be cached for the next run.
+        """
         if max_attempts < 1:
             raise ValueError("max_attempts must be >= 1")
+        if self.cache is not None and not bypass_cache:
+            hit = self.cache.get(url)
+            if hit is not None:
+                if validator is not None:
+                    validator(hit)
+                self.stats["cache:hit"] += 1
+                return hit
         last: Exception = TransientError("no attempts made")
         backoff = BACKOFF_START
         for attempt in range(max_attempts):
@@ -106,6 +180,14 @@ class Client:
                             last = TransientError(f"200 but undecodable JSON: {e}")
                         else:
                             self._consecutive_failures = 0
+                            cacheable = True
+                            if validator is not None:
+                                cacheable = validator(data)
+                            # bypass_cache skips the READ, not the write. A
+                            # re-probe that recovers a market should leave it
+                            # cached for the next run.
+                            if cacheable and self.cache is not None:
+                                self.cache.put(url, data)
                             return data
                 elif r.status_code in (429, 403, 503, 502, 504):
                     ra = r.headers.get("Retry-After")
@@ -137,7 +219,7 @@ class Client:
         if self._consecutive_failures >= CIRCUIT_BREAK_AFTER:
             raise CircuitOpen(
                 f"{self._consecutive_failures} consecutive failures; aborting. "
-                f"NO state saved (resumability is week-2 work). Last: {last}"
+                f"Resume from the store, which holds every completed game. Last: {last}"
             )
         raise last
 
@@ -148,16 +230,19 @@ class Client:
             params["end_date_min"] = end_date_min
         if end_date_max:
             params["end_date_max"] = end_date_max
-        data = self.get_json(f"{GAMMA}/markets?{urlencode(params)}")
+        data = self.get_json(f"{GAMMA}/markets?{urlencode(params)}",
+                             validator=validate_markets)
         return data if isinstance(data, list) else []
 
-    def event_by_slug(self, slug: str) -> list[dict]:
+    def event_by_slug(self, slug: str, *, bypass_cache: bool = False) -> list[dict]:
         # /markets?slug= returns []; /events?slug= is the working route.
-        data = self.get_json(f"{GAMMA}/events?{urlencode({'slug': slug})}")
+        data = self.get_json(f"{GAMMA}/events?{urlencode({'slug': slug})}",
+                             validator=validate_events, bypass_cache=bypass_cache)
         return data if isinstance(data, list) else []
 
     def prices_history(self, token_id: str, start_ts: int,
-                       fidelity: int = FIDELITY_MINUTES) -> list[dict]:
+                       fidelity: int = FIDELITY_MINUTES, *,
+                       bypass_cache: bool = False) -> list[dict]:
         # startTs alone. interval=max with fine fidelity silently returns [] for
         # old markets; startTs+endTs together returns 400 "interval is too long".
         # token_id originates in remote data. An unencoded & or # would silently
@@ -165,5 +250,6 @@ class Client:
         if not str(token_id).isdigit():
             raise ValueError(f"token_id must be numeric, got {token_id!r}")
         q = urlencode({"market": token_id, "startTs": start_ts, "fidelity": fidelity})
-        data = self.get_json(f"{CLOB}/prices-history?{q}")
+        data = self.get_json(f"{CLOB}/prices-history?{q}",
+                             validator=validate_prices, bypass_cache=bypass_cache)
         return (data or {}).get("history", []) if isinstance(data, dict) else []

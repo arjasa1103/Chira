@@ -1,8 +1,13 @@
 """Run the per-season abbreviation learner and write data/abbr_map.json."""
 from __future__ import annotations
-import json, pathlib, sys
-from chira.abbr import learn, TEAM_COUNT, SEASON_SPANS
+
+import json
+import pathlib
+import sys
+
+from chira.abbr import SEASON_SPANS, TEAM_COUNT, learn
 from chira.http import Client
+
 
 def main() -> int:
     c = Client()
@@ -10,7 +15,8 @@ def main() -> int:
     for season in SEASON_SPANS:
         print(f"--- {season} ---", flush=True)
         out[season] = learn(c, season)
-    dest = pathlib.Path("data"); dest.mkdir(exist_ok=True)
+    dest = pathlib.Path("data")
+    dest.mkdir(exist_ok=True)
     (dest / "abbr_map.json").write_text(json.dumps(out, indent=2, sort_keys=True))
 
     print("\n=== COVERAGE ===")

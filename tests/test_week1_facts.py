@@ -194,7 +194,9 @@ class TestDegenerateInput:
             ece(np.array([0.5, 0.6]), np.array([1.0]))
 
     def test_nan_can_never_silently_pass_a_gate(self):
-        assert not (float("nan") <= GATE_ECE_MAX)
+        # The NaN comparison IS the test: NaN <= x is False, so a NaN metric can
+        # never pass a gate by accident. math.isnan would test something else.
+        assert not (float("nan") <= GATE_ECE_MAX)  # noqa: PLW0177
 
     def test_degenerate_cox_fit_raises_instead_of_reporting_a_slope(self):
         """Constant p previously returned slope 165.04 as if it were a result."""

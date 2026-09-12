@@ -8,6 +8,8 @@ verdict is the worst outcome that gate can produce.
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 from scipy.special import expit, logit
 
@@ -36,7 +38,7 @@ def equal_count_bins(p: np.ndarray, y: np.ndarray, n_bins: int = 10):
     p, y = p[order], y[order]
     edges = np.linspace(0, len(p), n_bins + 1).astype(int)
     mp, obs, ns = [], [], []
-    for a, b in zip(edges[:-1], edges[1:]):
+    for a, b in itertools.pairwise(edges):
         if b <= a:
             continue
         mp.append(p[a:b].mean())

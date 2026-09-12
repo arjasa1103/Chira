@@ -133,12 +133,57 @@ deliverable, not a nice-to-have.
 - **Pre-registration is committed before the first model fit.** The git hash is the
   timestamp.
 
+## Week 2 — what shipped (Sep 22-28, done 2026-09-12)
+
+Modules: `cache.py`, `store.py` + `schema.sql`, `telemetry.py`, `census.py`, `gate.py`,
+`nhl.py`, `resolve.py`. Scripts: `resolve_abbrs.py`, `run_census.py`,
+`probe_nhl_schedule.py`. Tests: 252 passing.
+
+- **NHL schedule source named and probed (E10).**
+  `api-web.nhle.com/v1/club-schedule-season/{TEAM}/{SEASONCODE}`, 64 calls for both
+  seasons, 1,312 regular-season games each (2,624 total, matching the plan's estimate),
+  final scores present so the winner is independent of Polymarket, and zero ties across
+  all 2,624. Cloud egress is NOT verified; that is the week-4 dry run.
+- **Abbreviation resolution (T3 completed).** 124/124 team-seasons, 91 probes. Found
+  `vgk -> las`, which no document had.
+- **Misses table with an 11-value reason enum and the full attempted-slug list (T2).**
+- **Idempotency and resume (T6, E20).** Primary keys plus `INSERT OR REPLACE`; resume
+  equality is a canonical content digest with float tolerance, excluding run metadata.
+- **Cache hardening (E6).** Schema validation before any write; empty payloads never
+  cached; cache key versioned by the abbreviation-map fingerprint; every `no_market`
+  re-probed once with the cache bypassed.
+- **Telemetry (T13).** One flushed JSONL line per game plus a manifest carrying the git
+  hash, date window and map fingerprint.
+- **The census validation gate PASSES on both sports** (NBA 200 games, NHL 161), with
+  361 more independent confirmations of the orientation chain on top of week 1's 128.
+
+Three findings that change later phases:
+
+1. **Polymarket's NHL coverage starts in December 2024.** All 234 attempted
+   October-November games returned `no_market` and all 234 survived a cache-bypassed
+   re-probe. The early-season stratum for headline 2 does not exist for NHL 2024-25.
+2. **NHL per-game volume is ~5x thinner than NBA** ($73k vs $374k mean, both 2024-25).
+   Pooling sports would make "liquidity" and "sport" the same cut.
+3. **`schedule.nba_games` was unsorted.** `LeagueGameFinder` returns newest first, so
+   `--limit 200` censused the LAST 200 games of the season while the flag said earliest.
+   Both schedule sources now return `(et_date, game_id)` order, and limited runs default
+   to a stride slice across the season.
+
 ## Phase 0 — Foundations
 
-- [ ] `uv` project, Python 3.12. Dependencies: `requests`, `duckdb`, `numpyro`,
-      `matplotlib`, `nba_api`.
-- [ ] HTTP layer: on-disk response cache, rate limiter with fixed delay, exponential
-      backoff on 429, resumable state so a block mid-census is not fatal.
+**Scheduling note.** This checklist is not a week-1 list. The eleven-week table above
+is the authority on WHEN each item lands: the `uv` skeleton and the HTTP layer are
+**week-2** work, and only the rate-limit probe, the abbreviation maps, the noise-floor
+simulation, the ToS check and `PREREGISTRATION.md` were week 1. The two used to
+contradict each other.
+
+- [x] `uv` project, Python 3.12 (week 2). Dependencies: `requests`, `duckdb`, `numpy`,
+      `scipy`, `nba_api`; `pyarrow`/`matplotlib` behind the `store` extra and
+      `numpyro`/`jax` behind `model`, so weeks 1-7 do not install a model stack.
+- [x] HTTP layer (week 2): on-disk response cache (`cache.py`), rate limiter at 5 rps
+      from the week-1 probe, exponential backoff with RFC 9110 `Retry-After` parsing,
+      circuit breaker, and schema validation before anything is cached. Resumability is
+      in the store, not the client: `census.run_census` skips games already settled.
 - [ ] **ORDERING (corrected by eng review):** the Phase 4 modeling decision and the
       noise-floor simulation are strict PREDECESSORS of the pre-registration.
       `PREREGISTRATION.md` is the **LAST** artifact of Phase 0, not the first. A
@@ -160,16 +205,22 @@ deliverable, not a nice-to-have.
 
 Answers whether the project is viable, and in which sport.
 
-- [ ] Learn the abbreviation map first, **PER SEASON** — the convention is not stable across
-      seasons (`nba-lal-no-2023-12-07` uses `no` for New Orleans where 2025 uses `nop`).
-      Probe ~3 known games per team per season (32 teams x 3 ≈ 96 requests per sport-season)
-      via `/events?slug=`. Do NOT guess. Confirmed within-season irregulars: `sj` not `sjs`,
-      `mon` not `mtl`, `cal` not `cgy`, `tb` not `tbl`, bare `utah`.
-- [ ] Build slugs `<sport>-<away>-<home>-<YYYY-MM-DD>` from **US-Eastern schedule dates**
+- [x] Learn the abbreviation map first, **PER SEASON** — the convention is not stable
+      across seasons (`nba-lal-no-2023-12-07` uses `no` for New Orleans where 2025 uses
+      `nop`). Do NOT guess; confirm every mapping against the market's own `outcomes`.
+      **DONE week 2:** 124/124 team-seasons resolved in 91 `/events?slug=` probes
+      (`resolve.py` -> `data/abbr_map_resolved.json`). The week-1 map was the wrong
+      direction (`{slug_abbr: nickname}`) and was read by no code; it is now only a prior.
+      NBA needs no translation at all. NHL needs seven, identical in both seasons:
+      `cgy->cal`, `mtl->mon`, `njd->nj`, `sjs->sj`, `tbl->tb`, `uta->utah`, and
+      **`vgk->las`, which appears in no document and is worth 164 games**.
+      See notes/week2-abbr-resolution.md.
+- [x] Build slugs `<sport>-<away>-<home>-<YYYY-MM-DD>` from **US-Eastern schedule dates**
       taken directly from `nba_api` `GAME_DATE` and the NHL schedule's `gameDate`. Never
-      derive ET from `gameStartTime`; if converting, `America/New_York` with DST, never a
-      fixed offset.
-- [ ] Enumerate from the schedule, never by paginating Gamma. `/markets` caps `limit` at
+      derive ET from `gameStartTime`. **DONE week 2** (`schedule.slug_candidates`, both
+      date conventions). NHL's `gameDate` was verified to be the ET date against a game
+      that starts at 03:00Z, where the UTC and ET dates differ.
+- [x] Enumerate from the schedule, never by paginating Gamma — DONE. `/markets` caps `limit` at
       100 and returns nothing past `offset ~2100`.
 - [ ] **Seasons 2024-25 and 2025-26 ONLY** (two seasons). 2023-24 is EXCLUDED: probed Dec-2023
       NBA markets carry $6/$0/$0/$0 volume and Mar-2024 has zero sports slugs, so those
@@ -183,9 +234,14 @@ Answers whether the project is viable, and in which sport.
 - [ ] Per game, store `outcomePrices` (free label), `gameStartTime`, volume, and the
       minute-level series via `prices-history?market=<tokenId>&startTs=<unix>&fidelity=1`.
       Extract close, T-1h, T-6h, T-24h.
-- [ ] Assert `abs(p_home + p_away - 1) < 1e-6` and fail loudly. The complementarity
+- [x] Assert `abs(p_home + p_away - 1) < 1e-6` and fail loudly — DONE; a failure routes
+      the game to `misses` with reason `complementarity_failed`, and an absent away
+      series is recorded as unchecked rather than silently passed. The complementarity
       invariant is verified on 3 games and load-bearing enough to be enforced.
-- [ ] Classify every miss as "no market exists" vs "slug variant not tried." Exclude
+- [x] Classify every miss as "no market exists" vs "slug variant not tried" — DONE.
+      Every miss row carries the full attempted-slug list and one of 11 enum reasons,
+      and every `no_market` is re-probed once with the cache bypassed before it is
+      believed. Exclude
       `["0.5","0.5"]`, unresolved, and UMA-disputed markets from scoring and count them on
       a reconciliation line.
 

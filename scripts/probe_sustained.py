@@ -43,7 +43,7 @@ def main() -> None:
 
     print(f"\nsent {len(lat)} requests over {lat[-1][0]:.1f}s "
           f"(target {RATE} rps, actual {len(lat)/lat[-1][0]:.1f} rps)")
-    print(f"status counts: ", end="")
+    print("status counts: ", end="")
     counts: dict[int, int] = {}
     for _, _, c in lat:
         counts[c] = counts.get(c, 0) + 1

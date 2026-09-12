@@ -91,3 +91,21 @@ GATE_ECE_MAX = 0.03
 GATE_MAX_BIN_DEV = 0.08
 GATE_SLOPE_BAND = (0.93, 1.08)
 GATE_INTERCEPT_BAND = (-0.07, 0.07)
+
+# Miss reason enum. Every scheduled game that is not `priced` carries exactly
+# one of these, and the store rejects anything else: an unconstrained reason
+# string is how "no market exists" and "we never tried the right slug" end up
+# as the same row, which is the one distinction the coverage chart depends on.
+MISS_REASONS = (
+    "no_market",                       # every candidate slug missed, twice
+    "no_pre_tipoff_points",            # market exists, price series empty before tipoff
+    "unparseable_market",              # clobTokenIds / outcomes malformed
+    "missing_gameStartTime",
+    "unparseable_gameStartTime",
+    "postponed_or_split_resolution",   # outcomePrices ["0.5","0.5"]
+    "outcome_prices_not_complementary",
+    "malformed_outcome_prices",
+    "complementarity_failed",          # last pre-tipoff prices do not sum to 1
+    "unresolved_market",               # market exists but carries no outcomePrices
+    "label_disagreement",              # E1: market winner != league winner
+)

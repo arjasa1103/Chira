@@ -23,24 +23,15 @@ MATCHUP_AWAY = re.compile(r"^([A-Z]{3})\s+@\s+([A-Z]{3})$")      # away @ home
 MATCHUP_HOME = re.compile(r"^([A-Z]{3})\s+vs\.\s+([A-Z]{3})$")   # home vs. away
 
 
-def nba_games(season: str, *, timeout: int = 60) -> list[dict]:
-    """One row per GAME, with away/home resolved and the independent winner.
+def games_from_rows(rows, nick: dict[str, str], place: dict[str, str]) -> list[dict]:
+    """Fold per-team stat rows into one row per game. Pure; no network.
 
-    Returns dicts: game_id, et_date, away, home, winner ('away'|'home'),
-    away_pts, home_pts. The winner field is the E1 label-agreement source: it
-    is independent of Polymarket, which is the whole point.
+    Extracted from `nba_games` so the parts that can be silently wrong are
+    testable: MATCHUP orientation, side attribution, and the sort. Each input
+    row needs GAME_ID, GAME_DATE, MATCHUP, TEAM_ABBREVIATION, PTS, WL.
     """
-    from nba_api.stats.endpoints import leaguegamefinder
-
-    df = leaguegamefinder.LeagueGameFinder(
-        season_nullable=season,
-        season_type_nullable="Regular Season",
-        league_id_nullable="00",
-        timeout=timeout,
-    ).get_data_frames()[0]
-
     by_game: dict[str, dict] = {}
-    for row in df.itertuples(index=False):
+    for row in rows:
         m = MATCHUP_AWAY.match(row.MATCHUP) or MATCHUP_HOME.match(row.MATCHUP)
         if not m:
             continue
@@ -53,6 +44,10 @@ def nba_games(season: str, *, timeout: int = 60) -> list[dict]:
             "et_date": str(row.GAME_DATE)[:10],
             "away": away.lower(),
             "home": home.lower(),
+            "away_name": nick.get(away.lower(), ""),
+            "home_name": nick.get(home.lower(), ""),
+            "away_place": place.get(away.lower(), ""),
+            "home_place": place.get(home.lower(), ""),
         })
         # PTS/WL arrive per team row; attribute by which side this row is.
         # Defaulting a non-match to "home" silently wrote BOTH rows into the home
@@ -73,11 +68,51 @@ def nba_games(season: str, *, timeout: int = 60) -> list[dict]:
         g[f"{side}_pts"] = int(row.PTS) if row.PTS is not None else None
         if row.WL == "W":
             g["winner"] = side
-    # keep only games where both team rows were present and a winner resolved
-    return [
-        g for g in by_game.values()
-        if g.get("winner") and g.get("away_pts") is not None and g.get("home_pts") is not None
-    ]
+    # Keep only games where both team rows were present and a winner resolved,
+    # and SORT. LeagueGameFinder returns newest first, so the unsorted order
+    # made `--limit 200` census the LAST 200 games of the season while the flag
+    # claimed to take the earliest. Sorted output also makes resumption and the
+    # stride slice reproducible, and matches nhl.nhl_games.
+    return sorted(
+        (g for g in by_game.values()
+         if g.get("winner") and g.get("away_pts") is not None
+         and g.get("home_pts") is not None),
+        key=lambda g: (g["et_date"], g["game_id"]),
+    )
+
+
+def nba_team_labels() -> tuple[dict[str, str], dict[str, str]]:
+    """({abbr: nickname}, {abbr: city}) from nba_api's OFFLINE static table.
+
+    Not from the game rows, which carry only full names like "Los Angeles
+    Lakers". The abbreviation resolver joins on these, so they have to be exact.
+    """
+    from nba_api.stats.static import teams as static_teams
+
+    static = static_teams.get_teams()
+    return ({t["abbreviation"].lower(): t["nickname"] for t in static},
+            {t["abbreviation"].lower(): t["city"] for t in static})
+
+
+def nba_games(season: str, *, timeout: int = 60) -> list[dict]:
+    """One row per GAME, with away/home resolved and the independent winner.
+
+    Returns dicts: game_id, et_date, away, home, away_name, home_name,
+    away_place, home_place, winner ('away'|'home'), away_pts, home_pts.
+
+    The winner field is the E1 label-agreement source: it is independent of
+    Polymarket, which is the whole point.
+    """
+    from nba_api.stats.endpoints import leaguegamefinder
+
+    nick, place = nba_team_labels()
+    df = leaguegamefinder.LeagueGameFinder(
+        season_nullable=season,
+        season_type_nullable="Regular Season",
+        league_id_nullable="00",
+        timeout=timeout,
+    ).get_data_frames()[0]
+    return games_from_rows(df.itertuples(index=False), nick, place)
 
 
 def slug_candidates(sport: str, game: dict,

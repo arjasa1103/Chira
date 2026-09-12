@@ -140,9 +140,9 @@ def closing_price(client: Client, market: dict) -> dict:
             # ["0.5","0.5"] sums to exactly 1.0, so a complementarity-first
             # ordering made this unreachable and silently labelled every
             # postponed game an away win. The sum check is kept HERE too, so a
-            # non-complementary equal pair (e.g. ["0.3","0.3"]) is reported as
-            # malformed rather than mislabelled "postponed" on the census
-            # reconciliation line.
+            # non-complementary equal pair (e.g. ["0.3","0.3"]) falls through to
+            # outcome_prices_not_complementary rather than being mislabelled
+            # "postponed" on the census reconciliation line.
             elif (abs(vals[0] - vals[1]) < TIE_TOL
                   and abs(vals[0] + vals[1] - 1.0) < COMPLEMENTARITY_TOL):
                 out["market_winner"] = None

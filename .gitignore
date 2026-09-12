@@ -22,3 +22,8 @@ cache/
 .DS_Store
 .idea/
 .vscode/
+
+# Coverage artifacts (was committed by mistake in week 1)
+.coverage
+coverage.xml
+htmlcov/

@@ -1,0 +1,91 @@
+"""Run the census (or a limited slice of it) and the week-2 validation gate.
+
+    .venv/bin/python scripts/run_census.py --sport nba --season 2024-25 --limit 200
+
+Idempotent: re-running skips games already settled in the store, so this is
+also the resume command. `--limit` is the gate handle; run 200 games, read the
+gate report, and only then spend the remaining ~15,000 requests.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import pathlib
+import sys
+
+sys.path.insert(0, "src")
+from chira.cache import Cache
+from chira.census import (
+    load_abbr_map,
+    manifest,
+    map_fingerprint,
+    reprobe_misses,
+    run_census,
+)
+from chira.gate import format_report, run_gate
+from chira.http import Client
+from chira.nhl import nhl_games
+from chira.schedule import nba_games
+from chira.store import Store
+from chira.telemetry import Telemetry, run_id
+
+ABBR = "data/abbr_map_resolved.json"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--sport", choices=("nba", "nhl"), required=True)
+    ap.add_argument("--season", required=True)
+    ap.add_argument("--limit", type=int, default=None,
+                    help="census only N unsettled games (the gate slice)")
+    ap.add_argument("--strategy", choices=("stride", "head"), default="stride",
+                    help="stride spreads the slice across the season; head takes "
+                         "the earliest games (which for NHL have no markets at all)")
+    ap.add_argument("--store", default="data/census.duckdb")
+    ap.add_argument("--cache", default=".http-cache")
+    ap.add_argument("--log", default="data/logs/census.jsonl")
+    ap.add_argument("--no-reprobe", action="store_true")
+    ap.add_argument("--gate-only", action="store_true",
+                    help="skip fetching; just re-run the gate on what is stored")
+    args = ap.parse_args()
+
+    abbr_map = load_abbr_map(ABBR, args.season, args.sport)
+    store = Store(args.store)
+
+    if not args.gate_only:
+        client = Client(cache=Cache(args.cache, abbr_version=map_fingerprint(abbr_map)))
+        games = (nba_games(args.season) if args.sport == "nba"
+                 else nhl_games(client, args.season))
+        rid = run_id(f"census-{args.sport}")
+        tel = Telemetry(args.log, rid, manifest(args.sport, args.season, games, abbr_map,
+                                                limit=args.limit,
+                                                strategy=args.strategy))
+        store.start_run(rid, tel.manifest)
+        counts = run_census(client, store, tel, args.sport, args.season, games,
+                            abbr_map, limit=args.limit, strategy=args.strategy,
+                            verbose=True)
+        print(f"census: {counts}")
+        if not args.no_reprobe:
+            rp = reprobe_misses(client, store, tel, args.sport, args.season,
+                                games, abbr_map)
+            print(f"reprobe: {rp}")
+        store.finish_run(rid)
+        tel.close(**counts)
+        print(f"http: {dict(client.stats)}")
+        print(f"cache: {dict(client.cache.stats)}")
+
+    # A slice run cannot satisfy the full-pass balance; the gate checks the
+    # instant-by-instant invariants instead. See store.assert_reconciled.
+    result = run_gate(store, args.sport, args.season,
+                      require_complete=args.limit is None)
+    print()
+    print(format_report(result))
+    out = pathlib.Path(f"data/gate-{args.sport}-{args.season}.json")
+    out.write_text(json.dumps(result, indent=2, sort_keys=True))
+    print(f"\nwrote {out}")
+    store.close()
+    return 0 if result["passed"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
