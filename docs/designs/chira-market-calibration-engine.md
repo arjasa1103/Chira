@@ -63,7 +63,7 @@ landing here, which is why the gotchas below are load-bearing.
 | Auth | Gamma + CLOB need none. **Rate limits unmeasured — see Open Q5** |
 | NBA slug | `nba-<awayAbbr>-<homeAbbr>-<YYYY-MM-DD>`, question `"Away vs. Home"` |
 | NHL slug | `nhl-<awayAbbr>-<homeAbbr>-<YYYY-MM-DD>` — verified `nhl-wsh-chi-2026-01-09` |
-| **Slug date is US-EASTERN, not UTC — confirmed in BOTH EST and EDT** | `nhl-wsh-chi-2026-01-09` → `gameStartTime 2026-01-10 01:00 UTC`. All three NBA games slugged `2025-11-30` have UTC dates of `2025-12-01`. **EDT re-probe with `zoneinfo("America/New_York")`: 8 of 8 Oct-2025 games match the ET date, only 4 of 8 match the UTC date.** The rule holds across the DST boundary |
+| **Slug date is USUALLY ET but NOT ALWAYS — see week-1 correction below** | ~~"confirmed in BOTH EST and EDT"~~ **This row was wrong.** The 11-game sample behind it sat entirely on one side of a convention change. A 90-game stratified probe (week 1) found the UTC date used for some games in **Oct-Nov 2025 only** (Oct: 2 ET/1 UTC; Nov: 6/3; Dec onward and all of 2024-25: 100% ET). Not sport- or hour-based. **Always probe both the ET date and ET+1** — ET alone loses ~12% of early-2025-26 games as false "no market" |
 | NHL abbreviations are irregular, badly | Observed: `sj` (not sjs), `mon` (not mtl), `cal` (not cgy), `tb` (not tbl), and a bare `utah`. **This is why the map must be learned by probing, not guessed** |
 | Tipoff | `gameStartTime`, format `"2025-12-01 02:00:00+00"` (space separator, `+00` offset) |
 | Ground truth | `outcomePrices` = `["1","0"]`/`["0","1"]` on resolved markets |
@@ -93,8 +93,10 @@ extraction; that was deleted as an overclaim, since three favorites winning has 
   from `gameStartTime`. If you must convert, use the `America/New_York` zone with DST, not
   a fixed -5 offset, or March and early-November games break. (The probes behind this
   finding originally used a fixed -5 and landed on two EST dates; a follow-up probe with
-  `zoneinfo("America/New_York")` confirmed the rule on 8 of 8 EDT-period October games, so
-  both the finding and the DST-aware method are now verified.) A UTC-derived date misses the
+  `zoneinfo("America/New_York")` confirmed the rule on 8 of 8 EDT-period October games.
+  **Week-1 correction: that 8/8 result was real but the conclusion "always ET" was not.**
+  Those games were all Oct 2025 NHL, and a wider 90-game probe found a mixed convention in
+  Oct-Nov 2025. Emit both date candidates; see `chira.schedule.slug_candidates`.) A UTC-derived date misses the
   entire evening slate, which is most games: the highest-impact silent-undercounting bug
   available.
 - `interval=max` with fine fidelity silently returns HTTP 200 + empty `history[]` for
@@ -579,8 +581,11 @@ Corrections applied after live probing during the CEO phase. The plan file
 4. **Abbreviation conventions drift across seasons** (`no` in 2023 vs `nop` in 2025), so
    the learn-the-map probe runs per season.
 5. **`statsmodels` removed as an option.** numpyro outright.
-6. **The favorite-longshot direction may not exist in these categories.** Literature
+6. **The slug date convention is NOT always ET (week-1 correction).** Superseded item 4
+   below and the Verified-Findings row above. A 90-game probe found the UTC date in use for
+   part of Oct-Nov 2025. Slug construction must emit two candidates.
+7. **The favorite-longshot direction may not exist in these categories.** Literature
    reports no general longshot bias on Polymarket, with bias concentrated in specific
    categories, so the integrity gate must accept "no detectable tilt" as a pass.
-7. **Prior art exists and was uncited.** Reichenbach & Walther (SSRN 5910522); arXiv
+8. **Prior art exists and was uncited.** Reichenbach & Walther (SSRN 5910522); arXiv
    2602.19520; Wilkens 2026; arXiv 2410.21484.
