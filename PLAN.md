@@ -154,20 +154,41 @@ Modules: `cache.py`, `store.py` + `schema.sql`, `telemetry.py`, `census.py`, `ga
   re-probed once with the cache bypassed.
 - **Telemetry (T13).** One flushed JSONL line per game plus a manifest carrying the git
   hash, date window and map fingerprint.
-- **The census validation gate PASSES on both sports** (NBA 200 games, NHL 161), with
-  361 more independent confirmations of the orientation chain on top of week 1's 128.
+- **The census validation gate PASSES on all four sport-seasons.** 1,200 games attempted,
+  **960 priced, 960/960 label agreement, zero disagreements**, complementarity clean on
+  all 960. That is 960 independent confirmations of the orientation chain on top of
+  week 1's 128.
 
-Three findings that change later phases:
+| Sport | Season | Attempted | Priced | Label agreement | `et` / `et_plus_1` |
+|---|---|---|---|---|---|
+| NBA | 2024-25 | 400 | 400 (100%) | 400/400 | 400 / 0 |
+| NHL | 2024-25 | 400 | 161 (40%) | 161/161 | 161 / 0 |
+| NBA | 2025-26 | 200 | 199 (99.5%) | 199/199 | 184 / 15 |
+| NHL | 2025-26 | 200 | 200 (100%) | 200/200 | 189 / 11 |
+
+Five findings that change later phases:
 
 1. **Polymarket's NHL coverage starts in December 2024.** All 234 attempted
    October-November games returned `no_market` and all 234 survived a cache-bypassed
-   re-probe. The early-season stratum for headline 2 does not exist for NHL 2024-25.
-2. **NHL per-game volume is ~5x thinner than NBA** ($73k vs $374k mean, both 2024-25).
-   Pooling sports would make "liquidity" and "sport" the same cut.
-3. **`schedule.nba_games` was unsorted.** `LeagueGameFinder` returns newest first, so
+   re-probe. The early-season stratum for headline 2 does not exist for NHL 2024-25,
+   and NHL's usable 2024-25 n is roughly 1,000, not 1,312.
+2. **The second date convention is load-bearing, and only in 2025-26.** 26 of 960 games
+   hit via `et_plus_1` and would otherwise have been booked `no_market`; zero of 561
+   games in 2024-25 needed it. **Correction to week 1:** the upstream slug bug was
+   thought "fixed around late November 2025", but all 11 NHL hits are in December 2025,
+   so the change is not simultaneous across sports.
+3. **Measured liquidity, and it is not what the plan assumed.** Median terminal volume:
+   NBA $313k (2024-25) -> $1.88M (2025-26); NHL $58k -> $614k. The 2025-26 NBA figure
+   confirms the plan's ~$1.9M, but 2024-25 measures $313k rather than the assumed
+   ~$500k, so the between-season contrast is LARGER than planned. NHL is ~5x thinner
+   than NBA in both seasons, which means pooling sports would make "liquidity" and
+   "sport" the same cut, on top of the documented liquidity/season-regime confound.
+4. **`schedule.nba_games` was unsorted.** `LeagueGameFinder` returns newest first, so
    `--limit 200` censused the LAST 200 games of the season while the flag said earliest.
    Both schedule sources now return `(et_date, game_id)` order, and limited runs default
    to a stride slice across the season.
+5. **The last quote lands closer to tipoff in 2025-26** (mean 43s vs 56s). A property of
+   the closing-price construction, better recorded now than discovered in week 9.
 
 ## Phase 0 — Foundations
 

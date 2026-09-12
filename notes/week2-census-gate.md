@@ -17,18 +17,64 @@ The last two test the tests. An assert nobody has watched fail is an assert
 nobody knows is wired up, and a 100% agreement rate is equally consistent with
 a perfect join and a degenerate one.
 
-## Results
+## Results: all four sport-seasons PASS
 
-Both sports pass. Numbers are from `data/gate-<sport>-<season>.json`.
+Numbers are from `data/gate-<sport>-<season>.json`.
 
-| Sport | Season | Priced | Label agreement | Complementarity | Shuffled vs chance |
+| Sport | Season | Attempted | Priced | Label agreement | Shuffled vs chance |
 |---|---|---|---|---|---|
-| NBA | 2024-25 | 200 | 200/200 agree | 200/200 ok | 0.500 vs 0.500 |
-| NHL | 2024-25 | 161 | 161/161 agree | 161/161 ok | 0.516 vs 0.507 |
+| NBA | 2024-25 | 400 | 400 (100%) | 400/400 | 0.505 vs 0.505 |
+| NHL | 2024-25 | 400 | 161 (40%) | 161/161 | 0.516 vs 0.507 |
+| NBA | 2025-26 | 200 | 199 (99.5%) | 199/199 | 0.500 vs 0.502 |
+| NHL | 2025-26 | 200 | 200 (100%) | 200/200 | 0.496 vs 0.502 |
 
-**361 independent confirmations of the orientation chain**, on top of week 1's
-128. A flip would have mirrored the calibration curve about 0.5 and looked like
-a finding.
+**960 priced games, 960 agreements, zero disagreements.** Complementarity is
+clean on all 960. That is 960 independent confirmations of the orientation
+chain on top of week 1's 128. A flip would not have crashed: it would have
+mirrored the calibration curve about 0.5 and looked like a finding.
+
+Store state after the four slices: 5,084 scheduled (matching the plan's
+arithmetic exactly), 960 priced, 240 misses, 3,884 pending.
+
+### The second date convention earns its keep, and only in 2025-26
+
+| Sport | Season | `et` | `et_plus_1` | Months where `et_plus_1` fired |
+|---|---|---|---|---|
+| NBA | 2024-25 | 400 | 0 | — |
+| NHL | 2024-25 | 161 | 0 | — |
+| NBA | 2025-26 | 184 | 15 | 2025-10 (5), 2025-11 (10) |
+| NHL | 2025-26 | 189 | 11 | 2025-12 (11) |
+
+**26 of 960 games would have been recorded as `no_market` without the second
+candidate**, and zero of 561 games in 2024-25 needed it. This is the week-1
+slug-convention correction confirmed on census data rather than on a 90-game
+probe.
+
+**One correction to week 1.** The week-1 note said the upstream slug bug looked
+"fixed around late November 2025". NBA agrees, but **all 11 NHL `et_plus_1`
+hits are in December 2025**, so the convention change is not simultaneous
+across sports. Treat the ET/UTC window as sport-specific and keep probing both
+candidates for the whole of 2025-26.
+
+### Per-game liquidity, measured
+
+Median terminal volume on priced games:
+
+| Sport | 2024-25 | 2025-26 | Ratio |
+|---|---|---|---|
+| NBA | $313k | $1.88M | 6.0x |
+| NHL | $58k | $614k | 10.6x |
+
+The plan's 2025-26 NBA figure (~$1.9M) is confirmed. Its 2024-25 figure
+(~$500k) came from a small probe and **measures $313k here**, so the
+between-season liquidity contrast is larger than planned, not smaller. NHL is
+roughly 5x thinner than NBA in BOTH seasons, which is the part that matters for
+headline 2: pooling sports would make "liquidity" and "sport" the same cut, on
+top of the already-documented liquidity/season-regime confound.
+
+Mean seconds between the last quote and tipoff also moved, 56s in 2024-25 to
+43s in 2025-26. Small, but it is a property of the closing-price construction
+and belongs in the writeup rather than being discovered later.
 
 ## Two coverage findings that change what the charts will show
 
@@ -74,9 +120,9 @@ The first NHL gate slice took the first 200 games **in date order** and returned
    while the flag said it took the earliest. Both schedule sources now return
    `(et_date, game_id)` order.
 
-## Price sanity on the 361 priced games
+## Price sanity on the first 361 priced games
 
-| | NBA | NHL |
+| | NBA 2024-25 | NHL 2024-25 |
 |---|---|---|
 | mean `p_home_close` | 0.550 | 0.543 |
 | range | 0.085 - 0.966 | 0.245 - 0.805 |
@@ -89,7 +135,6 @@ the census as it did in the probe.
 
 ## What was NOT established
 
-- **Nothing about 2025-26 coverage.** Both gate runs are 2024-25 only.
 - **No full-pass reconciliation yet.** Both runs are slices, so `balanced` is
   False by construction and the gate checks the instant-by-instant invariants
   (no orphans, no double-counting, pending never negative) instead. The
