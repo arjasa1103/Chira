@@ -53,6 +53,20 @@ coverage chart deciding the primary sport.
 3. **Only an unresolved side spends attempt budget.** Charging a resolved
    opponent starved teams whose games all faced already-confirmed opponents.
 
+## Regenerating it
+
+`data/` is gitignored (the Polymarket ToS question, E18, is still unresolved and
+gates any data release), so the resolved map is not in the repo. It costs one
+command and about 40 seconds:
+
+```bash
+.venv/bin/python scripts/resolve_abbrs.py
+```
+
+That is ~91 `/events?slug=` probes plus 64 NHL schedule calls and 2 nba_api
+calls. `census.load_abbr_map` REFUSES to load a map with any unresolved team,
+so a half-finished run cannot silently book a whole franchise as "no market".
+
 ## What was NOT established
 
 - **Only the two usable seasons.** 2023-24's documented `no` (New Orleans) is
