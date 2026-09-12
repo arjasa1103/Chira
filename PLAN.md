@@ -3,7 +3,74 @@
 
 Branch: main
 Design doc: [docs/designs/chira-market-calibration-engine.md](docs/designs/chira-market-calibration-engine.md)
-Status: DRAFT, awaiting review
+Status: REVIEWED (autoplan: CEO + Eng), User Challenges resolved
+**HARD DEADLINE: end of November 2026.** Semester project. ~11 weeks from 2026-09-11.
+
+## Deadline, and what that excludes
+
+**End of November 2026 is a hard deadline.** This is a semester project whose purpose is to
+learn data mining and ML. Both a **model** and a **publishable artifact** must land before
+December. The startup/product path is explicitly later; the artifact may stay private as a
+job-application portfolio piece.
+
+**Phase 6 (forward capture / the availability hypothesis) is EXCLUDED from the December
+deliverable, by arithmetic rather than preference.** Per sport: the NBA 2026-27 season tips
+late October, giving **~5 weeks** of forward data by end of November; the NHL season starts
+earlier in October, giving **~8 weeks**. Both fall far short of a 200-400 status-change game
+minimum-n gate, so the conclusion holds for each sport independently.
+
+**Note this retires the original justification for the second sport.** NHL was chosen partly
+because the late-announced starting goalie was a cleaner version of the late-news edge
+hypothesis. With availability dropped from the December deliverable, **NHL is now justified
+by headline 2's per-stratum n instead.** That makes NHL load-bearing for the co-headline, so
+it is NOT the right thing to cut if week 3 runs long. The collector still runs from
+late October so the 2027 option stays open, but its results are a follow-up post and are
+not part of what ships this semester.
+
+### Eleven-week schedule
+
+**STAGE THE DELIVERABLE, NOT THE WORK.** The original schedule put the entire artifact in
+weeks 10-11, behind nine consecutive weeks of critical path with no float. Any slip in weeks
+1-9 would not have delayed December, it would have **deleted the artifact**, because the
+model cannot be dropped once the holdout is opened but a writeup can always be "finished
+later." Corrected: headline 2 ships as a complete, frozen, publishable artifact at the end of
+week 6. Weeks 7-11 then ADD headline 1 as a second section to a document that already exists
+and is already shippable. This keeps Approach B and cuts nothing; it converts
+"ship or nothing" into "ship more or ship less."
+
+| Weeks | Work | Gate |
+|---|---|---|
+| 1 (Sep 15-21) | Rate-limit probe, per-season abbr maps, **the modeling pre-commit (see A4)**, noise-floor simulation **run at per-stratum n**, Polymarket **ToS check** (20 min), then `PREREGISTRATION.md` | Pre-registration committed LAST |
+| 2 (Sep 22-28) | `uv` skeleton, HTTP layer + cache hardening, misses table, idempotency, telemetry, NHL endpoint named/probed/vendored. **Census validation gate on the first 200 games**: label agreement, complementarity, reconciliation fault-injection, shuffled-join | Gate passes BEFORE the full pull |
+| 3 (Sep 29-Oct 5) | Full census both sports (~15,300 requests), immutable snapshot release | `scheduled == priced + misses` balances |
+| 4 (Oct 6-12) | Charts 1 and 2, synthetic scorer. **Prices-only collector** + dead-man's switch + dry run | Coverage chart decides primary sport |
+| 5-6 (Oct 13-26) | Headline-2 analysis (T9), the 7 designated P1 tests, **then WRITE, PUBLISH AND FREEZE the artifact v1**: headline 2 + dataset release + prior-art section + GitHub Pages | **An artifact exists and is public** |
+| 7 (Oct 27-Nov 2) | Feature store with `ASOF JOIN`. One timeboxed slot to prove the availability source against live regular-season games | Availability: proven or dropped |
+| 8-9 (Nov 3-16) | Model, **full dress rehearsal on dev producing every table and figure**, then sealed holdout opened ONCE | Holdout opened once, never reopened |
+| 10-11 (Nov 17-30) | Add headline 1 as artifact v2. Remaining tests "if time" | v2 published |
+
+**Honest effort accounting** (the earlier "~6 hours of CC time" figure was misleading and is
+corrected here):
+
+- The 17 P1 tasks across both phases sum to **~5.8h CC / ~55h human**. That is the *review
+  remediation backlog only*.
+- It contains **no line for the actual build**: HTTP layer, census runner, DuckDB store,
+  feature store, numpyro model, scoring module, charts, or writeup. Those live in the
+  Phase 0-5 bodies and are **unestimated**.
+- **Capacity assumption: ~15 human hours/week** alongside coursework. Week 1 alone is
+  realistically 25-35 hours, so week 1 is the second slip risk after week 4.
+- **If sustained capacity proves to be under ~15h/week, the correct cut is one sport (drop
+  NHL) or the model, NOT the artifact and NOT the tests.** Dropping NHL costs headline 2 its
+  per-stratum n, so prefer dropping the model and shipping v1 only.
+
+**Collector, split across two slots** (the single week-4 slot was unexecutable: proving an
+availability status *change* requires regular-season injury reports, and the NBA season tips
+late October, after week 4 ends Oct 12):
+- **Week 4:** prices-only collector, dead-man's switch (external monitor alerting on ABSENCE
+  of a success ping), keepalive against the 60-day Actions auto-disable, pre-season dry run.
+- **Week 7:** one timeboxed slot to prove an availability source against live games. If it
+  cannot be proven in that slot, **collect prices only and drop availability entirely.**
+- Note the dead-man's switch needs a third-party monitoring account; pick one in week 4.
 
 ## Goal
 
@@ -13,6 +80,47 @@ a model trained only on public schedule and team data, measured against a real-m
 market that prices $1M-$2M per game.
 
 Portfolio artifact first. The output is a published writeup with charts, not just a repo.
+
+**Two independent headline results, not one** (User Challenge 2, accepted):
+
+1. **Model calibration vs the closing line.** The price-free model's Brier and log loss
+   beside the market's on the sealed holdout, plus the nested test. Expected outcome is a
+   0.02-0.03 Brier deficit, decomposed and explained.
+2. **Where the market is miscalibrated.** The market's own calibration stratified by
+   liquidity, time-to-close, and early season. Published research reports no *general*
+   favorite-longshot bias on Polymarket with the bias **concentrated in specific
+   categories** (arXiv 2602.19520; Reichenbach & Walther, SSRN 5910522), so this question
+   has a real chance of a positive answer. The two usable seasons differ 4x in per-game
+   liquidity ($500k vs $1.9M), which is a natural experiment already being collected.
+
+Result 2 is deadline insurance because it **ships first** (end of week 6) and is independent
+of whether the model beats the line. Task T9 is **promoted from P2 to P1** — it is a headline
+deliverable, not a nice-to-have.
+
+**Three honest caveats on result 2, all raised by the eng re-review:**
+
+- **It guarantees a measurement, not a finding.** A set of curves always exists. Under the
+  n constraints below, the likely outcome is wide overlapping bands, which is a null with
+  extra steps. It is still the best insurance available, but it is not insurance against a
+  null headline.
+- **Liquidity is confounded with season regime.** A low-liquidity stratum built by pooling
+  seasons is mostly 2024-25 games, so "liquidity effect" and "2024-25 effect" are the same
+  cut. The plan documented this confound for the model and not for this headline.
+  **Stratify on within-season volume deciles** so liquidity varies at fixed regime, and
+  report the between-season contrast separately as an explicitly confounded descriptive.
+- **Per-stratum n is thin, in exactly the regime the plan condemned.** If ECE at n=5,084 is
+  noise-dominated, per-stratum ECE at n≈850 has ~2.4x the standard error. And ten
+  equal-count bins at ~85 games/bin gives SE ≈ 0.054, while NBA/NHL moneylines concentrate
+  in roughly 0.35-0.80, so the tail bins where the literature reports bias hold a handful of
+  games each. **The week-1 noise-floor simulation must be run at per-stratum n, and the
+  minimum n per stratum pre-registered from it, before the strata are chosen.**
+- **Volume is terminal cumulative volume**, which is outcome-correlated (close games attract
+  volume) and mutable. Conditioning calibration on it is selection on a variable correlated
+  with outcome uncertainty. State the definition in the pre-registration and report the
+  caveat.
+- **Family-wise policy is mandatory here.** With ~24 strata cells an uncorrected sweep
+  produces a "finding" by construction. One primary directional test; everything else
+  exploratory.
 
 ## Non-negotiable constraints
 
@@ -116,6 +224,14 @@ Answers whether the project is viable, and in which sport.
 
 ## Phase 4 — Model
 
+> **A4 PRE-COMMIT (week 1, and it goes in `PREREGISTRATION.md`): deterministic pre-game
+> ratings entering the hierarchical logistic as a FIXED COVARIATE.** "Elo-like" and
+> "state-space" are two different cost classes: a deterministic Elo computed outside the
+> model is free, while a latent walk per team per game is ~75k latent variables on 5,084
+> observations, with divergences that T5 converts into hard failures. One fits in the
+> available weeks; one does not. Choose the deterministic version. Interpretability is
+> preserved and MCMC stays cheap.
+>
 > **RESOLVED by the eng review — adopt (a), a rolling pre-game team-strength state**
 > (Elo-like / state-space) updated game by game. Sealing 2025-26 leaves one dev season, so
 > the cross-season rolling-origin protocol is impossible. Option (c), team-season intercepts
@@ -167,8 +283,13 @@ Answers whether the project is viable, and in which sport.
 
 The only path to the availability hypothesis.
 
-- [ ] **Poll every 5-10 minutes across the daily game window**, or trigger one run per game
-      from that day's schedule. A nightly job captures nothing that deserves the name
+- [ ] **Scheduling, corrected by the eng review (the earlier 5-10 minute polling was
+      unaffordable: ~130 runs/day x ~180 days exceeds the free Actions allowance and the
+      collector dies from quota, not from the delay the plan models).** Use **one
+      long-running job per day, chained 2-3 times**, or a cheap always-on host. Pin the cron
+      in **UTC with an explicit `America/New_York` conversion in code** — the season window
+      and daily window are ET concepts, so a UTC cron clips the first or last game of the
+      slate across DST, the same bug class already fixed for slugs. A nightly job captures nothing that deserves the name
       "closing": tipoffs are staggered and a closing snapshot must land within minutes of
       each `gameStartTime`.
 - [ ] Record the **actual snapshot timestamp** on every row so staleness is measurable.
@@ -179,8 +300,10 @@ The only path to the availability hypothesis.
 - [ ] GitHub Actions cron is best-effort: commonly delayed 10+ minutes, dropped under load,
       auto-disabled after 60 days of repo inactivity. Treat delay as measured, not assumed
       away.
-- [ ] **Pre-register the availability test on the status-change subset with a minimum-n
-      gate.** Power: 200-400 status-change games gives a paired-Brier SE near 0.0015-0.002
+- [ ] **Pre-register the availability test in a SEPARATE, LATER-HASHED ADDENDUM**, committed
+      only once the source is proven in week 7. It must not sit in the week-1
+      `PREREGISTRATION.md`, because week 1 would be pre-registering a test whose data source
+      week 7 may delete. Gate it on the status-change subset with a minimum-n gate. Power: 200-400 status-change games gives a paired-Brier SE near 0.0015-0.002
       and an MDE near 0.004-0.005, plausibly above the true effect. **This test may not
       resolve even after a full season.** If the gate is not met, report as
       collection-in-progress, never as evidence of market efficiency.
@@ -212,7 +335,9 @@ leakage can bias either direction and the gap does not decompose into leakage pl
 ## CI/CD and distribution
 
 - [ ] GitHub Actions: tests and lint on push.
-- [ ] Separate scheduled workflow for the Phase 6 collector, per-game or short-interval.
+- [ ] Separate scheduled workflow for the Phase 6 collector: one long job per day chained
+      2-3 times, UTC cron with in-code ET conversion. Credentials out of any fork-triggerable
+      workflow; scope the store token append-only.
 - [ ] Published writeup with charts on GitHub Pages. A repo alone is not a portfolio piece.
 
 ---
@@ -799,6 +924,8 @@ in this repo is being rebuilt, because nothing in this repo exists yet.
 | Soccer, tennis, cricket | Coverage confirmed dense but out of the two-sport scope; the pipeline generalizes if wanted later |
 | Live/in-game markets | Different data shape, different question |
 | Any staking or bet-placement system | Not the project, and not a thing this repo should contain |
+| Phase 6 RESULTS (availability hypothesis) | Excluded from the December deliverable by arithmetic: ~5 weeks of forward data by end of November vs a 200-400 game minimum-n gate. Collector runs; results are a 2027 follow-up |
+| Availability source work beyond one week-4 slot | Timeboxed. If the source cannot be proven in that slot, collect prices only. Protects model weeks |
 | Neural representation transfer | Vetoed by the interpretability constraint |
 | Paid data vendors | Unnecessary; the free API returns full minute history (vendor claim to the contrary is false) |
 
@@ -809,7 +936,7 @@ in this repo is being rebuilt, because nothing in this repo exists yet.
 | E1 | Publish the census as a documented public dataset release | ~4h / ~20min | **ACCEPTED** | P1, P2 |
 | E2 | Stratify the calibration curve by liquidity and time-to-close | ~3h / ~15min | **ACCEPTED** | P1, P2 |
 | E3 | Fit a GBM as a reported benchmark *ceiling*, not a shipped model | ~1d / ~30min | **ACCEPTED** | P1 |
-| E4 | Immutable snapshot release in week 1; all phases run against it | ~3h / ~15min | **ACCEPTED** | P2 |
+| E4 | Immutable snapshot at end of census (week 3); all phases run against it | ~3h / ~15min | **ACCEPTED** | P2 |
 | E5 | Cross-validate the census against the public GitHub datasets | ~3h / ~15min | **ACCEPTED** | P4 |
 | E6 | Prior-art positioning section in the writeup | ~4h / ~20min | **ACCEPTED** | P1 |
 | E7 | Decouple Phase 6 from project completion | ~0 / ~0 | **ACCEPTED** | P6 |
@@ -853,7 +980,7 @@ The design doc's architecture description now conflicts with this review on two 
   - Surfaced by: 0A — `nba-lal-no-2023-12-07` vs `nba-nop-lal-2025-11-30`; conventions drift across seasons
   - Files: ingest/abbr.py
   - Verify: unit test asserts `no` and `nop` both resolve in their own era; unknown abbr raises
-- [ ] **T4 (P1, human: ~4h / CC: ~25min)** — tests — Build the 10-row test plan from Section 6, 3 designated P1
+- [ ] **T4 (P1, human: ~20-30h / CC: ~2h)** — tests — Build the 23-row test plan (superseded the 10-row estimate; several rows need fixtures or fault injection). **Only the 7 designated P1 tests are required for December**; the other 16 are explicitly "written if time"
   - Surfaced by: Section 6 Test Review — plan specifies exactly one test for a numerically-critical system
   - Files: tests/
   - Verify: ET/DST boundary test, closing-price extraction test, Murphy-sums-to-Brier test all green
@@ -865,7 +992,7 @@ The design doc's architecture description now conflicts with this review on two 
   - Surfaced by: Section 4 F6 — re-run after partial failure double-inserts price rows
   - Files: store/schema.sql, ingest/run.py
   - Verify: chaos test — kill at a random request index, resumed run is byte-identical
-- [ ] **T7 (P2, human: ~3h / CC: ~15min)** — ingest — Snapshot to an immutable Parquet release in week 1; all phases read the snapshot
+- [ ] **T7 (P2, human: ~3h / CC: ~15min)** — ingest — Snapshot to an immutable Parquet release at the end of the census (week 3, not week 1 — you cannot snapshot data you have not collected); all phases read the snapshot
   - Surfaced by: Section 1 F2 — one unauthenticated third-party endpoint, no contract, multi-month project
   - Files: ingest/snapshot.py, .github/workflows/release.yml
   - Verify: every downstream phase runs with the network disabled
@@ -873,10 +1000,15 @@ The design doc's architecture description now conflicts with this review on two 
   - Surfaced by: Section 8 / Reviewer Concerns — thresholds sit at or below the estimator noise floor and will false-fire
   - Files: scoring/integrity.py, PREREGISTRATION.md
   - Verify: simulated perfectly-calibrated market passes the hard gate; ECE/slope/tilt report against simulated noise bands
-- [ ] **T9 (P2, human: ~4h / CC: ~20min)** — scoring/charts — Stratify the calibration curve by liquidity and time-to-close
+- [ ] **T9 (P1, human: ~12-20h / CC: ~1-2h)** — scoring/charts — Headline-2 stratified calibration: within-season volume deciles, season phase, and time-to-close
   - Surfaced by: 0C-bis Approach C + literature (arXiv 2602.19520: bias concentrated in specific categories)
   - Files: scoring/calibration.py, charts/calibration.py
-  - Verify: per-stratum curves with bootstrap bands; 2024-25 vs 2025-26 reported separately
+  - Verify: pre-registered 2x2 (2 liquidity x 2 season-phase); minimum ~150 games per
+    probability bin with bins merged upward when short; **calibration-slope difference
+    between strata as the single primary directional test**, not a grid of curves;
+    bootstrap resamples GAMES not rows (time-to-close is a repeated measure, four looks at
+    one sample); volume definition frozen in the snapshot with a content hash
+  - Note: earlier estimate of ~4h was 3-5x low, and the promotion from P2 to P1 is applied here
 - [ ] **T10 (P2, human: ~2h / CC: ~10min)** — scoring — Hostile-QA synthetic-market test of the scorer
   - Surfaced by: Section 6 — the instrument is never validated before it judges the market
   - Files: tests/test_scorer_synthetic.py
@@ -1278,6 +1410,78 @@ called from GitHub Actions.
 **Auto-decided (P1):** name the NHL endpoint, probe it, and vendor both schedules to CSV in
 the snapshot release so neither dependency can invalidate a collected census.
 
+## Implementation Tasks (Eng phase)
+
+Synthesized from this phase's findings. These were previously written only to the JSONL
+artifact and not into the plan, which caused the re-review to see 6 P1 tasks instead of 17.
+Corrected here.
+
+- [ ] **E1 (P1, human: ~2h / CC: ~15min)** — tests — Label agreement assert: outcomePrices winner == nba_api box-score winner, and p_home nickname maps to slug home abbr
+  - Surfaced by: Eng Section 1 R2 (conf 9/10): ground-truth label comes from the same third party being benchmarked; orientation flip would mirror the curve about 0.5, not crash
+  - Files: tests/test_label_agreement.py, ingest/label.py
+- [ ] **E2 (P1, human: ~3h / CC: ~20min)** — scoring — Strip all gate authority from market calibration; validate the pipeline only with tests that do not assume calibration
+  - Surfaced by: Eng Section 1 R3 (conf 8/10): gate conflates pipeline validation with the project own finding; miscalibration is ambiguous between a bug and the Approach C headline
+  - Files: scoring/integrity.py, PREREGISTRATION.md
+- [ ] **E3 (P1, human: ~1h / CC: ~10min)** — plan — Reorder Phase 0: the blocking modeling decision and the noise-floor simulation become strict predecessors; PREREGISTRATION.md is the LAST Phase 0 artifact
+  - Surfaced by: Eng Section 1 R1 (conf 9/10): pre-registration is committed before the two decisions that determine its contents
+  - Files: PLAN.md
+- [ ] **E4 (P1, human: ~1d / CC: ~40min)** — model — Adopt a rolling pre-game team-strength state (Elo-like/state-space) instead of team-season intercepts plus random walk
+  - Surfaced by: Eng Section 2 R7 (conf 8/10) converging with CEO subagent finding 12: with two seasons the random walk posterior mean IS the shrunk dev-season estimate, so it reintroduces the problem it was meant to fix
+  - Files: model/state.py, PLAN.md
+- [ ] **E5 (P1, human: ~3h / CC: ~20min)** — tests — Leakage canary that is allowed to fail: fit with final margin leaked, assert Brier collapses below 0.05
+  - Surfaced by: Eng Section 2 R8 (conf 8/10): the as_of truncation test validates the read path only; without a canary, no-leakage-detected is unfalsifiable
+  - Files: tests/test_leakage_canary.py
+- [ ] **E6 (P1, human: ~4h / CC: ~25min)** — ingest — Harden the cache: content-type plus schema check before caching, cache key versioned by abbr-map, non-JSON 200 raises and is never a miss, second-pass re-probe of every no_market
+  - Surfaced by: Eng Section 2 R9 (conf 8/10): WAF challenge pages return HTTP 200 with HTML and become fabricated misses that keep the reconciliation assert balanced
+  - Files: ingest/cache.py, ingest/fetch.py
+- [ ] **E7 (P1, human: ~4h / CC: ~25min)** — collector — Name and prove the availability data source before late Oct 2026; one day of end-to-end capture diffing consecutive pulls to observe a timestamped status change
+  - Surfaced by: Eng Section 1 R4 (conf 9/10): Phase 6 is titled the only path to the availability hypothesis and specifies only price capture
+  - Files: collector/availability.py, PLAN.md
+- [ ] **E8 (P1, human: ~3h / CC: ~20min)** — collector — Dead-man switch: external monitor alerts on ABSENCE of a success ping, plus keepalive against the 60-day Actions auto-disable
+  - Surfaced by: Eng Section 1 R5 (conf 9/10): an in-workflow heartbeat cannot report its own absence, which is the most likely failure mode
+  - Files: .github/workflows/collector.yml, collector/heartbeat.py
+- [ ] **E9 (P1, human: ~3h / CC: ~20min)** — store — Implement point-in-time feature assembly with DuckDB native ASOF JOIN and model announcement lag as availability_delay; keep the mandatory as_of API discipline
+  - Surfaced by: Eng Step 0 Search check, [Layer 1]: DuckDB has a native ASOF JOIN purpose-built for as-of lookups; the plan hand-rolls it
+  - Files: store/features.py
+- [ ] **E10 (P1, human: ~2h / CC: ~15min)** — ingest — Name, probe, and vendor the NHL schedule source; never call nba_api from Actions (stats.nba.com blocks cloud egress)
+  - Surfaced by: Eng Section 2 addendum (conf 9/10): NHL schedule source is never named yet half the census depends on it
+  - Files: ingest/schedule.py, PLAN.md
+- [ ] **E11 (P1, human: ~5h / CC: ~30min)** — tests — Build the remaining 23-gap test plan: shuffled-join collapse, reconciliation fault injection, non-JSON 200, cache invalidation, ET/DST boundary, closing-price extraction, Murphy self-consistency, golden fixtures
+  - Surfaced by: Eng Section 3 (conf 9/10): plan specifies 1 test for 24 identifiable paths (4% coverage)
+  - Files: tests/
+- [ ] **E12 (P2, human: ~2h / CC: ~15min)** — scoring — Replace the impossible trailing-15-min VWAP with two constructions that actually differ (last pre-tipoff value, and T-1h)
+  - Surfaced by: Eng Section 3 R6 (conf 8/10), VERIFIED BY PROBE: prices-history points carry only {t,p} with no volume field, so a VWAP has no weights; carry-forward also makes a trailing average equal the last value
+  - Files: scoring/closing.py, PREREGISTRATION.md
+- [ ] **E13 (P2, human: ~2h / CC: ~15min)** — store/docs — Correct the price row count to ~94.6M (two tokens per game, not one) and partition the Parquet release by sport and season
+  - Surfaced by: Eng Section 4 (conf 8/10), VERIFIED BY PROBE: plan says 46M in two places; 5084 games x 2 tokens x ~9300 points = 94.6M, and GitHub caps a release asset at 2GB
+  - Files: PLAN.md, store/schema.sql, .github/workflows/release.yml
+- [ ] **E14 (P2, human: ~2h / CC: ~15min)** — ingest — Phase 0 rate-limit calibration probe: ramp until the first 429, record reset behaviour, add a circuit breaker and 429-count telemetry
+  - Surfaced by: Eng Section 4 (conf 8/10): a conservative fixed delay is the difference between a 4-hour and a 3-day census and is currently chosen blind
+  - Files: ingest/ratelimit.py
+- [ ] **E15 (P2, human: ~3h / CC: ~20min)** — collector — Rework collector scheduling: one long job per day chained, UTC cron with explicit ET conversion in code, credentials out of fork-triggerable workflows
+  - Surfaced by: Eng Section 4 (conf 7/10): 130 runs/day x 180 days exceeds the free Actions allowance, and an ET window on a UTC cron clips the slate across DST
+  - Files: .github/workflows/collector.yml, collector/schedule.py
+- [ ] **E16 (P2, human: ~2h / CC: ~15min)** — scoring — Write B linear predictor explicitly so it literally nests the recalibration null; carry the primary-test designation into PLAN.md
+  - Surfaced by: Eng Section 3 R15 (conf 7/10): Clark-West adjustment is defined relative to the null fitted values, so B must nest a + b*logit(p) with free a,b
+  - Files: scoring/nested.py, PLAN.md
+- [ ] **E17 (P2, human: ~2h / CC: ~15min)** — scoring — Report market Brier on dev and holdout side by side; pre-register per-regime bands instead of one
+  - Surfaced by: Eng Section 1 R11 (conf 8/10): model developed on the thin ~500k season and scored on the sharp ~1.9M one, so the pass band is applied where the benchmark is hardest
+  - Files: PREREGISTRATION.md, scoring/report.py
+- [ ] **E18 (P1 — DO IT IN WEEK 1, it is a 20-minute check that can void a week-10 deliverable, human: ~20min / CC: n/a)** — docs — Check Polymarket terms of service on redistributing price history before publishing the dataset
+  - Surfaced by: Eng Step 0 Distribution check: neither document states whether redistribution is permitted, and the dataset is proposed as the project most valuable output
+  - Files: docs/dataset.md
+- [ ] **E19 (P3, human: ~2h / CC: ~15min)** — ingest — Enumerate neutral-site, international, play-in and NBA Cup games up front and route them to an explicit reason enum
+  - Surfaced by: Eng Section 3 R17 (conf 8/10): dropped between the design doc and PLAN.md; these are exactly where the away-home and home-side conventions break
+  - Files: ingest/special_games.py
+- [ ] **E20 (P3, human: ~1h / CC: ~10min)** — tests — Define resume equality on a canonically sorted frame with tolerance, excluding run metadata
+  - Surfaced by: Eng Section 3 R16 (conf 8/10): byte-identical will flake since DuckDB parallel aggregation does not fix float summation order and telemetry makes runs differ by design
+  - Files: tests/test_resume.py
+
+**December scope split.** Required before December: every P1 above, plus E12 (the nested test
+is wrong without it), E13 (the dataset release needs partitioning), E14 (schedule-critical),
+E16 (nested-test correctness), E17 (per-regime bands). Deferred past December: E7, E8, E15,
+E19, E20 (all collector or polish, and Phase 6 results are out of scope by arithmetic).
+
 ### Eng Review — Completion Summary
 
 - **Step 0: Scope Challenge** — scope accepted as-is. Complexity check TRIGGERED (7 modules,
@@ -1294,7 +1498,7 @@ the snapshot release so neither dependency can invalidate a collected census.
 - **Outside voice** — ran (claude subagent). Codex `[codex-unavailable: binary not found]`
 - **Test plan artifact** — written to
   `~/.gstack/projects/Chira/arva-main-eng-review-test-plan-20260911-162634.md`
-- **Lake Score** — 20/20 recommendations chose the complete option
+- **Lake Score** — 20/20 recommendations chose the complete option (eng phase); 59/59 across all phases including the re-review
 - **Parallelization** — 3 lanes: (1) ingest + census, (2) scoring + charts, (3) collector.
   Lanes 1 and 3 are parallel; lane 2 is sequential after lane 1.
 
@@ -1344,6 +1548,79 @@ the snapshot release so neither dependency can invalidate a collected census.
 2 User Challenges are NOT in this table because they were never auto-decided.
 1 previously-escalated taste item (dev/holdout split) was RESOLVED by decision #24.
 
+
+## Eng Re-Review of the Amended Plan (22 findings)
+
+Triggered by the Final Gate contract: an accepted User Challenge is amended into the plan,
+then Eng re-runs against the final plan. Fresh subagent, focused only on the amendments.
+**All 22 findings accepted.** One corrected a material error in the schedule claim.
+
+| # | Sev | Conf | Finding | Disposition |
+|---|-----|------|---------|-------------|
+| A1 | P1 | 9 | The "~6h CC" figure measures the review remediation backlog, not the project, and drops the paired ~55 human hours. No line exists for the HTTP layer, census runner, store, feature store, model, scoring, charts, or writeup | **Corrected.** Honest effort accounting + capacity assumption + cut order added |
+| A2 | P1 | 8 | Week 4 slips first: census validation runs AFTER the week 2-3 snapshot is frozen, so a label-agreement failure forces a re-census | **Fixed.** Validation gate moved to week 2, on the first 200 games |
+| A3 | P1 | 8 | Weeks 5-6 carry 23 tests on an estimate written for 10 | **Fixed.** T4 re-estimated; only the 7 designated P1 tests required for December |
+| A4 | P1 | 7 | "Elo-like / state-space" are two cost classes; a latent walk is ~75k latent variables on 5,084 observations, with T5 turning divergences into hard failures | **Fixed.** Week-1 pre-commit to deterministic pre-game ratings as a fixed covariate |
+| A5 | P2 | 8 | Both named risks are machine time and both are small (census 4-13h, MCMC minutes). The binding constraint is human decision time | **Accepted.** Reflected in the capacity assumption |
+| A6 | P2 | 8 | Week 1's prerequisites for week 2 are absent from the schedule; realistic week 1 is 25-35 human hours | **Fixed.** Week 2 now carries the skeleton/HTTP/store work explicitly |
+| A7 | P2 | 9 | The ToS check is a week-11 blocker with no earlier slot and can void a deliverable | **Fixed.** E18 promoted to P1, moved to week 1 |
+| A8 | P2 | 7 | Holdout opened weeks 7-9 with the writeup immediately after and no second pass | **Fixed.** Full dress rehearsal on dev before the holdout opens |
+| B1 | P1 | 8 | The week-4 availability slot cannot execute its own acceptance test: proving a status change needs regular-season injury reports, and the NBA season tips after week 4 ends | **Fixed.** Slot split: week 4 prices-only, week 7 availability proof |
+| B2 | P2 | 9 | "One slot" contradicts four standing P1 collector decisions; also needs a third-party monitoring account never named | **Fixed.** Both slots specified; monitoring account chosen in week 4 |
+| B3 | P2 | 9 | Phase 6 body still specifies the 5-10 minute polling the review killed | **Fixed.** Decision written back into Phase 6 and the CI/CD section |
+| B4 | P2 | 9 | T9's promotion to P1 was never applied to T9's own line, and the strata list omitted early season | **Fixed.** Both |
+| B5 | P2 | 9 | Status line and report verdict disagree about whether the challenges are resolved | **Fixed.** Verdict and unresolved block reconciled |
+| B6 | P3 | 8 | Snapshot week drifted: T7/E4 say week 1, the schedule says weeks 2-3 | **Fixed.** Corrected to end of census, week 3 |
+| B7 | P3 | 7 | Week 1 would pre-register a test whose data source week 7 may delete | **Fixed.** Availability test moved to a separate later-hashed addendum |
+| B8 | P3 | 6 | The exclusion arithmetic is NBA-only while NHL is half the census | **Fixed.** Per-sport arithmetic shown (~5 wk NBA, ~8 wk NHL); conclusion holds for both |
+| B9 | P3 | 7 | Dropping availability voids the stated reason for the second sport | **Fixed.** NHL rejustified by headline-2 per-stratum n, and flagged as NOT the right cut |
+| C1 | P1 | 8 | Liquidity strata are confounded with season regime; the plan documented this confound for the model but not for headline 2 | **Fixed.** Within-season volume deciles; between-season contrast reported separately as confounded |
+| C2 | P1 | 8 | Per-stratum ECE at n≈850 has ~2.4x the SE of a noise floor already flagged as failing at full n | **Fixed.** Week-1 noise simulation runs at per-stratum n; min-n pre-registered from it |
+| C3 | P1 | 7 | Ten equal-count bins at ~85 games/bin gives SE≈0.054, and the literature's claim is a tail claim, so the informative bins empty out | **Fixed.** 2x2 strata, min ~150 games/bin merged upward, slope-difference as the single primary test |
+| C4 | P2 | 8 | Time-to-close is a repeated measure, four looks at one sample; bootstrap must resample games | **Fixed.** Specified in T9's verify line |
+| C5 | P2 | 7 | Liquidity is terminal cumulative volume: outcome-correlated and mutable | **Fixed.** Definition frozen with a content hash; caveat reported |
+| C6 | P2 | 8 | Headline 2's real cost lands in week 1, and the family-wise policy is missing for ~24 strata cells | **Fixed.** One primary directional test; everything else exploratory |
+| C7 | P2 | 9 | "Cannot come back empty" guarantees a measurement, not a finding | **Corrected.** Framing fixed in the headline section; it rebuts how Challenge 2 was originally pitched |
+| D | P1 | — | The deliverable is scheduled last with every buffer in front of it, so any slip in weeks 1-9 deletes the artifact rather than delaying it | **Fixed, and it is the most valuable change in the session.** Stage the deliverable: headline 2 ships frozen at end of week 6; headline 1 becomes v2 |
+
+**Cross-phase theme, third occurrence: the noise floor.** The spec-review round, the CEO
+phase, and now C2 all land on the same defect from different directions. The week-1
+simulation must therefore cover BOTH the full-n gate and the per-stratum n, or headline 2
+inherits the exact problem the gate already has.
+
+### Decision Audit Trail — re-review additions (38-60)
+
+| # | Phase | Decision | Classification | Principle |
+|---|-------|----------|----------------|-----------|
+| 38 | RE-ENG | Stage the deliverable: artifact v1 frozen end of week 6 | Mechanical | P6 |
+| 39 | RE-ENG | Honest effort accounting; cut order = sport or model, never artifact or tests | Mechanical | P1 |
+| 40 | RE-ENG | Census validation gate to week 2, first 200 games | Mechanical | P1 |
+| 41 | RE-ENG | T4 re-estimated at 23 rows; 7 P1 required for December | Mechanical | P3 |
+| 42 | RE-ENG | Deterministic pre-game ratings as a fixed covariate | Mechanical | P5 |
+| 43 | RE-ENG | ToS check to week 1; E18 promoted to P1 | Mechanical | P1 |
+| 44 | RE-ENG | Dev dress rehearsal before the holdout opens | Mechanical | P1 |
+| 45 | RE-ENG | Collector split across week 4 and week 7 | Mechanical | P1 |
+| 46 | RE-ENG | Collector scheduling written back into Phase 6 and CI/CD | Mechanical | P1 |
+| 47 | RE-ENG | T9 to P1, strata expanded, estimate corrected to 12-20h | Mechanical | P1 |
+| 48 | RE-ENG | Status line and report verdict reconciled | Mechanical | P5 |
+| 49 | RE-ENG | Snapshot corrected to end of census (week 3) | Mechanical | P5 |
+| 50 | RE-ENG | Availability pre-registration as a separate later-hashed addendum | Mechanical | P1 |
+| 51 | RE-ENG | Per-sport exclusion arithmetic shown | Mechanical | P1 |
+| 52 | RE-ENG | NHL rejustified by headline-2 per-stratum n | Mechanical | P1 |
+| 53 | RE-ENG | Within-season volume deciles to de-confound liquidity | Mechanical | P1 |
+| 54 | RE-ENG | Noise-floor simulation at per-stratum n | Mechanical | P1 |
+| 55 | RE-ENG | 2x2 strata, min 150 games/bin, slope-difference as primary | Mechanical | P5 |
+| 56 | RE-ENG | Bootstrap resamples games, not rows | Mechanical | P1 |
+| 57 | RE-ENG | Volume definition frozen with a content hash | Mechanical | P1 |
+| 58 | RE-ENG | Family-wise policy mandatory for headline 2 | Mechanical | P1 |
+| 59 | RE-ENG | "Cannot come back empty" corrected to "a measurement, not a finding" | Mechanical | P5 |
+| 60 | RE-ENG | Eng tasks E1-E20 written into the plan (were JSONL-only) | Mechanical | P1 |
+
+**Running total: 60 auto-decisions.** 57 mechanical, 3 taste (#8 E4 snapshot, #9 E1 dataset
+release, #11 E3 GBM ceiling). Both User Challenges were resolved by the user, not
+auto-decided. One previously-escalated taste item (dev/holdout split) was retired by
+decision #24.
+
 ## Cross-Phase Themes
 
 **Theme: the integrity gate is broken** — flagged independently in the spec-review round
@@ -1376,11 +1653,11 @@ arithmetic of a 2-season random walk). **High-confidence signal**, and it retire
   place of a second model, four findings were settled by live API probe rather than by
   agreement: the 2023-24 dead-market window, the two-token row count, the absent volume
   field, and the ET-date convention across DST.
-- **VERDICT:** CEO + ENG reviewed, both `issues_open`. 37 findings auto-decided and logged;
-  3 items remain for the user. Not yet clear to implement — the Final Approval Gate must
-  resolve the 2 User Challenges first.
+- **VERDICT:** CEO + ENG reviewed, plus a focused Eng re-review of the amended plan (22
+  further findings). Both User Challenges RESOLVED by the user: Challenge 1 rejected
+  (Approach B stands), Challenge 2 accepted (miscalibration is a co-headline). 60 decisions
+  auto-decided and logged. **CEO + ENG CLEARED pending confirmation of the 3 taste items at
+  the re-presented gate.**
 
 **UNRESOLVED DECISIONS:**
-- **User Challenge 1** — invert A/B ordering: ship census + calibration as its own artifact, model becomes the earned extension.
-- **User Challenge 2** — promote the miscalibration hunt (Approach C) to co-headline rather than keeping NBA/NHL moneyline as the sole frame.
-- **Taste** — 3 accepted expansions touch user-stated scope or the user's interpretability constraint (E1 dataset release, E3 GBM ceiling, E4 snapshot-first); confirm or override.
+- **Taste** — 3 accepted expansions touch user-stated scope or the user's interpretability constraint (E1 dataset release, E3 GBM ceiling, E4 snapshot-first); confirm or override at the re-presented gate.
