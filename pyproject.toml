@@ -3,17 +3,26 @@ name = "chira"
 version = "0.1.0"
 description = "Cross-sport market calibration and win-probability engine, benchmarked against Polymarket closing prices"
 requires-python = ">=3.12,<3.13"
+# Only what weeks 1-2 actually import. duckdb/pyarrow/matplotlib land with the
+# store and the charts (weeks 3+); keeping them out means week-1 install time
+# matches week-1 code.
 dependencies = [
     "requests>=2.32",
-    "duckdb>=1.1",
     "numpy>=2.0",
     "scipy>=1.14",
-    "matplotlib>=3.9",
-    "pyarrow>=17.0",
-    "nba_api>=1.5",
+    # nba_api is a community-maintained unofficial client for an undocumented
+    # stats.nba.com endpoint, and it is the source of the E1 ground-truth label.
+    # Upper bound so a resolver refresh cannot cross a major version.
+    "nba_api>=1.5,<2",
 ]
 
 [project.optional-dependencies]
+# Weeks 3+: the DuckDB store, the Parquet snapshot, and the charts.
+store = [
+    "duckdb>=1.1",
+    "pyarrow>=17.0",
+    "matplotlib>=3.9",
+]
 # JAX/numpyro is only needed from week 8 (the model). Kept out of the default
 # install so weeks 1-7 do not pay for it.
 model = [

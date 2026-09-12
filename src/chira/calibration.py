@@ -9,11 +9,30 @@ verdict is the worst outcome that gate can produce.
 from __future__ import annotations
 
 import numpy as np
+from scipy.special import expit, logit
+
+
+def _check_nonempty(p: np.ndarray, y: np.ndarray) -> None:
+    """Empty input must raise, never return nan.
+
+    A nan ECE compared against the gate evaluates False, so an empty or
+    fully-filtered stratum would pass the integrity gate silently.
+    """
+    if len(p) == 0 or len(y) == 0:
+        raise ValueError("empty sample: refusing to return a nan metric")
+    if len(p) != len(y):
+        raise ValueError(f"length mismatch: {len(p)} prices vs {len(y)} outcomes")
 
 
 def equal_count_bins(p: np.ndarray, y: np.ndarray, n_bins: int = 10):
-    """Return (bin_mean_p, bin_obs_rate, bin_n) using equal-count bins."""
-    order = np.argsort(p)
+    """Return (bin_mean_p, bin_obs_rate, bin_n) using equal-count bins.
+
+    Sort is STABLE: real moneylines pile up on round values like 0.50, and an
+    unstable sort makes tie assignment across a bin boundary platform-dependent.
+    A pre-registered study has to be bit-reproducible.
+    """
+    _check_nonempty(p, y)
+    order = np.argsort(p, kind="stable")
     p, y = p[order], y[order]
     edges = np.linspace(0, len(p), n_bins + 1).astype(int)
     mp, obs, ns = [], [], []
@@ -28,44 +47,63 @@ def equal_count_bins(p: np.ndarray, y: np.ndarray, n_bins: int = 10):
 
 def ece(p: np.ndarray, y: np.ndarray, n_bins: int = 10) -> float:
     """Expected calibration error, n-weighted."""
+    _check_nonempty(p, y)
     mp, obs, ns = equal_count_bins(p, y, n_bins)
     return float(np.sum(ns * np.abs(obs - mp)) / np.sum(ns))
 
 
 def max_bin_dev(p: np.ndarray, y: np.ndarray, n_bins: int = 10) -> float:
+    _check_nonempty(p, y)
     mp, obs, _ = equal_count_bins(p, y, n_bins)
     return float(np.max(np.abs(obs - mp)))
 
 
+LOGIT_CLAMP = 1e-6
+NR_MAX_ITER = 60
+NR_TOL = 1e-10
+NR_WEIGHT_FLOOR = 1e-9
+
+
 def cox_slope_intercept(p: np.ndarray, y: np.ndarray) -> tuple[float, float]:
-    """Logistic recalibration: y ~ a + b*logit(p). Perfect => b=1, a=0."""
-    eps = 1e-6
-    x = np.log(np.clip(p, eps, 1 - eps) / (1 - np.clip(p, eps, 1 - eps)))
-    b, a = 1.0, 0.0
-    for _ in range(60):  # Newton-Raphson
-        eta = a + b * x
-        mu = 1.0 / (1.0 + np.exp(-eta))
-        w = np.clip(mu * (1 - mu), 1e-9, None)
-        r = y - mu
-        X = np.column_stack([np.ones_like(x), x])
-        H = X.T @ (X * w[:, None])
-        g = X.T @ r
+    """Logistic recalibration: y ~ a + b*logit(p). Perfect => b=1, a=0.
+
+    Raises on non-convergence. Silently returning the last iterate let a
+    degenerate sample report slope 165.04 as if it were a calibration result.
+    scipy has no logistic fit (that lives in sklearn/statsmodels, neither a
+    dependency), so the Newton-Raphson loop stays; only expit/logit come from
+    scipy, and expit is overflow-safe where 1/(1+exp(-eta)) is not.
+    """
+    _check_nonempty(p, y)
+    x = logit(np.clip(p, LOGIT_CLAMP, 1 - LOGIT_CLAMP))
+    X = np.column_stack([np.ones_like(x), x])
+    b, a, converged = 1.0, 0.0, False
+    for _ in range(NR_MAX_ITER):
+        mu = expit(a + b * x)
+        w = np.clip(mu * (1 - mu), NR_WEIGHT_FLOOR, None)
         try:
-            step = np.linalg.solve(H, g)
-        except np.linalg.LinAlgError:
-            break
+            step = np.linalg.solve(X.T @ (X * w[:, None]), X.T @ (y - mu))
+        except np.linalg.LinAlgError as e:
+            raise ValueError(f"cox fit is singular (degenerate sample): {e}") from e
         a, b = a + step[0], b + step[1]
-        if np.max(np.abs(step)) < 1e-10:
+        if np.max(np.abs(step)) < NR_TOL:
+            converged = True
             break
+    if not converged:
+        raise ValueError(
+            f"cox fit did not converge in {NR_MAX_ITER} iterations "
+            f"(last slope={b:.4g}); sample is degenerate, not calibrated"
+        )
     return float(b), float(a)
 
 
 def brier(p: np.ndarray, y: np.ndarray) -> float:
+    _check_nonempty(p, y)
     return float(np.mean((p - y) ** 2))
 
 
 def murphy(p: np.ndarray, y: np.ndarray, n_bins: int = 10) -> dict:
     """Brier = reliability - resolution + uncertainty."""
+    _check_nonempty(p, y)
     mp, obs, ns = equal_count_bins(p, y, n_bins)
     n = np.sum(ns)
     ybar = float(np.mean(y))

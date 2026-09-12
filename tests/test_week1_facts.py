@@ -7,8 +7,24 @@ belong in the census gate, not the unit suite.
 import numpy as np
 import pytest
 
-from chira.calibration import brier, cox_slope_intercept, ece, equal_count_bins, murphy
-from chira.constants import COMPLEMENTARITY_TOL, SLUG_DATE_CONVENTIONS, USABLE_SEASONS
+from chira.calibration import (
+    brier,
+    cox_slope_intercept,
+    ece,
+    equal_count_bins,
+    max_bin_dev,
+    murphy,
+    simulate_null,
+)
+from chira.constants import (
+    COMPLEMENTARITY_TOL,
+    GATE_ECE_MAX,
+    GATE_INTERCEPT_BAND,
+    GATE_MAX_BIN_DEV,
+    GATE_SLOPE_BAND,
+    SLUG_DATE_CONVENTIONS,
+    USABLE_SEASONS,
+)
 from chira.schedule import slug, slug_candidates
 
 
@@ -54,10 +70,39 @@ class TestCalibrationMath:
         return p, y
 
     def test_murphy_reconciles_with_direct_brier(self, calibrated):
-        """A silent off-by-one here invalidates every chart."""
+        """Self-consistency only. This does NOT catch a p/y misalignment.
+
+        The decomposition is computed entirely from binned output, so the
+        identity holds under any permutation of y within the sorted order.
+        Measured: correct residual -3.57e-4 vs misaligned -3.99e-4, against the
+        old 2e-3 tolerance. The alignment check is the separate test below.
+        """
         p, y = calibrated
         m = murphy(p, y)
         assert m["brier_from_decomp"] == pytest.approx(m["brier_direct"], abs=2e-3)
+
+    def test_reliability_detects_gross_label_misalignment(self, calibrated):
+        """Reliability catches a GROSS misalignment. The decomposition residual never does."""
+        p, y = calibrated
+        order = np.argsort(p, kind="stable")
+        ps, ys = p[order], y[order]
+        good = murphy(ps, ys)
+        bad = murphy(ps, ys[::-1])  # outcomes reversed against price rank
+        assert bad["reliability"] > good["reliability"] * 10
+        assert ece(ps, ys[::-1]) > ece(ps, ys) * 5
+
+    def test_a_one_index_roll_is_NOT_detectable_and_that_is_the_point(self, calibrated):
+        """Records the real limitation, so nobody trusts a binned metric to find it.
+
+        With 4,000 points in 10 equal-count bins, rolling y by one index moves a
+        single element per bin. Measured residuals: correct -3.57e-4, rolled
+        -3.99e-4. No binned statistic separates those. The defence against an
+        off-by-one is the label-agreement assert against nba_api, not this.
+        """
+        p, y = calibrated
+        order = np.argsort(p, kind="stable")
+        ps, ys = p[order], y[order]
+        assert abs(ece(ps, np.roll(ys, 1)) - ece(ps, ys)) < 5e-3
 
     def test_equal_count_bins_are_equal_count(self, calibrated):
         p, y = calibrated
@@ -87,21 +132,101 @@ class TestCalibrationMath:
                             np.repeat([1.0, 0.0], [150, 50])])
         assert ece(p, y, n_bins=2) == pytest.approx(0.0, abs=1e-9)
 
-    def test_brier_bounds(self, calibrated):
+    def test_brier_hits_its_true_bounds(self):
+        assert brier(np.ones(10), np.zeros(10)) == pytest.approx(1.0)
+        assert brier(np.ones(10), np.ones(10)) == pytest.approx(0.0)
+
+    def test_brier_of_a_calibrated_market_beats_climatology(self, calibrated):
         p, y = calibrated
-        assert 0.0 <= brier(p, y) <= 0.25 + 1e-9
+        assert brier(p, y) < brier(np.full_like(p, y.mean()), y)
 
 
 class TestNoiseFloorIsRespected:
-    """The thresholds in PREREGISTRATION.md must sit ABOVE the null p99."""
+    """Every adopted gate must sit at or ABOVE the simulated null.
 
-    def test_adopted_ece_gate_does_not_false_fire(self):
-        from chira.calibration import simulate_null
+    Rounding a gate INWARD from the null re-creates the exact false-fire defect
+    the simulation existed to remove, so these assert against the real adopted
+    constants rather than against unrelated literals.
+    """
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def null(cls):
         rng = np.random.default_rng(5)
         pool = rng.uniform(0.1, 0.9, 500)
-        null = simulate_null(pool, n=5084, reps=120, seed=3)
-        assert null["ece"]["p99"] < 0.05, "sanity: null ECE at full n is small but nonzero"
-        assert null["ece"]["p95"] > 0.005, "a 0.02 cap was rejected for being below this"
+        return simulate_null(pool, n=5084, reps=400, seed=3)
+
+    def test_adopted_ece_gate_does_not_false_fire(self, null):
+        assert null["ece"]["p99"] <= GATE_ECE_MAX, (
+            f"adopted ECE gate {GATE_ECE_MAX} is below the null p99 "
+            f"{null['ece']['p99']:.4f} and would reject a correct pipeline"
+        )
+
+    def test_adopted_max_bin_dev_gate_does_not_false_fire(self, null):
+        assert null["max_bin_dev"]["p99"] <= GATE_MAX_BIN_DEV
+
+    def test_adopted_slope_band_contains_the_null_ci(self, null):
+        lo, hi = GATE_SLOPE_BAND
+        assert lo <= null["slope"]["lo2.5"] and null["slope"]["hi97.5"] <= hi
+
+    def test_adopted_intercept_band_contains_the_null_ci(self, null):
+        lo, hi = GATE_INTERCEPT_BAND
+        assert lo <= null["intercept"]["lo2.5"] and null["intercept"]["hi97.5"] <= hi
+
+    def test_the_withdrawn_002_cap_would_have_false_fired(self, null):
+        """PREREGISTRATION.md withdrew a 0.02 ECE cap. This records why."""
+        assert null["ece"]["p95"] > 0.02
+
+
+class TestDegenerateInput:
+    """A nan metric compared against a gate evaluates False, i.e. it PASSES.
+
+    An empty or fully-filtered stratum must therefore raise, not return nan.
+    """
+
+    @pytest.mark.parametrize("fn", [ece, max_bin_dev, brier, murphy, cox_slope_intercept])
+    def test_empty_sample_raises_rather_than_returning_nan(self, fn):
+        with pytest.raises(ValueError):
+            fn(np.array([]), np.array([]))
+
+    def test_length_mismatch_raises(self):
+        with pytest.raises(ValueError):
+            ece(np.array([0.5, 0.6]), np.array([1.0]))
+
+    def test_nan_can_never_silently_pass_a_gate(self):
+        assert not (float("nan") <= GATE_ECE_MAX)
+
+    def test_degenerate_cox_fit_raises_instead_of_reporting_a_slope(self):
+        """Constant p previously returned slope 165.04 as if it were a result."""
+        with pytest.raises(ValueError):
+            cox_slope_intercept(np.full(200, 0.6), (np.arange(200) < 120).astype(float))
+
+    def test_metrics_are_deterministic_for_a_fixed_row_order(self):
+        """Stable sort => repeatable results for the SAME input order."""
+        rng = np.random.default_rng(0)
+        p = np.concatenate([np.full(100, 0.5), rng.uniform(0.1, 0.9, 100)])
+        y = np.concatenate([np.ones(50), np.zeros(50), (rng.random(100) < 0.5).astype(float)])
+        assert ece(p, y) == ece(p.copy(), y.copy())
+        assert max_bin_dev(p, y) == max_bin_dev(p.copy(), y.copy())
+
+    def test_heavy_ties_make_binning_input_order_dependent(self):
+        """A real constraint on the pipeline, recorded rather than wished away.
+
+        Equal-count bins split tied prices across a bin boundary, and a stable
+        sort preserves INPUT order among ties, so permuting the rows changes
+        which tied games land in which bin. Measured: ECE 0.367 vs 0.177 on the
+        same multiset. Stable sort buys reproducibility, not permutation
+        invariance, so the census MUST write rows in a canonical order
+        (game_id) before anything is scored.
+        """
+        rng = np.random.default_rng(0)
+        p = np.concatenate([np.full(100, 0.5), rng.uniform(0.1, 0.9, 100)])
+        y = np.concatenate([np.ones(50), np.zeros(50), (rng.random(100) < 0.5).astype(float)])
+        perm = rng.permutation(len(p))
+        assert ece(p, y) != ece(p[perm], y[perm]), (
+            "if this ever passes, ties are being handled and the canonical-order "
+            "requirement can be relaxed"
+        )
 
 
 class TestComplementarity:

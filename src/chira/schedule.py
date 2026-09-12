@@ -55,7 +55,21 @@ def nba_games(season: str, *, timeout: int = 60) -> list[dict]:
             "home": home.lower(),
         })
         # PTS/WL arrive per team row; attribute by which side this row is.
-        side = "away" if row.TEAM_ABBREVIATION.lower() == g["away"] else "home"
+        # Defaulting a non-match to "home" silently wrote BOTH rows into the home
+        # slot, left away_pts None, and the game was then dropped by the filter
+        # below as if it had no data. An abbreviation disagreement must be loud:
+        # this is the E1 ground-truth label.
+        abbr = row.TEAM_ABBREVIATION.lower()
+        if abbr == g["away"]:
+            side = "away"
+        elif abbr == g["home"]:
+            side = "home"
+        else:
+            raise ValueError(
+                f"game {row.GAME_ID}: TEAM_ABBREVIATION {abbr!r} matches neither "
+                f"away {g['away']!r} nor home {g['home']!r} from MATCHUP "
+                f"{row.MATCHUP!r}"
+            )
         g[f"{side}_pts"] = int(row.PTS) if row.PTS is not None else None
         if row.WL == "W":
             g["winner"] = side

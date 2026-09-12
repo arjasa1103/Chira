@@ -77,15 +77,31 @@ at every n tested, including by 2.7x at per-stratum n and 6.4x at per-bin n. A p
 deviation cap of 0.03 false-fires everywhere. A slope window of [0.90, 1.10] is sound at
 n >= 2,460 but too tight at per-stratum n.
 
-**Adopted gate — evaluated on the FULL census (n ~ 5,084), never on the holdout, and
-expressed as the simulated p99 of the null:**
+**Adopted gate — evaluated on the FULL census (n ~ 5,084), never on the holdout.**
 
-| Check | Threshold | Basis |
-|---|---|---|
-| ECE | <= **0.026** | null p99 at n=5,084 |
-| max per-bin deviation | <= **0.071** | null p99 at n=5,084 |
-| Cox slope 95% CI | must lie within **[0.93, 1.07]** | null 95% CI at n=5,084 |
-| Cox intercept 95% CI | must lie within **[-0.06, 0.06]** | null 95% CI at n=5,084 |
+**Every bound is rounded OUTWARD from the simulated null.** A first draft rounded to two
+decimals in whichever direction was tidier, which put three of four thresholds *inside* the
+null distribution they were derived from — re-creating the exact false-fire defect this
+simulation existed to remove. The intercept was the worst: band `[-0.06, 0.06]` against a
+null 95% CI of `[-0.0612, 0.0640]`, so a perfectly calibrated market failed by construction.
+
+| Check | Null (n=5,084) | Adopted threshold | Direction |
+|---|---|---|---|
+| ECE | p99 = 0.0260 | <= **0.03** | outward |
+| max per-bin deviation | p99 = 0.0713 | <= **0.08** | outward |
+| Cox slope 95% CI | [0.9305, 1.0703] | within **[0.93, 1.08]** | outward |
+| Cox intercept 95% CI | [-0.0612, 0.0640] | within **[-0.07, 0.07]** | outward |
+
+These live in `chira.constants` as `GATE_ECE_MAX`, `GATE_MAX_BIN_DEV`, `GATE_SLOPE_BAND`,
+`GATE_INTERCEPT_BAND`, and `tests/test_week1_facts.py::TestNoiseFloorIsRespected` asserts each
+one sits at or above the simulated null. Changing either the gate or the estimator fails the
+suite, so this table cannot drift from the code.
+
+**Pool caveat.** The null was bootstrapped from a measured NBA-only pool (n=128). NHL prices
+are markedly more concentrated (83% inside [0.35, 0.65] vs NBA's 41%; E[p(1-p)] 0.2395 vs
+0.1970), and the pooled NBA+NHL null is slightly wider: ECE p99 0.0264 vs 0.0261. The
+adopted outward-rounded bounds cover both, but the pool must be re-measured once real NHL
+census prices exist, and the NHL-only band re-derived rather than inherited.
 
 Stated as an **equivalence** test: the CI must lie *entirely within* the band, so an
 imprecise estimate fails. "CI contains 1.0" is accept-the-null testing and would let noisy
@@ -187,7 +203,30 @@ fits the schedule.**
   constraints above, wide overlapping bands are a plausible outcome and will be reported as
   such rather than mined for significance.
 
-## 9. Explicitly NOT pre-registered here
+## 9. Risk tiers
+
+**Omitted from the first draft. Restored here before any model fit.** PLAN.md's Phase 0 named
+risk tiers as required pre-registration content and the section was simply missing; catching
+it after a fit had run would have made the boundaries unfixable, since buckets are selected on
+the model's own disagreement with the market.
+
+Three tiers on the absolute edge `|p_model − p_market|`, home side, one observation per game:
+
+| Tier | Edge band | Expectation |
+|---|---|---|
+| T1 | [0.02, 0.05) | Most populated; smallest and least reliable edge |
+| T2 | [0.05, 0.10) | Sparse |
+| T3 | >= 0.10 | May be **empty**, which is a valid published result |
+
+Games with edge below 0.02 are not tiered: that is inside the measurement noise of the
+closing price itself, which is carried forward on 41% of games (measured, week 1).
+
+Each tier reports frequency, hit rate, calibration, and a **game-level** bootstrap interval.
+The top tier is exactly where model error is largest, so its apparent edge is expected to
+shrink out of sample; that expectation is stated here, before results are seen. Per-tier
+results are **exploratory** under the family-wise policy in section 7, never headline.
+
+## 10. Explicitly NOT pre-registered here
 
 The availability / late-news hypothesis. Its data source is unproven, the historical data to
 test it does not exist (`nba_api` inactives arrive post-game with no announcement timestamp),
@@ -195,7 +234,7 @@ and the forward collection cannot reach a usable n before the December deadline.
 **separate addendum, committed with its own later hash**, only once a source is proven. Until
 then the writeup states the hypothesis and says plainly that it is untested.
 
-## 10. What would falsify the headline claims
+## 11. What would falsify the headline claims
 
 - **Headline 1** is falsified as "parity" if the model's holdout Brier deficit versus the
   market exceeds the pre-stated 0.02-0.03 band. A wider gap is reported as a finding about

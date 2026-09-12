@@ -62,11 +62,8 @@ name = "chira"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "duckdb" },
-    { name = "matplotlib" },
     { name = "nba-api" },
     { name = "numpy" },
-    { name = "pyarrow" },
     { name = "requests" },
     { name = "scipy" },
 ]
@@ -75,6 +72,11 @@ dependencies = [
 model = [
     { name = "jax" },
     { name = "numpyro" },
+]
+store = [
+    { name = "duckdb" },
+    { name = "matplotlib" },
+    { name = "pyarrow" },
 ]
 
 [package.dev-dependencies]
@@ -86,17 +88,17 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "duckdb", specifier = ">=1.1" },
+    { name = "duckdb", marker = "extra == 'store'", specifier = ">=1.1" },
     { name = "jax", marker = "extra == 'model'", specifier = ">=0.4.30" },
-    { name = "matplotlib", specifier = ">=3.9" },
-    { name = "nba-api", specifier = ">=1.5" },
+    { name = "matplotlib", marker = "extra == 'store'", specifier = ">=3.9" },
+    { name = "nba-api", specifier = ">=1.5,<2" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "numpyro", marker = "extra == 'model'", specifier = ">=0.15" },
-    { name = "pyarrow", specifier = ">=17.0" },
+    { name = "pyarrow", marker = "extra == 'store'", specifier = ">=17.0" },
     { name = "requests", specifier = ">=2.32" },
     { name = "scipy", specifier = ">=1.14" },
 ]
-provides-extras = ["model"]
+provides-extras = ["store", "model"]
 
 [package.metadata.requires-dev]
 dev = [

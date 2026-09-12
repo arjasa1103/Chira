@@ -73,6 +73,8 @@ def burst(url: str, rate: int, seconds: int, session: requests.Session) -> RateR
             break
         else:
             other += 1
+            break  # any non-200 aborts the rung: retrying a 403/503 is how a
+                   # soft throttle becomes an IP block
         # pace to the target rate
         sleep = interval - (time.perf_counter() - t0)
         if sleep > 0 and i < n - 1:
@@ -137,7 +139,7 @@ def probe(name: str, url: str) -> dict:
         "url": url,
         "hit_rate_limit": hit_limit,
         "max_rate_tested_rps": results[-1].rate_rps if results else None,
-        "retry_after_header": recovery is not None and results[-1].retry_after or (results[-1].retry_after if results else None),
+        "retry_after_header": results[-1].retry_after if results else None,
         "recovery_seconds": recovery,
         "total_requests": total,
         "rungs": [asdict(r) for r in results],

@@ -18,17 +18,28 @@ import re
 from collections import defaultdict
 from datetime import date, timedelta
 
+from .constants import GAMMA_LIMIT_CAP, GAMMA_OFFSET_CEILING, USABLE_SEASONS
 from .http import Client
 
 SLUG_RE = re.compile(r"^(nba|nhl)-([a-z0-9]+)-([a-z0-9]+)-(\d{4}-\d{2}-\d{2})$")
 
 TEAM_COUNT = {"nba": 30, "nhl": 32}
 
-# Regular season windows for the two usable seasons (2023-24 excluded: dead markets).
+# Regular season windows. Keys MUST match constants.USABLE_SEASONS: that module
+# is the single record of which seasons are usable and why 2023-24 is excluded.
 SEASON_SPANS = {
     "2024-25": (date(2024, 10, 15), date(2025, 4, 20)),
     "2025-26": (date(2025, 10, 1), date(2026, 4, 20)),
 }
+assert set(SEASON_SPANS) == set(USABLE_SEASONS), (
+    f"SEASON_SPANS {sorted(SEASON_SPANS)} drifted from "
+    f"USABLE_SEASONS {sorted(USABLE_SEASONS)}"
+)
+
+# Windowed pagination is acceptable HERE (unlike the census) because
+# max_pages * GAMMA_LIMIT_CAP stays well under the offset ceiling.
+MAX_PAGES = 8
+assert MAX_PAGES * GAMMA_LIMIT_CAP < GAMMA_OFFSET_CEILING
 
 
 def _windows(span: tuple[date, date], n: int, days: int = 7) -> list[tuple[str, str]]:
@@ -47,16 +58,14 @@ def _windows(span: tuple[date, date], n: int, days: int = 7) -> list[tuple[str, 
 
 
 def learn(client: Client, season: str, *, n_windows: int = 12,
-          max_pages: int = 8, verbose: bool = True) -> dict:
+          max_pages: int = MAX_PAGES, verbose: bool = True) -> dict:
     """Return {sport: {abbr: nickname}} plus conflicts and coverage for one season."""
     pairs: dict[str, dict[str, set]] = {"nba": defaultdict(set), "nhl": defaultdict(set)}
-    order_ok = 0
-    order_checked = 0
     seen_slugs: set[str] = set()
 
     for lo, hi in _windows(SEASON_SPANS[season], n_windows):
         for page in range(max_pages):
-            rows = client.markets(limit=100, offset=page * 100,
+            rows = client.markets(limit=GAMMA_LIMIT_CAP, offset=page * GAMMA_LIMIT_CAP,
                                   end_date_min=lo, end_date_max=hi)
             if not rows:
                 break
@@ -74,10 +83,10 @@ def learn(client: Client, season: str, *, n_windows: int = 12,
                 if len(outs) != 2:
                     continue
                 # outcomes are index-aligned to the slug's away/home order.
+                # away is outcomes[0], home is outcomes[1]. Verified 128/128
+                # against independent nba_api winners in week 1.
                 pairs[sport][away_abbr].add(outs[0])
                 pairs[sport][home_abbr].add(outs[1])
-                order_checked += 1
-                order_ok += 1
         if verbose:
             print(f"    {season} {lo[:10]}..{hi[:10]}  slugs so far: {len(seen_slugs)}", flush=True)
 
