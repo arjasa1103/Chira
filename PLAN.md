@@ -198,6 +198,27 @@ Five findings that change later phases:
    between home wins and away wins: NHL 0.04-0.06, NBA 0.16-0.21). A real property of
    the sport, and an input to the primary-sport decision in week 4.
 
+## Week 3 — full census and snapshot (in progress, started 2026-09-13)
+
+Prep that landed before the ~13,700-request pull (commit 625fc83):
+
+- **A week-2 gap closed: T-6h and T-24h.** PREREGISTRATION.md section 8 treats close,
+  T-1h, T-6h and T-24h as four looks at one sample, and Phase 1 below lists all four,
+  but week 2 extracted only close and T-1h. Caught while planning the snapshot, not by
+  any test or review.
+- **The raw minute series is stored, per F10.** New `price_points` table (both tokens,
+  pre- and post-tipoff), written in the same transaction as the priced row. No primary
+  key at ~120M rows; measured ~20 ms per series to insert and 2.7 ms to delete one game
+  from 4M rows.
+- **Snapshot (T7, E13).** `snapshot.py` refuses an unfinished census, writes atomically,
+  names the directory by store digest, checksums every file, is read-only on disk,
+  partitions by sport/season, writes timestamps as UTC text, and freezes the volume
+  definition. It is the LOCAL immutable input for weeks 4+, gitignored under `data/`
+  pending E18; it is not the public dataset release (T11).
+- **Fresh store.** The week-2 slices were moved to `data/census-week2-slices.duckdb`
+  so every row in the week-3 store carries a week-3 `run_id`. Their payloads are all
+  cached, so the 800 previously-attempted games cost almost nothing to redo.
+
 ## Phase 0 — Foundations
 
 **Scheduling note.** This checklist is not a week-1 list. The eleven-week table above
