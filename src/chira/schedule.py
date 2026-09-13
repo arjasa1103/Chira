@@ -98,12 +98,13 @@ def nba_games(season: str, *, timeout: int = 60) -> list[dict]:
     """One row per GAME, with away/home resolved and the independent winner.
 
     Returns dicts: game_id, et_date, away, home, away_name, home_name,
-    away_place, home_place, winner ('away'|'home'), away_pts, home_pts.
+    away_place, home_place, winner ('away'|'home'), away_pts, home_pts,
+    start_time_utc (the league's own tipoff; see attach_start_times).
 
     The winner field is the E1 label-agreement source: it is independent of
     Polymarket, which is the whole point.
     """
-    from nba_api.stats.endpoints import leaguegamefinder
+    from nba_api.stats.endpoints import leaguegamefinder, scheduleleaguev2
 
     nick, place = nba_team_labels()
     df = leaguegamefinder.LeagueGameFinder(
@@ -112,7 +113,28 @@ def nba_games(season: str, *, timeout: int = 60) -> list[dict]:
         league_id_nullable="00",
         timeout=timeout,
     ).get_data_frames()[0]
-    return games_from_rows(df.itertuples(index=False), nick, place)
+    games = games_from_rows(df.itertuples(index=False), nick, place)
+    sched = scheduleleaguev2.ScheduleLeagueV2(
+        season=season, league_id="00", timeout=timeout).get_data_frames()[0]
+    return attach_start_times(
+        games, {str(r.gameId): r.gameDateTimeUTC for r in sched.itertuples(index=False)})
+
+
+def attach_start_times(games: list[dict], league_times: dict[str, object]) -> list[dict]:
+    """Add the league's UTC tipoff as `start_time_utc`. Pure; no network.
+
+    A game with no league time gets None, and the census then falls back to
+    Gamma's gameStartTime plus the ET-hour plausibility band, recording
+    cutoff_source='gamma' on the row so the fallback is countable, never silent.
+    Measured: Gamma's time disagreed with this source by more than 15 minutes on
+    21 priced NBA games across both seasons, up to 6 hours LATE.
+    """
+    out = []
+    for g in games:
+        t = league_times.get(g["game_id"])
+        t = str(t) if t is not None and str(t).strip() not in ("", "nan", "None") else None
+        out.append(dict(g, start_time_utc=t))
+    return out
 
 
 def slug_candidates(sport: str, game: dict,

@@ -17,7 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from chira.schedule import games_from_rows, slug, slug_candidates
+from chira.schedule import attach_start_times, games_from_rows, slug, slug_candidates
 
 NICK = {"lal": "Lakers", "bos": "Celtics", "gsw": "Warriors"}
 PLACE = {"lal": "Los Angeles", "bos": "Boston", "gsw": "Golden State"}
@@ -126,3 +126,21 @@ class TestSlugs:
     def test_the_plus_one_convention_crosses_a_month_boundary(self):
         g = games_from_rows(pair(date="2025-01-31"), NICK, PLACE)[0]
         assert slug_candidates("nba", g)[1][1] == "nba-lal-bos-2025-02-01"
+
+
+class TestAttachStartTimes:
+    def test_the_league_time_is_attached_by_game_id(self):
+        games = games_from_rows(pair(), NICK, PLACE)
+        got = attach_start_times(games, {"0022400001": "2025-01-16T00:30:00Z"})
+        assert got[0]["start_time_utc"] == "2025-01-16T00:30:00Z"
+
+    @pytest.mark.parametrize("value", [None, "", float("nan"), "None"])
+    def test_a_missing_time_is_none_so_the_census_falls_back_visibly(self, value):
+        games = games_from_rows(pair(), NICK, PLACE)
+        league = {} if value is None else {"0022400001": value}
+        assert attach_start_times(games, league)[0]["start_time_utc"] is None
+
+    def test_the_input_games_are_not_mutated(self):
+        games = games_from_rows(pair(), NICK, PLACE)
+        attach_start_times(games, {"0022400001": "2025-01-16T00:30:00Z"})
+        assert "start_time_utc" not in games[0]

@@ -44,6 +44,48 @@ later-hashed addendum committed only if and when its data source is proven (see 
   loudly). Plotting both sides would double-count every game and force artificial symmetry
   about 0.5, hiding the very asymmetry the chart exists to show.
 
+### Amendment 1 (2026-09-13): the tipoff time the closing price is cut at
+
+**Changed.** The primary definition above cuts at Polymarket's `gameStartTime`. It now
+cuts at the **league's own start time** (NHL `club-schedule-season.startTimeUTC`; NBA
+`scheduleleaguev2.gameDateTimeUTC`), falling back to `gameStartTime` only where the league
+source has no time, with the fallback recorded per game in `priced.cutoff_source`. The
+T-1h, T-6h and T-24h looks are measured from the same cutoff.
+
+**Why.** `gameStartTime` is supplied by the party being benchmarked. On the first full
+week-3 census it disagreed with the league by more than 15 minutes on **69 priced games**
+(21 NBA, 48 NHL), measured against every priced game in all four sport-seasons:
+
+- **24 were LATE** (15 NBA, 9 NHL), which admits in-game and settled quotes into the
+  "closing" price. The worst was 360 minutes late (NBA 2025-26). In the week-2 slices one
+  NBA 2024-25 market, `nba-dal-uta-2024-11-14`, stored a close of 0.9995 on a 115-113 game.
+- **45 were EARLY** (6 NBA, 39 NHL), which cuts the close well before real tipoff. Of the
+  NHL 2025-26 cases, 36 are exactly 240 minutes early (7 games, October 2025, daylight
+  time) or 300 minutes early (29 games, November 2025, after daylight time ended): an
+  Eastern wall-clock time recorded as UTC.
+
+The interim ET-hour plausibility rule passed all of those, because a 4- or 5-hour error
+still lands inside 11:00-23:00 ET. It also rejected 6 games outright: 5 more November 2025
+NHL games at exactly 300 minutes early, and a genuine 09:00 ET NHL game played in Stockholm
+(`nhl-nsh-pit-2025-11-16`, neutral site), whose Gamma time was correct.
+
+**What is preserved.** The intent of the definition, the last value at or before real
+tipoff, is unchanged. The value under the original definition is still computed for every
+game as `priced.p_home_close_gamma`, with the disagreement in `priced.gamma_delta_min`, so
+any result can be re-run under the pre-registered cutoff and the difference reported.
+
+**When, and what had been seen.** Adopted before any model fit and before any calibration
+statistic was computed on the census. It was chosen from timestamp disagreement alone,
+never from outcomes. For full disclosure: Brier, ECE and a calibration slope were computed
+once on a 199-game week-2 slice as a README illustration. That slice is not part of any
+pre-registered analysis, and no statistic on it informed this change.
+
+**Not an amendment, recorded for completeness.** Markets are now selected by
+`sportsMarketType == "moneyline"`. Moneyline-only was always the definition (PLAN.md,
+section 1 here), but the implementation had taken the first market whose outcome labels
+matched the two teams, which priced 5 NHL 2025-26 spread markets as moneylines. That was
+a bug against the pre-registered definition, not a change to it.
+
 ## 3. Metrics
 
 - **Primary: Brier score.** Log loss is secondary, with probabilities clipped to

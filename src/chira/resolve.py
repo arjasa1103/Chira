@@ -34,6 +34,11 @@ import json
 import re
 from datetime import date
 
+from .constants import (
+    MONEYLINE_MARKET_TYPE,
+    NON_FULL_GAME_MARKERS,
+    NON_FULL_GAME_MARKET_TYPES,
+)
 from .http import Client
 from .schedule import slug_candidates
 
@@ -163,6 +168,26 @@ def _outcomes(market: dict) -> list | None:
     return outs if isinstance(outs, list) and len(outs) == 2 else None
 
 
+def pick_moneyline(markets: list[dict]) -> dict | None:
+    """The full-game moneyline among markets whose labels match both teams, or None.
+
+    Prefers an explicit `sportsMarketType == "moneyline"`. Otherwise accepts a SOLE
+    label-matching market unless its type names a spread or a partial-game market
+    (see constants.NON_FULL_GAME_MARKET_TYPES for the measured reasoning, including
+    the 40 NBA 2024-25 moneylines Gamma types as `totals`). Two or more candidates
+    with no explicit moneyline is ambiguous, and ambiguity is a miss, not a guess.
+    """
+    typed = [m for m in markets if m.get("sportsMarketType") == MONEYLINE_MARKET_TYPE]
+    if typed:
+        return typed[0]
+    if len(markets) != 1:
+        return None
+    kind = str(markets[0].get("sportsMarketType") or "").lower()
+    if kind in NON_FULL_GAME_MARKET_TYPES or any(k in kind for k in NON_FULL_GAME_MARKERS):
+        return None
+    return markets[0]
+
+
 def confirm(client: Client, sport: str, game: dict, away: str, home: str,
             labels: dict[str, tuple[str, ...]], *, bypass_cache: bool = False,
             blocked: set[str] | None = None) -> dict:
@@ -191,6 +216,7 @@ def confirm(client: Client, sport: str, game: dict, away: str, home: str,
     """
     attempted: list[str] = []
     saw_events = False
+    rejected: list[str] = []
     probe = dict(game, away=away, home=home)
     for convention, cand in slug_candidates(sport, probe):
         if blocked and cand in blocked:
@@ -199,18 +225,24 @@ def confirm(client: Client, sport: str, game: dict, away: str, home: str,
         attempted.append(cand)
         events = client.event_by_slug(cand, bypass_cache=bypass_cache) or []
         saw_events = saw_events or bool(events)
+        matching = []
         for ev in events:
             for market in (ev.get("markets") or []):
                 outs = _outcomes(market)
-                if not outs:
-                    continue
-                if (label_match(labels[game["away"]], outs[0])
+                if (outs and label_match(labels[game["away"]], outs[0])
                         and label_match(labels[game["home"]], outs[1])):
-                    return {"slug": cand, "convention": convention,
-                            "market": market, "attempted": attempted,
-                            "saw_events": True}
+                    matching.append(market)
+        if not matching:
+            continue
+        pick = pick_moneyline(matching)
+        if pick is not None:
+            return {"slug": cand, "convention": convention, "market": pick,
+                    "attempted": attempted, "saw_events": True,
+                    "rejected_types": rejected}
+        rejected.extend(str(m.get("sportsMarketType")) for m in matching)
     return {"slug": None, "convention": None, "market": None,
-            "attempted": attempted, "saw_events": saw_events}
+            "attempted": attempted, "saw_events": saw_events,
+            "rejected_types": rejected}
 
 
 def resolve(client: Client, sport: str, games: list[dict], priors: list[dict[str, str]],

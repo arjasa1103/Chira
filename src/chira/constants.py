@@ -113,6 +113,7 @@ MISS_REASONS = (
     "complementarity_failed",          # last pre-tipoff prices do not sum to 1
     "label_mismatch_at_slug",          # a slug returned events, none matched the teams
     "implausible_game_start_time",     # market tipoff disagrees with the schedule
+    "no_moneyline_market",             # teams matched, but only spread / half-game markets
     "unresolved_market",               # market exists but carries no outcomePrices
     "label_disagreement",              # E1: market winner != league winner
 )
@@ -128,3 +129,21 @@ MISS_REASONS = (
 # band below is one hour wider on the early side; it rejects exactly the two
 # known-bad rows and nothing else.
 TIPOFF_ET_HOUR_BAND = (11, 23)
+
+# Market selection. Gamma events carry many markets whose outcome labels are the
+# two team names -- the moneyline, but also "Spread: Capitals (-1.5)" and, for NBA
+# 2025-26, a first-half moneyline. Taking the first label match priced 5 NHL
+# 2025-26 SPREAD markets as moneylines (all April 2026); label agreement caught two
+# more only because the favourite won by exactly one goal. 1,212 NBA 2025-26 and 580
+# NHL 2025-26 events were exposed and got the moneyline only because it happened to
+# be listed first. Every cached event carries `sportsMarketType`, so select on it.
+#
+# The field is not perfect: 40 NBA 2024-25 single-market events ("Thunder vs.
+# Nuggets", team-name outcomes, label agreement passing) are typed `totals`. A real
+# totals market has Over/Under outcomes and cannot label-match two teams, so a SOLE
+# label-matching market is accepted unless its type names a non-full-game market.
+MONEYLINE_MARKET_TYPE = "moneyline"
+NON_FULL_GAME_MARKET_TYPES = frozenset({
+    "spreads", "first_half_moneyline", "first_half_spreads", "first_half_totals",
+})
+NON_FULL_GAME_MARKERS = ("spread", "half", "period", "quarter", "inning")

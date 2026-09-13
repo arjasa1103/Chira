@@ -360,6 +360,17 @@ def coverage(store: Store, sport: str, season: str) -> dict:
         "conventions": conventions,
         "miss_reasons": store.miss_reasons(sport, season),
         "attempted_by_month": attempted_by_month(store, sport, season),
+        # Amendment 1 made visible: which cutoff each game used, which market
+        # type was priced, and how often Gamma's own tipoff was badly off.
+        "cutoff_sources": dict(store.db.execute(
+            "SELECT coalesce(cutoff_source, 'unrecorded'), count(*) FROM priced "
+            "WHERE sport=? AND season=? GROUP BY ALL", [sport, season]).fetchall()),
+        "market_types": dict(store.db.execute(
+            "SELECT coalesce(market_type, 'untyped'), count(*) FROM priced "
+            "WHERE sport=? AND season=? GROUP BY ALL", [sport, season]).fetchall()),
+        "gamma_tipoff_off_over_1h": store.db.execute(
+            "SELECT count(*) FROM priced WHERE sport=? AND season=? "
+            "AND abs(gamma_delta_min) > 60", [sport, season]).fetchone()[0],
     }
 
 
@@ -401,5 +412,8 @@ def format_report(result: dict) -> str:
                  f"({cov['coverage_of_attempted']}), scheduled={cov['scheduled']}, "
                  f"pending={cov['pending']}")
     lines.append(f"  conventions: {cov['conventions']}")
+    lines.append(f"  cutoff sources: {cov['cutoff_sources']}  market types: "
+                 f"{cov['market_types']}  gamma tipoff off >1h: "
+                 f"{cov['gamma_tipoff_off_over_1h']}")
     lines.append(f"  miss reasons: {cov['miss_reasons']}")
     return "\n".join(lines)

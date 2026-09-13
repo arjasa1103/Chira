@@ -271,3 +271,46 @@ class TestRawSeries:
         r = closing_price(FakeClient({"2020": home, "1010": home}), MKT)
         assert [pt["p"] for pt in r["series"]["home"]] == [0.5]
         assert r["p_home_close"] == 0.5
+
+
+class TestLeagueCutoff:
+    """PREREGISTRATION.md Amendment 1."""
+
+    def _home(self):
+        return [{"t": TIP - 120, "p": 0.55}, {"t": TIP - 60, "p": 0.60},
+                {"t": TIP + 3600, "p": 0.99}]  # the last point is in-game
+
+    def test_a_late_gamma_tipoff_no_longer_leaks_the_game_into_the_close(self):
+        mkt = dict(MKT, gameStartTime="2025-10-31T01:00:00+00:00")   # Gamma 2h LATE
+        c = FakeClient({"2020": self._home(), "1010": [{"t": TIP - 60, "p": 0.40}]})
+        r = closing_price(c, mkt, tip_utc="2025-10-30T23:00:00Z")
+        assert r["cutoff_source"] == "league"
+        assert r["p_home_close"] == 0.60, "the league cutoff must exclude in-game quotes"
+        assert r["p_home_close_gamma"] == 0.99, "the audit column keeps the original definition"
+        assert r["gamma_delta_min"] == 120
+
+    def test_an_early_gamma_tipoff_is_measured_with_a_negative_delta(self):
+        mkt = dict(MKT, gameStartTime="2025-10-30T19:00:00+00:00")   # 4h EARLY
+        c = FakeClient({"2020": [{"t": TIP - 4 * 3600 - 60, "p": 0.50}, {"t": TIP - 60, "p": 0.61}],
+                        "1010": [{"t": TIP - 60, "p": 0.39}]})
+        r = closing_price(c, mkt, tip_utc="2025-10-30T23:00:00Z")
+        assert (r["p_home_close"], r["p_home_close_gamma"], r["gamma_delta_min"]) == (
+            0.61, 0.50, -240)
+
+    def test_a_league_time_prices_a_market_with_no_gameStartTime(self):
+        mkt = {k: v for k, v in MKT.items() if k != "gameStartTime"}
+        c = FakeClient({"2020": self._home(), "1010": [{"t": TIP - 60, "p": 0.4}]})
+        r = closing_price(c, mkt, tip_utc="2025-10-30T23:00:00Z")
+        assert r["ok"] and r["cutoff_source"] == "league"
+        assert r["gamma_delta_min"] is None and r["p_home_close_gamma"] is None
+
+    def test_an_unparseable_league_time_falls_back_to_gamma_and_says_so(self):
+        c = FakeClient({"2020": self._home(), "1010": [{"t": TIP - 60, "p": 0.4}]})
+        r = closing_price(c, MKT, tip_utc="not-a-time")
+        assert r["cutoff_source"] == "gamma" and r["p_home_close"] == 0.60
+
+    def test_no_league_time_is_the_original_definition(self):
+        c = FakeClient({"2020": self._home(), "1010": [{"t": TIP - 60, "p": 0.4}]})
+        r = closing_price(c, MKT)
+        assert r["cutoff_source"] == "gamma" and r["gamma_delta_min"] == 0
+        assert r["p_home_close"] == r["p_home_close_gamma"] == 0.60

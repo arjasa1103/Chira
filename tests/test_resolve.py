@@ -24,6 +24,7 @@ from chira.resolve import (
     invert_learned,
     label_match,
     normalize_nickname,
+    pick_moneyline,
     prior_lookup,
     probe_order,
     resolve,
@@ -257,3 +258,58 @@ class TestResolve:
         out = resolve(FakeClient(), "nba", games, [{}], max_probes_per_team=2)
         assert out["probes"] <= 8, out["probes"]
         assert out["unresolved"] == ["bos", "lal"]
+
+
+def mk(question, kind, outs=("Lakers", "Celtics")):
+    m = {"question": question, "outcomes": json.dumps(list(outs))}
+    if kind is not None:
+        m["sportsMarketType"] = kind
+    return m
+
+
+class TestPickMoneyline:
+    """Taking the first label match priced 5 NHL 2025-26 SPREAD markets as moneylines."""
+
+    def test_a_typed_moneyline_beats_an_earlier_spread(self):
+        spread, ml = mk("Spread: Lakers (-1.5)", "spreads"), mk("Lakers vs. Celtics", "moneyline")
+        assert pick_moneyline([spread, ml]) is ml
+
+    def test_a_first_half_moneyline_never_substitutes_for_the_game(self):
+        """NBA 2025-26 events carry 1,204 of these, with team-name outcomes."""
+        half = mk("Lakers vs. Celtics: 1H Moneyline", "first_half_moneyline")
+        assert pick_moneyline([half]) is None
+
+    @pytest.mark.parametrize("kind", ["spreads", "first_half_spreads", "first_period_moneyline",
+                                      "second_half_moneyline", "quarter_winner"])
+    def test_a_sole_non_full_game_market_is_rejected(self, kind):
+        assert pick_moneyline([mk("x", kind)]) is None
+
+    def test_a_sole_untyped_market_is_accepted(self):
+        m = mk("Lakers vs. Celtics", None)
+        assert pick_moneyline([m]) is m
+
+    def test_a_sole_market_mislabelled_totals_is_accepted(self):
+        """40 NBA 2024-25 single-market 'Thunder vs. X' moneylines are typed totals."""
+        m = mk("Thunder vs. Nuggets", "totals")
+        assert pick_moneyline([m]) is m
+
+    def test_two_candidates_with_no_explicit_moneyline_is_ambiguous(self):
+        assert pick_moneyline([mk("a", None), mk("b", None)]) is None
+
+
+class TestConfirmSelectsTheMoneyline:
+    def test_the_real_wsh_cbj_layout_prices_the_moneyline(self):
+        """Measured order: spread, O/U 3.5, moneyline, O/U 4.5..., spread."""
+        markets = [mk("Spread: Lakers (-1.5)", "spreads"),
+                   mk("Lakers vs. Celtics: O/U 3.5", "totals", ("Over", "Under")),
+                   mk("Lakers vs. Celtics", "moneyline"),
+                   mk("Spread: Celtics (-1.5)", "spreads", ("Celtics", "Lakers"))]
+        client = FakeClient({"nba-lal-bos-2025-01-15": [{"markets": markets}]})
+        hit = confirm(client, "nba", game(), "lal", "bos", team_labels([game()]))
+        assert hit["market"]["question"] == "Lakers vs. Celtics"
+
+    def test_only_spreads_is_a_miss_that_names_what_it_rejected(self):
+        client = FakeClient({"nba-lal-bos-2025-01-15": [{"markets": [
+            mk("Spread: Lakers (-1.5)", "spreads")]}]})
+        hit = confirm(client, "nba", game(), "lal", "bos", team_labels([game()]))
+        assert hit["market"] is None and hit["rejected_types"] == ["spreads"]

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import datetime
+from datetime import UTC, datetime
 
 from .constants import (
     COMPLEMENTARITY_TOL,
@@ -84,7 +84,7 @@ def _numeric_token(v: object) -> bool:
     return isinstance(v, str) and v.isascii() and v.isdigit()
 
 
-def closing_price(client: Client, market: dict) -> dict:
+def closing_price(client: Client, market: dict, *, tip_utc: str | None = None) -> dict:
     """Extract the home-side closing price plus provenance and quality flags.
 
     Returns a sentinel dict on every malformed-input path. It never raises on
@@ -99,11 +99,22 @@ def closing_price(client: Client, market: dict) -> dict:
         # Confirmed by execution: a hex token id raised ValueError out of
         # prices_history and aborted the census, despite this function's promise.
         return {"ok": False, "reason": "unparseable_market"}
-    if not gst:
-        return {"ok": False, "reason": "missing_gameStartTime"}
-    tip_dt = _parse_gst(gst)
-    if tip_dt is None:
-        return {"ok": False, "reason": "unparseable_gameStartTime"}
+    # The pre-tipoff cutoff. PREREGISTRATION.md Amendment 1: the LEAGUE's start time
+    # when the caller has it, because Gamma's gameStartTime comes from the party
+    # being benchmarked and was measured up to 6 hours LATE (a "closing" price that
+    # includes the whole game) and, for NHL Oct-Nov 2025, hours EARLY. The
+    # originally pre-registered Gamma cutoff is still computed below as
+    # p_home_close_gamma, so the amendment's effect stays measurable.
+    gamma_dt = _parse_gst(gst) if gst else None
+    league_dt = _parse_gst(tip_utc) if tip_utc else None
+    if league_dt is not None:
+        tip_dt, cutoff_source = league_dt, "league"
+    else:
+        if not gst:
+            return {"ok": False, "reason": "missing_gameStartTime"}
+        if gamma_dt is None:
+            return {"ok": False, "reason": "unparseable_gameStartTime"}
+        tip_dt, cutoff_source = gamma_dt, "gamma"
     tip = tip_dt.timestamp()
     start_dt = _parse_gst(market["startDate"]) if market.get("startDate") else None
     start = start_dt.timestamp() if start_dt else tip - DEFAULT_LOOKBACK_DAYS * 86400
@@ -154,7 +165,17 @@ def closing_price(client: Client, market: dict) -> dict:
         "p_home_t1h": look(3600),
         "p_home_t6h": look(6 * 3600),
         "p_home_t24h": look(24 * 3600),
+        "cutoff_source": cutoff_source,
+        "tip_utc": tip_dt.astimezone(UTC).isoformat(),
     }
+    if gamma_dt is not None:
+        gamma_tip = gamma_dt.timestamp()
+        out["gamma_delta_min"] = round((gamma_tip - tip) / 60)
+        out["p_home_close_gamma"] = next(
+            (pt["p"] for pt in reversed(home_all) if pt["t"] <= gamma_tip), None)
+    else:
+        out["gamma_delta_min"] = None
+        out["p_home_close_gamma"] = None
     # staleness: a long flat run immediately pre-tipoff is carry-forward, not quoting
     tail = [pt["p"] for pt in home_pre[-STALE_FLAT_RUN:]]
     out["stale_flat_run"] = len(tail) == STALE_FLAT_RUN and len(set(tail)) == 1

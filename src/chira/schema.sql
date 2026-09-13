@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS games (
     home_pts      INTEGER,
     winner        TEXT    NOT NULL,   -- 'away' | 'home', from the LEAGUE, never the market
     neutral_site  BOOLEAN DEFAULT FALSE,
+    start_time_utc TIMESTAMPTZ,       -- the LEAGUE's tipoff; the pre-tipoff cutoff
     run_id        TEXT,
     PRIMARY KEY (sport, season, game_id)
 );
@@ -56,7 +57,13 @@ CREATE TABLE IF NOT EXISTS priced (
     market_winner    TEXT,               -- 'away' | 'home' | NULL, from outcomePrices
     label_agreement  TEXT    NOT NULL,   -- 'agree' | 'disagree' | 'unresolved' (E1)
     volume           DOUBLE,
-    game_start_time  TIMESTAMPTZ,
+    game_start_time  TIMESTAMPTZ,        -- Gamma's gameStartTime, as reported
+    market_type      TEXT,               -- sportsMarketType of the priced market
+    market_question  TEXT,
+    cutoff_source    TEXT,               -- 'league' | 'gamma' (PREREGISTRATION Amendment 1)
+    league_start_time TIMESTAMPTZ,       -- the cutoff actually used when 'league'
+    gamma_delta_min  INTEGER,            -- Gamma tipoff minus the cutoff, minutes
+    p_home_close_gamma DOUBLE,           -- the ORIGINAL pre-registered close, for audit
     run_id        TEXT,
     PRIMARY KEY (sport, season, game_id)
 );

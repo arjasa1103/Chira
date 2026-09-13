@@ -323,3 +323,6 @@ class TestWholeGate:
         assert cov["conventions"] == {"et": 40}
         assert cov["miss_reasons"] == {"no_market": 1}
         assert cov["coverage_of_attempted"] == round(40 / 41, 4)
+        assert cov["cutoff_sources"] == {"unrecorded": 40}
+        assert cov["market_types"] == {"untyped": 40}
+        assert cov["gamma_tipoff_off_over_1h"] == 0

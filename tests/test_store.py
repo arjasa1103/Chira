@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from chira.store import Store
+from chira.store import SCHEMA_VERSION, Store
 
 
 def game(gid="g1", **kw):
@@ -180,7 +180,7 @@ class TestSchemaMigration:
     """CREATE TABLE IF NOT EXISTS made the store immutable once it existed."""
 
     def test_a_fresh_store_is_stamped_at_the_current_version(self, store):
-        assert store.schema_version == 3
+        assert store.schema_version == SCHEMA_VERSION
 
     def test_an_unstamped_existing_store_is_migrated_not_ignored(self, tmp_path):
         """Simulates a week-2 store: tables exist, no meta row, no run_id column."""
@@ -196,7 +196,7 @@ class TestSchemaMigration:
         con.close()
 
         with Store(path) as s:
-            assert s.schema_version == 3
+            assert s.schema_version == SCHEMA_VERSION
             cols = [r[0] for r in s.db.execute("DESCRIBE games").fetchall()]
             assert "run_id" in cols, "the migration did not run"
             assert s.reconcile("nba", "2024-25")["scheduled"] == 1, "data was lost"
@@ -207,7 +207,7 @@ class TestSchemaMigration:
             s.put_games("nba", "2024-25", [game("g1")])
             first = s.digest()
         with Store(path) as s:
-            assert s.schema_version == 3 and s.digest() == first
+            assert s.schema_version == SCHEMA_VERSION and s.digest() == first
 
 
 class TestProvenance:
@@ -459,9 +459,51 @@ class TestMigrationToV3:
         con.close()
 
         with Store(path) as s:
-            assert s.schema_version == 3
+            assert s.schema_version == SCHEMA_VERSION
             cols = {r[0] for r in s.db.execute("DESCRIBE priced").fetchall()}
             assert {"p_home_t6h", "p_home_t24h"} <= cols
             s.put_games("nba", "2024-25", [game("g1")])
             s.put_priced("nba", "2024-25", "g1", priced_row(), points={"home": pts(2)})
             assert s.points_summary()["rows"] == 2
+
+
+class TestMigrationToV4:
+    def test_a_v3_store_gains_the_amendment_columns_and_keeps_its_rows(self, tmp_path):
+        import duckdb
+
+        from chira.store import SCHEMA
+        path = tmp_path / "v3.duckdb"
+        con = duckdb.connect(str(path))
+        con.execute(SCHEMA.read_text())
+        con.execute("ALTER TABLE games DROP COLUMN start_time_utc")
+        for col in ("market_type", "market_question", "cutoff_source", "league_start_time",
+                    "gamma_delta_min", "p_home_close_gamma"):
+            con.execute(f"ALTER TABLE priced DROP COLUMN {col}")
+        con.execute("INSERT INTO meta VALUES ('schema_version', '3')")
+        con.execute("INSERT INTO games (sport, season, game_id, et_date, away, home, winner) "
+                    "VALUES ('nba','2024-25','g1','2025-01-15','lal','bos','home')")
+        con.close()
+        with Store(path) as s:
+            assert s.schema_version == 4
+            gcols = {r[0] for r in s.db.execute("DESCRIBE games").fetchall()}
+            pcols = {r[0] for r in s.db.execute("DESCRIBE priced").fetchall()}
+            assert "start_time_utc" in gcols
+            assert {"market_type", "cutoff_source", "league_start_time", "gamma_delta_min",
+                    "p_home_close_gamma"} <= pcols
+            assert s.reconcile("nba", "2024-25")["scheduled"] == 1, "rows lost in migration"
+
+
+class TestAmendmentColumns:
+    def test_the_audit_columns_round_trip_and_render_in_utc(self, seeded):
+        seeded.put_games("nba", "2024-25", [game("g1", start_time_utc="2025-01-16T00:30:00Z")])
+        seeded.put_priced("nba", "2024-25", "g1", priced_row(
+            market_type="moneyline", market_question="Lakers vs. Celtics",
+            cutoff_source="league", league_start_time="2025-01-16T00:30:00Z",
+            gamma_delta_min=360, p_home_close_gamma=0.99))
+        row = seeded.priced_rows("nba", "2024-25")[0]
+        assert (row["market_type"], row["cutoff_source"], row["gamma_delta_min"],
+                row["p_home_close_gamma"]) == ("moneyline", "league", 360, 0.99)
+        assert row["league_start_time"] == "2025-01-16 00:30:00+00"
+        got = seeded.db.execute(
+            "SELECT CAST(start_time_utc AS VARCHAR) FROM games WHERE game_id='g1'").fetchone()[0]
+        assert got == "2025-01-16 00:30:00+00"

@@ -43,7 +43,9 @@ SCHEMA = Path(__file__).with_name("schema.sql")
 #   2: run_id on games/priced/misses, so a resumed census across a code change
 #      is not an unlabelled mixture
 #   3: the T-6h / T-24h looks on priced, and the raw price_points series
-SCHEMA_VERSION = 3
+#   4: league start time on games; market type/question, cutoff source, Gamma
+#      delta and the original Gamma-cutoff close on priced (Amendment 1)
+SCHEMA_VERSION = 4
 
 _MIGRATIONS: dict[int, tuple[str, ...]] = {
     2: (
@@ -57,6 +59,15 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
         # price_points itself is created by schema.sql's IF NOT EXISTS, which
         # does run on an existing store; only ALTERs need to live here.
     ),
+    4: (
+        "ALTER TABLE games ADD COLUMN IF NOT EXISTS start_time_utc TIMESTAMPTZ",
+        "ALTER TABLE priced ADD COLUMN IF NOT EXISTS market_type TEXT",
+        "ALTER TABLE priced ADD COLUMN IF NOT EXISTS market_question TEXT",
+        "ALTER TABLE priced ADD COLUMN IF NOT EXISTS cutoff_source TEXT",
+        "ALTER TABLE priced ADD COLUMN IF NOT EXISTS league_start_time TIMESTAMPTZ",
+        "ALTER TABLE priced ADD COLUMN IF NOT EXISTS gamma_delta_min INTEGER",
+        "ALTER TABLE priced ADD COLUMN IF NOT EXISTS p_home_close_gamma DOUBLE",
+    ),
 }
 
 _PRICED_COLS = (
@@ -64,11 +75,13 @@ _PRICED_COLS = (
     "home_nickname", "p_home_close", "p_home_t1h", "p_home_t6h", "p_home_t24h",
     "n_pre_tipoff",
     "secs_before_tip", "stale_flat_run", "complement_sum", "complement_ok",
-    "market_winner", "label_agreement", "volume", "game_start_time", "run_id",
+    "market_winner", "label_agreement", "volume", "game_start_time",
+    "market_type", "market_question", "cutoff_source", "league_start_time",
+    "gamma_delta_min", "p_home_close_gamma", "run_id",
 )
 _GAME_COLS = (
     "sport", "season", "game_id", "et_date", "away", "home", "away_pts",
-    "home_pts", "winner", "neutral_site", "run_id",
+    "home_pts", "winner", "neutral_site", "start_time_utc", "run_id",
 )
 _MISS_COLS = ("sport", "season", "game_id", "reason", "attempted", "detail",
               "run_id")
@@ -76,7 +89,7 @@ _MISS_COLS = ("sport", "season", "game_id", "reason", "attempted", "detail",
 # DuckDB converts TIMESTAMPTZ to a Python object via pytz, which is not a
 # dependency and should not become one. Reading these columns as text keeps the
 # store dependency-free and gives the digest a canonical form for free.
-_TZ_COLS = frozenset({"game_start_time"})
+_TZ_COLS = frozenset({"game_start_time", "league_start_time", "start_time_utc"})
 
 
 def _scope(sport: str | None, season: str | None,
@@ -166,7 +179,7 @@ class Store:
         rows = [
             (sport, season, g["game_id"], g["et_date"], g["away"], g["home"],
              g.get("away_pts"), g.get("home_pts"), g["winner"],
-             bool(g.get("neutral_site", False)), self.run_id)
+             bool(g.get("neutral_site", False)), g.get("start_time_utc"), self.run_id)
             for g in games
         ]
         if rows:

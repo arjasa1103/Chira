@@ -31,6 +31,8 @@ The claim is about calibration, not profit. Nothing here places bets.
   - [How to re-run the gate without fetching](#how-to-re-run-the-gate-without-fetching)
   - [How to take a clean slice](#how-to-take-a-clean-slice)
   - [How to regenerate the abbreviation maps](#how-to-regenerate-the-abbreviation-maps)
+  - [How to cut and verify the snapshot](#how-to-cut-and-verify-the-snapshot)
+  - [How to read the snapshot](#how-to-read-the-snapshot)
   - [How to query the census store](#how-to-query-the-census-store)
   - [How to compute calibration metrics](#how-to-compute-calibration-metrics)
   - [How to regenerate the noise floor](#how-to-regenerate-the-noise-floor)
@@ -69,13 +71,14 @@ The claim is about calibration, not profit. Nothing here places bets.
 | Per-season abbreviation resolution, 124/124 team-seasons | Built | `src/chira/resolve.py`, `scripts/resolve_abbrs.py` |
 | Rate-limited HTTP client with backoff and circuit breaker | Built | `src/chira/http.py` |
 | Validated on-disk response cache | Built | `src/chira/cache.py` |
-| Closing-price extraction (close, T-1h, staleness, complementarity) | Built | `src/chira/extract.py` |
+| Closing-price extraction (close, T-1h, T-6h, T-24h, staleness, complementarity, raw series) | Built | `src/chira/extract.py` |
 | Census runner (resumable, idempotent, re-probes misses) | Built | `src/chira/census.py`, `scripts/run_census.py` |
 | DuckDB census store with reconciliation invariants | Built | `src/chira/store.py`, `src/chira/schema.sql` |
 | Census validation gate | Built; passes on all four sport-seasons (200-game slices) | `src/chira/gate.py` |
 | Calibration metrics and null-distribution simulator | Built | `src/chira/calibration.py` |
 | JSONL run telemetry and manifests | Built | `src/chira/telemetry.py` |
-| Test suite | 368 tests, offline, ruff-clean | `tests/` |
+| Snapshot writer, verifier and offline reader | Built | `src/chira/snapshot.py`, `scripts/make_snapshot.py` |
+| Test suite | 413 tests, offline, ruff-clean | `tests/` |
 | Full census of all 5,084 games | **Not run yet** (week 3) | |
 | Immutable Parquet snapshot | **Not built** (week 3) | |
 | Coverage and calibration charts | **Not built** (week 4) | |
@@ -130,7 +133,7 @@ You should see `0.1.0`.
 uv run pytest
 ```
 
-Expected: `368 passed`. The suite is offline. Any test that opens a socket fails, so this
+Expected: `413 passed`. The suite is offline. Any test that opens a socket fails, so this
 passes without a network connection.
 
 ### Step 3: Learn the week-1 abbreviation prior
@@ -215,8 +218,8 @@ with Store('data/census.duckdb') as s:
 ### What you built
 
 You now have a DuckDB store with 200 priced NBA games, each tied to a slug, a home-side
-closing price, a T-1h price, a staleness flag, a complementarity check and an independent
-league winner. You also have a gate report showing the pipeline didn't flip orientation,
+closing price, T-1h, T-6h and T-24h prices, the raw minute-level price series for both
+tokens, a staleness flag, a complementarity check and an independent league winner. You also have a gate report showing the pipeline didn't flip orientation,
 lose games, or double-count them. That is exactly the evidence the project requires before
 spending the ~16,000 requests of a full census.
 
@@ -362,6 +365,82 @@ cgy -> cal    mtl -> mon    njd -> nj    sjs -> sj
 tbl -> tb     uta -> utah   vgk -> las
 ```
 
+### How to cut and verify the snapshot
+
+Every phase after the census reads an immutable Parquet snapshot, not the live store. The
+snapshot writer refuses an unfinished census.
+
+**Prerequisites:** all four sport-seasons censused in one store with no `--limit`, and no
+census process holding the store.
+
+1. Cut it:
+
+   ```bash
+   uv run python scripts/make_snapshot.py
+   ```
+
+   It checks, for every sport-season in the store, that `scheduled == priced + misses`, that
+   no game is in both tables or orphaned, and that every priced game has its raw series. If
+   any check fails it prints `REFUSED: ...` and exits `1` without writing anything.
+
+2. Read the output. It prints the snapshot path, the store digest and row counts per table
+   and sport-season, after reading the snapshot back and verifying every checksum.
+
+The snapshot lands in `data/snapshots/census-<YYYYMMDD>-<first 12 hex of the store digest>/`:
+
+```
+manifest.json               row counts, checksums, digest, git hash, runs, definitions
+games/sport=nba/season=2024-25/data_0.parquet
+priced/...  misses/...  price_points/...   (each partitioned by sport and season)
+runs.parquet
+```
+
+Files are written read-only (`0444`) and directories `0555`. Cutting a second snapshot from
+an unchanged store fails, because the directory name is the store digest.
+
+**Verification:** re-verify at any time. Silence means every file matches its checksum and no
+file was added or removed:
+
+```bash
+uv run python -c "from chira.snapshot import verify_snapshot; import sys; verify_snapshot(sys.argv[1])" data/snapshots/<snapshot-id>
+```
+
+`data/snapshots/` is gitignored with the rest of `data/`. This is the local input for the
+analysis, not a public dataset release (see [Data and terms of use](#data-and-terms-of-use)).
+
+### How to read the snapshot
+
+`open_snapshot` verifies checksums, then returns an in-memory DuckDB connection with one view
+per table. It needs no network and no store.
+
+```python
+from chira.snapshot import open_snapshot
+
+con = open_snapshot("data/snapshots/<snapshot-id>")
+con.execute("""
+    SELECT sport, season, count(*) AS priced,
+           avg(p_home_close) AS mean_close, avg(p_home_t24h) AS mean_t24h
+    FROM priced GROUP BY ALL ORDER BY ALL
+""").fetchall()
+
+# One game's raw home-token series, pre- and post-tipoff
+con.execute("""
+    SELECT t, p FROM price_points
+    WHERE sport = 'nba' AND season = '2024-25' AND game_id = '0022400001' AND side = 'home'
+    ORDER BY t
+""").fetchall()
+```
+
+Partition columns `sport` and `season` come back as text. `priced.game_start_time` is text in
+the form `2025-01-16T00:30:00+00:00` (UTC) whatever your session timezone.
+
+Read one partition directly if you don't want the whole series table:
+
+```python
+import duckdb
+duckdb.sql("SELECT count(*) FROM 'data/snapshots/<id>/price_points/sport=nhl/season=2025-26/*.parquet'")
+```
+
 ### How to query the census store
 
 **From Python, through the `Store` API:**
@@ -375,7 +454,8 @@ with Store("data/census.duckdb") as s:
     s.miss_reasons("nhl", "2024-25")       # {'no_market': 64}
     s.label_agreement("nba", "2025-26")    # {'agree': 199}
     rows = s.priced_rows("nba", "2025-26") # list of dicts, one per priced game
-    s.digest()                             # content hash over games/priced/misses
+    s.points_summary("nba", "2024-25")     # raw series: rows, series, missing, orphaned
+    s.digest()                             # content hash over games/priced/misses/price_points
 ```
 
 **With raw SQL:** open the file directly with `duckdb`. Open it read-only when no census is
@@ -569,6 +649,7 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 | Script | Purpose | Reads | Writes | Network |
 |---|---|---|---|---|
 | `run_census.py` | Census plus validation gate for one sport-season | `data/abbr_map_resolved.json`, schedules | store, cache, log, gate report | Polymarket, `nba_api` or NHL |
+| `make_snapshot.py` | Cut, read back and verify the immutable Parquet snapshot | store | `data/snapshots/<id>/` | none |
 | `learn_abbr.py` | Learn the `{slug_abbr: nickname}` prior from Gamma | none | `data/abbr_map.json` | Gamma, ~180 requests |
 | `resolve_abbrs.py` | Resolve `{schedule_abbr: slug_abbr}` for both sports and seasons | `data/abbr_map.json` | `data/abbr_map_resolved.json`, cache | Gamma, NHL, `nba_api` |
 | `probe_rate_limit.py` | Burst rate-limit ramp | none | stdout | Gamma, CLOB |
@@ -587,9 +668,10 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 | `chira.nhl` | NHL schedule | `nhl_games(client, season)`, `season_code`, `NHL_TEAMS` |
 | `chira.abbr` | Week-1 abbreviation learner (prior only) | `learn(client, season)`, `SEASON_SPANS`, `TEAM_COUNT` |
 | `chira.resolve` | Schedule-driven abbreviation resolver and slug confirmation | `resolve`, `confirm`, `team_labels`, `invert_learned`, `label_match` |
-| `chira.extract` | Closing price, T-1h, staleness, complementarity, market winner | `closing_price(client, market)`, `label_agreement` |
+| `chira.extract` | Closing price, T-1h/T-6h/T-24h looks, raw series, staleness, complementarity, market winner | `closing_price(client, market)`, `label_agreement` |
 | `chira.census` | Per-game census, slicing, re-probe, map loading | `run_census`, `census_game`, `reprobe_misses`, `slice_games`, `load_abbr_map`, `tipoff_is_plausible`, `rematch_slugs`, `manifest` |
-| `chira.store` | DuckDB store, migrations, reconciliation, digest | `Store` |
+| `chira.store` | DuckDB store, migrations, reconciliation, raw series, digest | `Store` |
+| `chira.snapshot` | Immutable Parquet snapshot: preflight, write, verify, offline read | `create_snapshot`, `verify_snapshot`, `open_snapshot`, `preflight`, `SnapshotError` |
 | `chira.gate` | Validation gate checks and report | `run_gate(store, sport, season, require_complete=...)`, `format_report` |
 | `chira.calibration` | Metrics and the null simulator | `equal_count_bins`, `ece`, `max_bin_dev`, `cox_slope_intercept`, `brier`, `murphy`, `simulate_null` |
 | `chira.telemetry` | JSONL event log and run manifest | `Telemetry`, `run_id`, `git_hash` |
@@ -597,8 +679,8 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 **Game dict shape.** `nba_games` and `nhl_games` both return a list sorted by
 `(et_date, game_id)`. Each item has `game_id`, `et_date` (ISO, US-Eastern), `away`, `home`
 (lowercase schedule abbreviations), `away_name`, `home_name`, `away_place`, `home_place`,
-`away_pts`, `home_pts`, `winner` (`"away"` or `"home"`). NHL games also carry
-`neutral_site`. Only completed regular-season games are returned.
+`away_pts`, `home_pts`, `winner` (`"away"` or `"home"`), and `start_time_utc`, the league's
+own UTC tipoff (None if the league source had none). NHL games also carry `neutral_site`. Only completed regular-season games are returned.
 
 ### Files the pipeline reads and writes
 
@@ -608,6 +690,7 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 | `data/abbr_map_resolved.json` | `resolve_abbrs.py` | `generated_at`, and `seasons.<season>.<sport>` with `map`, `unresolved`, `probes`, `evidence`, `n_games`, `prior_sizes` |
 | `data/census.duckdb` | `run_census.py` | The store (see [Store schema](#store-schema)) |
 | `data/gate-<sport>-<season>.json` | `run_census.py` | Gate result (see [Gate report format](#gate-report-format)) |
+| `data/snapshots/<id>/` | `make_snapshot.py` | Read-only Parquet snapshot plus `manifest.json` |
 | `data/logs/census.jsonl` | `run_census.py` | Telemetry, one JSON object per line |
 | `data/price_sample.json` | `probe_price_distribution.py` | Week-1 sample of 128 NBA closing prices |
 | `data/noise_floor.json` | `calibration.simulate_null` (by hand) | Null metric distributions at n = 150, 850, 1230, 2460, 5084 |
@@ -617,7 +700,7 @@ All of `data/` and `.http-cache/` are gitignored. `*.duckdb` must never be commi
 
 ### Store schema
 
-Defined in `src/chira/schema.sql`. Current `SCHEMA_VERSION` is `2`. Existing stores upgrade
+Defined in `src/chira/schema.sql`. Current `SCHEMA_VERSION` is `4`. Existing stores upgrade
 through forward-only migrations in `store._MIGRATIONS` when opened.
 
 **`games`**: one row per scheduled game. Key `(sport, season, game_id)`.
@@ -630,6 +713,7 @@ through forward-only migrations in `store._MIGRATIONS` when opened.
 | `away_pts`, `home_pts` | INTEGER | Final score |
 | `winner` | TEXT | `away` or `home`, from the league, never the market |
 | `neutral_site` | BOOLEAN | NHL only; default false |
+| `start_time_utc` | TIMESTAMPTZ | The league's own tipoff (NHL `startTimeUTC`, NBA `scheduleleaguev2`); the closing-price cutoff |
 | `run_id` | TEXT | Run that last wrote the row |
 
 **`priced`**: one row per game with a usable closing price. Key `(sport, season, game_id)`.
@@ -639,8 +723,10 @@ through forward-only migrations in `store._MIGRATIONS` when opened.
 | `slug` | TEXT | The Polymarket event slug that matched |
 | `convention` | TEXT | `et` or `et_plus_1` |
 | `away_nickname`, `home_nickname` | TEXT | Market outcome labels |
-| `p_home_close` | DOUBLE | Home token's last price at or before `gameStartTime` |
+| `p_home_close` | DOUBLE | Home token's last price at or before the league's start time (PREREGISTRATION Amendment 1) |
 | `p_home_t1h` | DOUBLE | Home token's last price at or before tipoff minus 1 hour; NULL if none |
+| `p_home_t6h` | DOUBLE | Same, 6 hours before tipoff; NULL if the market opened later |
+| `p_home_t24h` | DOUBLE | Same, 24 hours before tipoff; NULL if the market opened later |
 | `n_pre_tipoff` | INTEGER | Home price points before tipoff |
 | `secs_before_tip` | INTEGER | Seconds between the last quote and tipoff |
 | `stale_flat_run` | BOOLEAN | Last 10 pre-tipoff prices identical |
@@ -649,7 +735,13 @@ through forward-only migrations in `store._MIGRATIONS` when opened.
 | `market_winner` | TEXT | From `outcomePrices` |
 | `label_agreement` | TEXT | `agree` (disagreements and unresolved markets go to `misses`) |
 | `volume` | DOUBLE | Terminal cumulative market volume |
-| `game_start_time` | TIMESTAMPTZ | Polymarket's `gameStartTime` |
+| `game_start_time` | TIMESTAMPTZ | Polymarket's `gameStartTime`, as reported (can be hours off; see `gamma_delta_min`) |
+| `market_type` | TEXT | `sportsMarketType` of the priced market, normally `moneyline` |
+| `market_question` | TEXT | The priced market's question, e.g. `Capitals vs. Blue Jackets` |
+| `cutoff_source` | TEXT | `league` if the close was cut at the league's start time, `gamma` if it fell back to `gameStartTime` |
+| `league_start_time` | TIMESTAMPTZ | The cutoff used, when `cutoff_source = 'league'` |
+| `gamma_delta_min` | INTEGER | Gamma's tipoff minus the cutoff, in minutes. Positive means Gamma was late |
+| `p_home_close_gamma` | DOUBLE | The close under the original pre-registered definition (cut at `gameStartTime`), kept for audit |
 | `run_id` | TEXT | Run that last wrote the row |
 
 **`misses`**: one row per game that couldn't be priced. Key `(sport, season, game_id)`.
@@ -661,6 +753,17 @@ through forward-only migrations in `store._MIGRATIONS` when opened.
 | `detail` | TEXT | Free text: slug, bad timestamp, complement sum, and so on |
 | `run_id` | TEXT | Run that last wrote the row |
 
+**`price_points`**: the raw minute-level series, both tokens, pre- and post-tipoff. No primary
+key (it holds tens of millions of rows); append-only per game.
+
+| Column | Type | Notes |
+|---|---|---|
+| `sport`, `season`, `game_id` | TEXT | The priced game |
+| `side` | TEXT | `home` or `away` |
+| `t` | BIGINT | Unix seconds |
+| `p` | DOUBLE | Price, validated finite and in [0, 1] |
+| `run_id` | TEXT | Run that wrote the series |
+
 **`runs`**: `run_id`, `started_at`, `finished_at` (NULL if the run died), `manifest` (JSON).
 
 **`meta`**: key-value pairs; currently only `schema_version`.
@@ -669,12 +772,15 @@ through forward-only migrations in `store._MIGRATIONS` when opened.
 
 - Writing a `priced` row deletes that game's `misses` row in the same transaction, and the
   reverse. A game is never in both.
+- A priced row and its raw series are written in one transaction. Downgrading a priced game
+  to a miss deletes its series.
 - Re-running writes the same primary keys with `INSERT OR REPLACE`, so rows are never
   duplicated.
 - `reconcile()` returns `scheduled`, `priced`, `misses`, `pending` and `balanced`.
   `balanced` only means something once `pending == 0`.
 - `digest()` hashes `games`, `priced` and `misses` in canonical order with floats rounded to 9
-  places, excluding `runs`. Two runs that collected the same data produce the same digest.
+  places, plus a per-series fingerprint of `price_points` (count, time sum, rounded price
+  sum), excluding `runs`. Two runs that collected the same data produce the same digest.
 - Every connection sets `TimeZone='UTC'`, so `digest()` doesn't depend on the host.
 
 ### Miss reasons
@@ -691,7 +797,8 @@ cache-bypassed attempt in `reprobe_misses`.
 | `unresolved_market` | Market has no usable `outcomePrices` winner | yes |
 | `missing_gameStartTime` | Market has no `gameStartTime` | yes |
 | `unparseable_gameStartTime` | `gameStartTime` isn't a timezone-aware ISO timestamp | yes |
-| `implausible_game_start_time` | Tipoff's ET date differs from the schedule, or its ET hour is outside 11-23 | no |
+| `no_moneyline_market` | The teams matched, but only spread or partial-game markets (no full-game moneyline) | no |
+| `implausible_game_start_time` | Fallback only, for a game with no league start time: Gamma's tipoff ET date differs from the schedule, or its ET hour is outside 11-23 | no |
 | `postponed_or_split_resolution` | `outcomePrices` is `["0.5","0.5"]` | no |
 | `outcome_prices_not_complementary` | `outcomePrices` don't sum to 1 | no |
 | `malformed_outcome_prices` | `outcomePrices` isn't a 2-element array | no |
@@ -700,13 +807,14 @@ cache-bypassed attempt in `reprobe_misses`.
 
 ### Validation gate checks
 
-`gate.run_gate` runs six checks. The gate passes only if all six pass.
+`gate.run_gate` runs seven checks. The gate passes only if all seven pass.
 
 | Check | Passes when | Why it exists |
 |---|---|---|
 | `label_agreement` | At least one priced row, every priced row is `agree`, and zero `label_disagreement` misses | The only defence against an orientation flip, which mirrors the calibration curve instead of crashing |
 | `complementarity` | Zero `complementarity_failed` misses, at least one checked row, and at most 5% of priced rows unchecked (no away series) | Confirms the two outcome tokens are true complements |
 | `reconciliation` | No game in both tables, no orphan rows, `pending >= 0`; plus `pending == 0` when `require_complete` | Protects the coverage denominator |
+| `price_series` | Every priced game has a stored raw series and no series belongs to an unpriced game | The snapshot ships the raw series; a gap there would be silent |
 | `fault_injection` | Injecting a double count AND deleting a priced row both trip their asserts, and the digest is unchanged after rollback | Proves the reconciliation asserts are actually wired up |
 | `price_discriminates` | At least 30 rows, mean `p_home_close` is higher when home won, and the gap is at least 2.0 standard errors | Catches a flipped `clobTokenIds` leg, which label agreement can't see |
 | `shuffled_join` | At least 30 rows, home win rate in [0.35, 0.75], true agreement 1.0, and permuted agreement (20 seeded draws) within 5 SE of chance | Measures the chance level and guards the join key. It is **not** independent proof the join is correct; see `gate.py` |
@@ -730,10 +838,13 @@ apply them. They are for the full-census integrity analysis in PREREGISTRATION s
     "attempted": 200, "coverage_of_attempted": 1.0,
     "conventions": {"et": 200},
     "miss_reasons": {},
-    "attempted_by_month": {"2024-10": {"scheduled": 71, "attempted": 12}, ...}
+    "attempted_by_month": {"2024-10": {"scheduled": 71, "attempted": 12}, ...},
+    "cutoff_sources": {"league": 1228},
+    "market_types": {"moneyline": 1188, "totals": 40},
+    "gamma_tipoff_off_over_1h": 1
   },
   "store_digest": "<sha256>",
-  "schema_version": 2,
+  "schema_version": 4,
   "runs": ["census-nba-20260912T115106Z-63345", ...]
 }
 ```
@@ -810,7 +921,8 @@ From `src/chira/constants.py` unless noted.
 | `FIDELITY_MINUTES` | `1` | Price-history resolution |
 | `COMPLEMENTARITY_TOL` | `1e-6` | Allowed deviation of `p_home + p_away` from 1 |
 | `STALE_FLAT_RUN` | `10` | Identical trailing minutes that flag a stale close |
-| `TIPOFF_ET_HOUR_BAND` | `(11, 23)` | Plausible ET tipoff hours |
+| `TIPOFF_ET_HOUR_BAND` | `(11, 23)` | Plausible ET tipoff hours; applied only when a game has no league start time |
+| `MONEYLINE_MARKET_TYPE` / `NON_FULL_GAME_MARKET_TYPES` | `"moneyline"` / spreads and first-half types | Market selection by `sportsMarketType` |
 | `DEFAULT_LOOKBACK_DAYS` | `7` | Price window start when a market has no `startDate` |
 | `HISTORY_PAD_SECONDS` | `3600` | Padding before the price window |
 | `GAMMA_LIMIT_CAP` / `GAMMA_OFFSET_CEILING` | `100` / `2100` | Why the census enumerates from schedules, not Gamma |
@@ -823,7 +935,7 @@ From `src/chira/constants.py` unless noted.
 | `gate.MIN_DISCRIMINATION_SIGMA` | `2.0` | Price-discrimination floor |
 | `gate.MAX_UNCHECKED_FRACTION` | `0.05` | Complementarity unchecked allowance |
 | `nhl.GAMES_PER_SEASON` | `1312` | NHL enumeration must hit this exactly |
-| `store.SCHEMA_VERSION` | `2` | Store schema version |
+| `store.SCHEMA_VERSION` | `4` | Store schema version |
 | `cache.SCHEMA_VERSION` | `1` | Cache key version |
 
 ### Dependencies and extras
@@ -831,7 +943,7 @@ From `src/chira/constants.py` unless noted.
 | Group | Packages | Needed for |
 |---|---|---|
 | default | `requests`, `duckdb`, `numpy`, `scipy`, `nba_api>=1.5,<2` | Everything that exists today |
-| `store` extra | `pyarrow`, `matplotlib` | Parquet snapshot and charts (week 3+; no code uses them yet) |
+| `store` extra | `pyarrow`, `matplotlib` | Charts (week 4+; no code uses them yet). The snapshot does **not** need this extra: it is written and read with DuckDB's own Parquet support |
 | `model` extra | `numpyro`, `jax` | The hierarchical model (week 8; no code uses them yet) |
 | `dev` group | `pytest`, `pytest-cov`, `ruff` | Tests and lint; installed by `uv sync` |
 
@@ -857,16 +969,17 @@ uv sync --extra store
           slug_candidates: nba-<away>-<home>-<ET date>, then <ET date + 1>
                        │
                        ▼
-          Gamma /events?slug=   ── confirm both team labels in away/home order
-                       │
+          Gamma /events?slug=   ── confirm both team labels in away/home order,
+                       │                 then pick the sportsMarketType=moneyline market
                        ▼
-          tipoff plausibility check (market gameStartTime vs schedule date)
+          cutoff = the LEAGUE's start time (Gamma's only as a recorded fallback)
                        │
                        ▼
           CLOB /prices-history  ── home token series, away token series
                        │
                        ▼
-          closing_price: close, T-1h, staleness, complementarity, market winner
+          closing_price: close, T-1h, T-6h, T-24h, raw series, staleness,
+                         complementarity, market winner
                        │
                        ▼
           label agreement vs league winner
@@ -880,6 +993,12 @@ uv sync --extra store
                        │
                        ▼
           validation gate ──► data/gate-<sport>-<season>.json
+                       │
+                       ▼   (all four sport-seasons complete)
+          make_snapshot ──► data/snapshots/<id>/  read-only Parquet + checksums
+                       │
+                       ▼
+          every later phase: open_snapshot(), no network, no store
 ```
 
 Every HTTP call goes through `Client`: rate limit, backoff, circuit breaker, schema
@@ -906,11 +1025,20 @@ doesn't crash; it mirrors the calibration curve around 0.5 and looks like a find
 `label_agreement` checks `outcomePrices` against the league's winner. `price_discriminates`
 checks the separate `clobTokenIds` leg, which label agreement can't see.
 
-**Timestamps from the party being measured are cross-checked.** `gameStartTime` is the
-pre-tipoff cutoff and it comes from Polymarket. One market carried a tipoff about four hours
-late and produced a "closing" price of 0.9995 on a two-point game. `tipoff_is_plausible`
-rejects tipoffs whose ET date or hour disagrees with the league schedule. Measured: it
-rejected exactly the 2 bad rows of 960.
+**The closing price is cut at the league's start time, not the market's.** Polymarket's
+`gameStartTime` comes from the party being measured, and on the full census it disagreed
+with the league by more than 15 minutes on 69 priced games: 24 late (up to 6 hours, which
+lets in-game prices into the "close") and 45 early, 36 of them exactly 4 or 5 hours early
+(Eastern time recorded as UTC). An earlier ET-hour plausibility rule passed those and
+rejected a real 09:00 ET game in Stockholm. This changes the pre-registered definition, so
+it is recorded as [PREREGISTRATION.md](PREREGISTRATION.md) Amendment 1, and every priced
+row keeps the close under the original definition in `p_home_close_gamma`.
+
+**The moneyline is selected by type, not by being first.** An event holds many markets whose
+outcomes are the two team names: the moneyline, spreads, and for NBA 2025-26 a first-half
+moneyline. Taking the first label match priced 5 NHL 2025-26 spreads as moneylines. The
+census now selects `sportsMarketType == "moneyline"`, accepting an untyped or mistyped market
+only when it is the sole label match (40 NBA 2024-25 moneylines are typed `totals` upstream).
 
 **Empty answers are never cached, and misses are re-probed.** An empty `/events` response
 means either "no market" or "upstream hiccup", and they look identical. Caching it would turn
@@ -959,6 +1087,10 @@ label-agreement failure costs 600 requests instead of 16,000.
 | Gate `price_discriminates` FAIL with a negative gap | The token leg is flipped | Treat as a pipeline bug. Inspect `clobTokenIds` ordering for affected slugs |
 | Coverage or volume numbers look skewed | Slice layered on an older slice in the same store | Check `attempted_by_month` in the gate report; [take a clean slice](#how-to-take-a-clean-slice) |
 | `IO Error: Could not set lock on file` | Another process has the DuckDB file open | Wait for the census to finish, or query a copy |
+| `REFUSED: refusing to snapshot an unfinished census` | A sport-season has `pending > 0` | Finish that sport-season's census, then re-run `make_snapshot.py` |
+| `REFUSED: ... priced games have no raw series` | A priced row was written without its series (for example by an older schema version) | Re-census those games so row and series are written together |
+| `SnapshotError: ... already exists; snapshots are immutable` | The store hasn't changed since the last snapshot | Nothing to do; use the existing snapshot |
+| `SnapshotError: N files fail their checksum` | A snapshot file was edited or corrupted | Don't use it. Cut a fresh snapshot from the store |
 | `game_start_time` shows a non-UTC offset in your own query | DuckDB renders TIMESTAMPTZ in the session zone | `SET TimeZone='UTC'` on your connection |
 | A test fails with `unit tests must not open sockets` | The test reached the real network | Stub `http.Client` in the test |
 

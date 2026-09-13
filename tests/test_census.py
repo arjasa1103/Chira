@@ -239,6 +239,47 @@ class TestTipoffPlausibility:
         assert res["reason"] == "implausible_game_start_time"
 
 
+class TestLeagueCutoffInTheCensus:
+    def test_the_stockholm_game_is_priced_not_rejected(self, labels):
+        """nhl-nsh-pit-2025-11-16: a real 09:00 ET neutral-site game the ET-hour band
+        rejected. With the league's start time the band is only a fallback."""
+        gst = "2025-11-16T14:00:00Z"
+        client = standard_client(slug="nba-lal-bos-2025-11-16", gst=gst)
+        res = census_game(client, "nba", game(et_date="2025-11-16", start_time_utc=gst),
+                          {}, labels)
+        assert res["outcome"] == "priced", res
+        row = res["row"]
+        assert (row["cutoff_source"], row["league_start_time"], row["gamma_delta_min"]) == (
+            "league", gst, 0)
+
+    def test_without_a_league_time_the_band_still_applies(self, labels):
+        client = standard_client(slug="nba-lal-bos-2025-11-16", gst="2025-11-16T14:00:00Z")
+        res = census_game(client, "nba", game(et_date="2025-11-16"), {}, labels)
+        assert res["reason"] == "implausible_game_start_time"
+
+    def test_the_priced_market_type_and_question_are_recorded(self, labels):
+        client = standard_client(sportsMarketType="moneyline", question="Lakers vs. Celtics")
+        row = census_game(client, "nba", game(), {}, labels)["row"]
+        assert (row["market_type"], row["market_question"]) == ("moneyline", "Lakers vs. Celtics")
+
+    def test_a_spread_listed_first_is_skipped_for_the_moneyline(self, labels):
+        """wsh@cbj 2026-04-14: the spread was priced and label agreement flagged it."""
+        spread = market(tokens=("8", "9"), sportsMarketType="spreads",
+                        question="Spread: Lakers (-1.5)", prices=("0", "1"))
+        ml = market(sportsMarketType="moneyline", question="Lakers vs. Celtics")
+        client = FakeClient(events={"nba-lal-bos-2025-01-15": [{"markets": [spread, ml]}]},
+                            prices={"2": series(0.62), "1": series(0.38),
+                                    "9": series(0.30), "8": series(0.70)})
+        res = census_game(client, "nba", game(), {}, labels)
+        assert res["outcome"] == "priced" and res["row"]["p_home_close"] == 0.62
+        assert res["row"]["market_type"] == "moneyline"
+
+    def test_only_spread_markets_is_its_own_miss_reason(self, labels):
+        client = standard_client(sportsMarketType="spreads", question="Spread: Lakers (-1.5)")
+        res = census_game(client, "nba", game(), {}, labels)
+        assert res["reason"] == "no_moneyline_market" and "spreads" in res["detail"]
+
+
 class TestRematchGuard:
     """19 consecutive-day same-orientation pairs exist; for the earlier game the
     et_plus_1 slug IS the later game's primary slug."""

@@ -47,9 +47,12 @@ SNAPSHOT_FORMAT = 1
 # given store state; game_start_time is cast to text for the timezone reason
 # in the module docstring.
 _TABLES: tuple[tuple[str, str, bool], ...] = (
-    ("games", "*", True),
+    ("games", "* REPLACE (strftime(start_time_utc AT TIME ZONE 'UTC', "
+              "'%Y-%m-%dT%H:%M:%S+00:00') AS start_time_utc)", True),
     ("priced", "* REPLACE (strftime(game_start_time AT TIME ZONE 'UTC', "
-               "'%Y-%m-%dT%H:%M:%S+00:00') AS game_start_time)", True),
+               "'%Y-%m-%dT%H:%M:%S+00:00') AS game_start_time, "
+               "strftime(league_start_time AT TIME ZONE 'UTC', "
+               "'%Y-%m-%dT%H:%M:%S+00:00') AS league_start_time)", True),
     ("misses", "*", True),
     ("price_points", "*", True),
     ("runs", "run_id, CAST(started_at AS VARCHAR) AS started_at, "
@@ -70,7 +73,9 @@ VOLUME_DEFINITION = (
     "requires it frozen here and reported with that caveat."
 )
 TIMESTAMP_CONVENTION = (
-    "priced.game_start_time is ISO-8601 text with an explicit +00:00 offset (UTC). "
+    "priced.game_start_time (Gamma's), priced.league_start_time and "
+    "games.start_time_utc are ISO-8601 text with an explicit +00:00 offset (UTC). "
+    "priced.cutoff_source says which one the closing price was cut at. "
     "price_points.t is unix seconds. games.et_date is the US-Eastern calendar date."
 )
 

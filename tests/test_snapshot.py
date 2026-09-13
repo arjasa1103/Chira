@@ -196,3 +196,18 @@ class TestVerify:
     def test_a_directory_with_no_manifest_is_refused(self, tmp_path):
         with pytest.raises(SnapshotError, match="manifest"):
             verify_snapshot(tmp_path)
+
+
+def test_league_times_are_written_as_utc_text(snaproot):
+    s = Store()
+    s.put_games("nba", "2024-25", [game("g1", start_time_utc="2025-01-16T00:30:00Z")])
+    s.put_priced("nba", "2024-25", "g1",
+                 row(cutoff_source="league", league_start_time="2025-01-16T00:30:00Z"),
+                 points=series())
+    con = open_snapshot(create_snapshot(s, snaproot))
+    con.execute("SET TimeZone='Asia/Tokyo'")
+    got = con.execute("SELECT start_time_utc FROM games").fetchone()[0]
+    assert got == "2025-01-16T00:30:00+00:00"
+    assert con.execute("SELECT league_start_time, cutoff_source FROM priced").fetchone() == (
+        "2025-01-16T00:30:00+00:00", "league")
+    s.close()

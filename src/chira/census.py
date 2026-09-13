@@ -114,9 +114,13 @@ def census_game(client: Client, sport: str, game: dict, abbr_map: dict[str, str]
                   bypass_cache=bypass_cache, blocked=block)
     attempted = hit["attempted"]
     if not hit["market"]:
-        # "No market exists" and "a market is there under labels we did not
-        # recognise" are different facts, and only the first one licenses the
-        # coverage conclusion.
+        # "No market exists", "a market is there under labels we did not
+        # recognise", and "the teams matched but only spread / half-game markets"
+        # are different facts, and only the first licenses the coverage conclusion.
+        if hit.get("rejected_types"):
+            return {"outcome": "miss", "reason": "no_moneyline_market",
+                    "attempted": attempted,
+                    "detail": f"label-matching markets were typed {hit['rejected_types']}"}
         return {"outcome": "miss",
                 "reason": "label_mismatch_at_slug" if hit["saw_events"] else "no_market",
                 "attempted": attempted,
@@ -124,13 +128,18 @@ def census_game(client: Client, sport: str, game: dict, abbr_map: dict[str, str]
                           if hit["saw_events"] else None}
 
     market = hit["market"]
-    ok, why = tipoff_is_plausible(market.get("gameStartTime"), game["et_date"])
-    if not ok:
-        return {"outcome": "miss", "reason": "implausible_game_start_time",
-                "attempted": attempted,
-                "detail": f"{hit['slug']}: gameStartTime "
-                          f"{market.get('gameStartTime')!r} ({why})"}
-    cp = closing_price(client, market)
+    league_tip = game.get("start_time_utc")
+    if not league_tip:
+        # Fallback only. With the league's own start time the cutoff no longer
+        # depends on Gamma's timestamp, and the ET-hour band both missed 4-hour
+        # errors and rejected a real 09:00 ET game in Stockholm.
+        ok, why = tipoff_is_plausible(market.get("gameStartTime"), game["et_date"])
+        if not ok:
+            return {"outcome": "miss", "reason": "implausible_game_start_time",
+                    "attempted": attempted,
+                    "detail": f"{hit['slug']}: gameStartTime "
+                              f"{market.get('gameStartTime')!r} ({why})"}
+    cp = closing_price(client, market, tip_utc=league_tip)
     if not cp.get("ok"):
         return {"outcome": "miss", "reason": cp.get("reason", "unparseable_market"),
                 "attempted": attempted, "detail": hit["slug"]}
@@ -177,6 +186,12 @@ def census_game(client: Client, sport: str, game: dict, abbr_map: dict[str, str]
         "label_agreement": agreement,
         "volume": _volume(market),
         "game_start_time": market.get("gameStartTime"),
+        "market_type": market.get("sportsMarketType"),
+        "market_question": market.get("question"),
+        "cutoff_source": cp.get("cutoff_source"),
+        "league_start_time": league_tip if cp.get("cutoff_source") == "league" else None,
+        "gamma_delta_min": cp.get("gamma_delta_min"),
+        "p_home_close_gamma": cp.get("p_home_close_gamma"),
     }
     return {"outcome": "priced", "row": row, "attempted": attempted,
             "series": cp.get("series")}

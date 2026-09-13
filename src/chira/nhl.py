@@ -132,6 +132,12 @@ def nhl_games(client: Client, season: str, *, teams: tuple[str, ...] = NHL_TEAMS
                 "home_pts": home_pts,
                 "winner": "home" if home_pts > away_pts else "away",
                 "neutral_site": bool(g.get("neutralSite")),
+                # The league's own UTC start time: the pre-tipoff cutoff
+                # (PREREGISTRATION.md Amendment 1). Gamma's gameStartTime disagreed
+                # by more than 15 minutes on 48 priced NHL games, including 4-5 hours
+                # EARLY across Oct-Nov 2025 and a genuine 09:00 ET neutral-site game
+                # in Stockholm that the ET-hour plausibility band wrongly rejected.
+                "start_time_utc": g.get("startTimeUTC"),
             }
         if verbose:
             print(f"    {season} {t}: {len(by_id)} unique games so far", flush=True)

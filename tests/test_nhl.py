@@ -97,6 +97,7 @@ class TestReading:
             "home": "mtl", "away_name": "Maple Leafs", "home_name": "Canadiens",
             "away_place": "Toronto", "home_place": "Montréal",
             "away_pts": 0, "home_pts": 1, "winner": "home", "neutral_site": False,
+            "start_time_utc": "2024-10-09T23:00:00Z",
         }
 
     def test_the_away_winner_case(self):
@@ -122,6 +123,17 @@ class TestReading:
     def test_a_neutral_site_game_is_flagged(self):
         client = FakeClient({"TOR": [raw(neutralSite=True)]})
         assert nhl_games(client, "2024-25", teams=("TOR",))[0]["neutral_site"] is True
+
+
+class TestLeagueStartTime:
+    def test_the_league_start_time_is_carried_for_the_closing_price_cutoff(self):
+        """Amendment 1: Gamma's gameStartTime was 4-5 hours early on 36 NHL 2025-26
+        games and wrongly rejected a real 09:00 ET game in Stockholm."""
+        client = FakeClient({"NSH": [raw(gid=2025020296, date="2025-11-16", away="NSH",
+                                         home="PIT", startTimeUTC="2025-11-16T14:00:00Z",
+                                         neutralSite=True)]})
+        g = nhl_games(client, "2025-26", teams=("NSH",))[0]
+        assert g["start_time_utc"] == "2025-11-16T14:00:00Z" and g["neutral_site"] is True
 
 
 class TestFiltering:
