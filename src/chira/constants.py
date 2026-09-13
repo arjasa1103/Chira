@@ -147,3 +147,20 @@ NON_FULL_GAME_MARKET_TYPES = frozenset({
     "spreads", "first_half_moneyline", "first_half_spreads", "first_half_totals",
 })
 NON_FULL_GAME_MARKERS = ("spread", "half", "period", "quarter", "inning")
+
+# Complementarity on SIMULTANEOUS quotes. The two tokens' price series are sampled
+# independently: in 2024-25 at identical timestamps, in 2025-26 a median 5 s and a p90
+# 59 s apart. Comparing each series' own last point compared quotes from different
+# moments (2 false failures); requiring an exact shared timestamp left 57% of NBA
+# 2025-26 games with nothing to compare. Measured on the final week-3 census, pairing
+# each home quote in the last 2 h with the latest away quote at most 60 s before it:
+#   - every one of 4,661 games has >= 74 such pairs
+#   - per-game share of pairs summing to 1 within 1e-6: min 0.9917 (2024-25),
+#     0.5755 (NBA 2025-26), 0.6931 (NHL 2025-26); worst per-pair error 0.03,
+#     i.e. the price moving between two samples, not a broken market
+#   - a genuinely non-complementary market misses at every pair, share ~0
+# Thresholds sit below the minimum observed on correct data (rounded outward).
+COMPLEMENT_WINDOW_SECONDS = 2 * 3600
+COMPLEMENT_MAX_GAP_SECONDS = 60
+COMPLEMENT_MIN_PAIRS = 10          # observed minimum 74
+COMPLEMENT_MIN_EXACT_SHARE = 0.5   # observed minimum 0.5755

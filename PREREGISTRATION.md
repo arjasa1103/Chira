@@ -86,12 +86,18 @@ section 1 here), but the implementation had taken the first market whose outcome
 matched the two teams, which priced 5 NHL 2025-26 spread markets as moneylines. That was
 a bug against the pre-registered definition, not a change to it.
 
-Also not an amendment: the complementarity assertion (`|p_home + p_away - 1| < 1e-6`) is
-now evaluated at the last pre-tipoff timestamp **both** tokens carry, instead of at each
-token's own last point. The two series are sampled independently, so their last points can
-be seconds to a minute apart; on the week-3 census that produced 2 NHL failures (sums 0.995
-and 1.01) on markets whose every common timestamp summed to exactly 1. The assertion and its
-tolerance are unchanged, and no analysis quantity depends on this check.
+Also not an amendment: how the complementarity assertion (`|p_home + p_away - 1| < 1e-6`)
+is evaluated. The two tokens' price series are sampled independently: at identical
+timestamps in 2024-25, but a median 5 s and a p90 59 s apart in 2025-26. Comparing each
+token's own last pre-tipoff point therefore compared different moments, and produced 2 NHL
+failures on markets whose simultaneous quotes all summed to exactly 1. The assertion is now
+applied to every simultaneous pair in the last 2 hours before the cutoff (each home quote
+with the latest away quote at most 60 s before it), and a game passes when at least half of
+those pairs satisfy it. On the full census every game had at least 74 pairs; the lowest
+share on any game was 0.5755, and the largest per-pair error 0.03 (price movement between
+samples). A market that is not a true complement fails at every pair. Tolerance, side
+convention and every analysis quantity are unchanged; per-game evidence is stored as
+`complement_share` and `complement_pairs`.
 
 ## 3. Metrics
 

@@ -102,6 +102,7 @@ class TestPricedPath:
         assert row["p_home_close"] == 0.62
         assert row["label_agreement"] == "agree"
         assert row["complement_ok"] is True
+        assert (row["complement_share"], row["complement_pairs"]) == (1.0, 12)
         assert row["volume"] == 123456.0
 
     def test_the_abbreviation_map_is_applied_to_the_slug(self, labels):

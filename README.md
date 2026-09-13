@@ -189,7 +189,7 @@ the NHL 2025-26 slice):
 ```
 CENSUS GATE nhl 2025-26: PASS
   [ok  ] label_agreement: n_priced=200, by_value={'agree': 200}, disagreements_in_misses=0
-  [ok  ] complementarity: checked_ok=200, unchecked_fraction=0.0, unchecked_no_away_series=0, failed=0
+  [ok  ] complementarity: checked_ok=200, unchecked_fraction=0.0, unchecked=0, failed=0
   [ok  ] reconciliation: scheduled=1312, priced=200, misses=0, pending=1112, partial_pass=True, double_counted=0, orphans=0
   [ok  ] fault_injection: double_count_caught=True, lost_game_caught=True, store_restored=True, victim=2025020001
   [ok  ] price_discriminates: mean_when_home_won=0.556, mean_when_away_won=0.5144, gap=0.0416, sigma=2.95, n=200
@@ -700,7 +700,7 @@ All of `data/` and `.http-cache/` are gitignored. `*.duckdb` must never be commi
 
 ### Store schema
 
-Defined in `src/chira/schema.sql`. Current `SCHEMA_VERSION` is `4`. Existing stores upgrade
+Defined in `src/chira/schema.sql`. Current `SCHEMA_VERSION` is `5`. Existing stores upgrade
 through forward-only migrations in `store._MIGRATIONS` when opened.
 
 **`games`**: one row per scheduled game. Key `(sport, season, game_id)`.
@@ -730,8 +730,10 @@ through forward-only migrations in `store._MIGRATIONS` when opened.
 | `n_pre_tipoff` | INTEGER | Home price points before tipoff |
 | `secs_before_tip` | INTEGER | Seconds between the last quote and tipoff |
 | `stale_flat_run` | BOOLEAN | Last 10 pre-tipoff prices identical |
-| `complement_sum` | DOUBLE | `p_away + p_home` at close, rounded to 6 places; NULL if no away series |
-| `complement_ok` | BOOLEAN | `abs(sum - 1) < 1e-6`; NULL if unchecked |
+| `complement_sum` | DOUBLE | `p_home + p_away` at the last simultaneous quote pair before the cutoff, rounded to 6 places; NULL if no away series |
+| `complement_ok` | BOOLEAN | True when at least 50% of simultaneous pairs (home quote plus the latest away quote at most 60 s before it, last 2 h) sum to 1 within 1e-6. NULL if no away series or fewer than 10 pairs |
+| `complement_share` | DOUBLE | The share behind `complement_ok` |
+| `complement_pairs` | INTEGER | Number of simultaneous pairs it was computed from |
 | `market_winner` | TEXT | From `outcomePrices` |
 | `label_agreement` | TEXT | `agree` (disagreements and unresolved markets go to `misses`) |
 | `volume` | DOUBLE | Terminal cumulative market volume |
@@ -802,7 +804,7 @@ cache-bypassed attempt in `reprobe_misses`.
 | `postponed_or_split_resolution` | `outcomePrices` is `["0.5","0.5"]` | no |
 | `outcome_prices_not_complementary` | `outcomePrices` don't sum to 1 | no |
 | `malformed_outcome_prices` | `outcomePrices` isn't a 2-element array | no |
-| `complementarity_failed` | Last pre-tipoff home and away prices don't sum to 1 within 1e-6 | no |
+| `complementarity_failed` | Fewer than half of the simultaneous home/away quote pairs in the last 2 h sum to 1 within 1e-6 | no |
 | `label_disagreement` | Market winner differs from league winner (E1) | no |
 
 ### Validation gate checks
@@ -812,7 +814,7 @@ cache-bypassed attempt in `reprobe_misses`.
 | Check | Passes when | Why it exists |
 |---|---|---|
 | `label_agreement` | At least one priced row, every priced row is `agree`, and zero `label_disagreement` misses | The only defence against an orientation flip, which mirrors the calibration curve instead of crashing |
-| `complementarity` | Zero `complementarity_failed` misses, at least one checked row, and at most 5% of priced rows unchecked (no away series) | Confirms the two outcome tokens are true complements |
+| `complementarity` | Zero `complementarity_failed` misses, at least one checked row, and at most 5% of priced rows unchecked (no away series, or too few simultaneous quotes) | Confirms the two outcome tokens are true complements, judged on simultaneous quotes because the two series are sampled independently |
 | `reconciliation` | No game in both tables, no orphan rows, `pending >= 0`; plus `pending == 0` when `require_complete` | Protects the coverage denominator |
 | `price_series` | Every priced game has a stored raw series and no series belongs to an unpriced game | The snapshot ships the raw series; a gap there would be silent |
 | `fault_injection` | Injecting a double count AND deleting a priced row both trip their asserts, and the digest is unchanged after rollback | Proves the reconciliation asserts are actually wired up |
@@ -844,7 +846,7 @@ apply them. They are for the full-census integrity analysis in PREREGISTRATION s
     "gamma_tipoff_off_over_1h": 1
   },
   "store_digest": "<sha256>",
-  "schema_version": 4,
+  "schema_version": 5,
   "runs": ["census-nba-20260912T115106Z-63345", ...]
 }
 ```
@@ -920,6 +922,7 @@ From `src/chira/constants.py` unless noted.
 | `SLUG_DATE_CONVENTIONS` | `("et", "et_plus_1")` | Both dates are tried for every game |
 | `FIDELITY_MINUTES` | `1` | Price-history resolution |
 | `COMPLEMENTARITY_TOL` | `1e-6` | Allowed deviation of `p_home + p_away` from 1 |
+| `COMPLEMENT_MAX_GAP_SECONDS` / `COMPLEMENT_MIN_PAIRS` / `COMPLEMENT_MIN_EXACT_SHARE` | `60` / `10` / `0.5` | Simultaneous-quote pairing for the complementarity check, set below the measured minimums (74 pairs, share 0.5755) |
 | `STALE_FLAT_RUN` | `10` | Identical trailing minutes that flag a stale close |
 | `TIPOFF_ET_HOUR_BAND` | `(11, 23)` | Plausible ET tipoff hours; applied only when a game has no league start time |
 | `MONEYLINE_MARKET_TYPE` / `NON_FULL_GAME_MARKET_TYPES` | `"moneyline"` / spreads and first-half types | Market selection by `sportsMarketType` |
@@ -935,7 +938,7 @@ From `src/chira/constants.py` unless noted.
 | `gate.MIN_DISCRIMINATION_SIGMA` | `2.0` | Price-discrimination floor |
 | `gate.MAX_UNCHECKED_FRACTION` | `0.05` | Complementarity unchecked allowance |
 | `nhl.GAMES_PER_SEASON` | `1312` | NHL enumeration must hit this exactly |
-| `store.SCHEMA_VERSION` | `4` | Store schema version |
+| `store.SCHEMA_VERSION` | `5` | Store schema version |
 | `cache.SCHEMA_VERSION` | `1` | Cache key version |
 
 ### Dependencies and extras

@@ -96,15 +96,21 @@ class TestStaleness:
 
 
 class TestComplementarity:
+    @staticmethod
+    def _simultaneous(home_p, away_p, n=12):
+        """n simultaneous minute quotes: the check needs >= 10 pairs to judge."""
+        ts = [TIP - 60 * i for i in range(n)][::-1]
+        return ([{"t": t, "p": home_p} for t in ts], [{"t": t, "p": away_p} for t in ts])
+
     def test_passing_pair_is_recorded(self):
-        c = FakeClient({"2020": [{"t": TIP, "p": 0.585}], "1010": [{"t": TIP, "p": 0.415}]})
-        r = closing_price(c, MKT)
+        home, away = self._simultaneous(0.585, 0.415)
+        r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
         assert r["complement_ok"] is True
         assert r["complement_sum"] == pytest.approx(1.0)
 
     def test_violation_is_flagged_with_the_sum(self):
-        c = FakeClient({"2020": [{"t": TIP, "p": 0.585}], "1010": [{"t": TIP, "p": 0.500}]})
-        r = closing_price(c, MKT)
+        home, away = self._simultaneous(0.585, 0.500)
+        r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
         assert r["complement_ok"] is False
         assert r["complement_sum"] == pytest.approx(1.085)
 
@@ -316,32 +322,54 @@ class TestLeagueCutoff:
         assert r["p_home_close"] == r["p_home_close_gamma"] == 0.60
 
 
-class TestComplementarityAtACommonMoment:
-    """The two tokens must be compared at the same timestamp (week-3 census finding)."""
+class TestComplementarityOnSimultaneousQuotes:
+    """Pairs within 60 s in the last 2 h; pass when >= 50% sum to exactly 1."""
 
-    def test_asynchronous_last_quotes_are_not_a_failure(self):
-        """car@phi 2026-04-13: last home 0.58 at T-17s, last away 0.415 at T-16s (sum
-        0.995), while every common timestamp summed to exactly 1."""
-        home = [{"t": TIP - 600, "p": 0.57}, {"t": TIP - 17, "p": 0.58}]
-        away = [{"t": TIP - 600, "p": 0.43}, {"t": TIP - 16, "p": 0.415}]
-        r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
-        assert r["complement_ok"] is True and r["complement_sum"] == 1.0
-        assert r["p_home_close"] == 0.58, "the close is still the home series' own last point"
+    @staticmethod
+    def _pair_series(n, *, home_p=0.60, away_p=None, away_lag=5, step=60, end=None):
+        end = TIP - 30 if end is None else end
+        home = [{"t": end - step * i, "p": home_p} for i in range(n)][::-1]
+        ap = (1 - home_p) if away_p is None else away_p
+        away = [{"t": end - step * i - away_lag, "p": ap} for i in range(n)][::-1]
+        return home, away
 
-    def test_a_real_violation_at_a_common_moment_still_fails(self):
-        home = [{"t": TIP - 60, "p": 0.60}]
-        away = [{"t": TIP - 60, "p": 0.30}]
+    def test_quotes_seconds_apart_that_sum_to_one_pass(self):
+        home, away = self._pair_series(20)
         r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
-        assert r["complement_ok"] is False and r["complement_sum"] == 0.9
+        assert (r["complement_ok"], r["complement_share"], r["complement_pairs"]) == (True, 1.0, 20)
 
-    def test_no_common_timestamp_is_unchecked_not_passed(self):
-        home = [{"t": TIP - 60, "p": 0.60}]
-        away = [{"t": TIP - 30, "p": 0.40}]
+    def test_price_moving_between_samples_still_passes(self):
+        """The worst correct game measured: share 0.5755, per-pair error <= 0.03."""
+        home, away = self._pair_series(20)
+        for pt in away[:6]:
+            pt["p"] = 0.395   # 6 of 20 pairs off by 0.005
         r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
-        assert r["complement_ok"] is None and r["complement_reason"] == "no_common_timestamp"
+        assert r["complement_ok"] is True and r["complement_share"] == 0.7
 
-    def test_post_tipoff_common_points_are_ignored(self):
-        home = [{"t": TIP - 60, "p": 0.60}, {"t": TIP + 60, "p": 0.99}]
-        away = [{"t": TIP - 60, "p": 0.40}, {"t": TIP + 60, "p": 0.20}]
+    def test_a_non_complementary_market_fails(self):
+        home, away = self._pair_series(20, away_p=0.30)
         r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
-        assert r["complement_ok"] is True
+        assert r["complement_ok"] is False and r["complement_share"] == 0.0
+        assert r["complement_sum"] == 0.9
+
+    def test_too_few_simultaneous_quotes_is_unchecked(self):
+        home, away = self._pair_series(3)
+        r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
+        assert r["complement_ok"] is None
+        assert r["complement_reason"] == "too_few_simultaneous_quotes"
+
+    def test_quotes_more_than_60s_apart_do_not_pair(self):
+        home, away = self._pair_series(20, away_lag=61, step=300)
+        r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
+        assert r["complement_pairs"] == 0 and r["complement_ok"] is None
+
+    def test_quotes_older_than_two_hours_are_ignored(self):
+        home, away = self._pair_series(20, end=TIP - 3 * 3600)
+        r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
+        assert r["complement_pairs"] == 0 and r["complement_ok"] is None
+
+    def test_post_tipoff_quotes_are_ignored(self):
+        home, away = self._pair_series(20, away_p=0.30, end=TIP + 30 * 60)
+        pre_h, pre_a = self._pair_series(12)
+        r = closing_price(FakeClient({"2020": pre_h + home, "1010": pre_a + away}), MKT)
+        assert r["complement_ok"] is True and r["complement_pairs"] == 12

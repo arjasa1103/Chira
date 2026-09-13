@@ -16,9 +16,14 @@ from __future__ import annotations
 
 import json
 import math
+from bisect import bisect_right
 from datetime import UTC, datetime
 
 from .constants import (
+    COMPLEMENT_MAX_GAP_SECONDS,
+    COMPLEMENT_MIN_EXACT_SHARE,
+    COMPLEMENT_MIN_PAIRS,
+    COMPLEMENT_WINDOW_SECONDS,
     COMPLEMENTARITY_TOL,
     DEFAULT_LOOKBACK_DAYS,
     FIDELITY_MINUTES,
@@ -82,6 +87,32 @@ def _numeric_token(v: object) -> bool:
     """CLOB token ids are decimal strings. Anything else raises out of
     Client.prices_history, from a function documented never to raise on remote data."""
     return isinstance(v, str) and v.isascii() and v.isdigit()
+
+
+def _complementarity(home_pre: list[dict], away_pre: list[dict],
+                     tip: float) -> tuple[float | None, int, float | None]:
+    """(share of simultaneous pairs summing to 1, number of pairs, sum at the last pair).
+
+    Each home quote in the last COMPLEMENT_WINDOW_SECONDS before the cutoff is paired
+    with the latest away quote at most COMPLEMENT_MAX_GAP_SECONDS before it (an as-of
+    join). See constants for why a share over many pairs, and not one comparison.
+    `away_pre` must be sorted by t, which `series()` guarantees.
+    """
+    lo = tip - COMPLEMENT_WINDOW_SECONDS
+    away_t = [pt["t"] for pt in away_pre]
+    pairs = exact = 0
+    last = None
+    for pt in home_pre:
+        if pt["t"] < lo:
+            continue
+        i = bisect_right(away_t, pt["t"]) - 1
+        if i < 0 or pt["t"] - away_t[i] > COMPLEMENT_MAX_GAP_SECONDS:
+            continue
+        total = pt["p"] + away_pre[i]["p"]
+        pairs += 1
+        exact += abs(total - 1.0) < COMPLEMENTARITY_TOL
+        last = round(total, 6)
+    return (exact / pairs if pairs else None), pairs, last
 
 
 def closing_price(client: Client, market: dict, *, tip_utc: str | None = None) -> dict:
@@ -185,25 +216,18 @@ def closing_price(client: Client, market: dict, *, tip_utc: str | None = None) -
     away_all = series(toks[0])
     away_pre = [pt for pt in away_all if pt["t"] <= tip]
     out["series"] = {"home": home_all, "away": away_all}
+    out["complement_share"] = None
+    out["complement_pairs"] = 0
     if away_pre:
-        # Compare the two tokens at the SAME moment: the last pre-tipoff timestamp
-        # both series carry. Comparing each series' own last point compared quotes
-        # taken at different times -- measured on the week-3 census, car@phi's
-        # last home and away points were a second apart (sum 0.995) and col@edm's
-        # 67 seconds apart (sum 1.01), yet every common timestamp summed to
-        # exactly 1.000000 (24/24 and 830/830). Those were check artifacts, not
-        # broken markets. No common timestamp is recorded as unchecked, which the
-        # gate counts against its 5% allowance rather than passing silently.
-        home_at = {pt["t"]: pt["p"] for pt in home_pre}
-        common = [pt for pt in away_pre if pt["t"] in home_at]
-        if common:
-            total = common[-1]["p"] + home_at[common[-1]["t"]]
-            out["complement_sum"] = round(total, 6)
-            out["complement_ok"] = abs(total - 1.0) < COMPLEMENTARITY_TOL
-        else:
-            out["complement_sum"] = None
+        share, pairs, last_sum = _complementarity(home_pre, away_pre, tip)
+        out["complement_pairs"] = pairs
+        out["complement_sum"] = last_sum
+        if pairs < COMPLEMENT_MIN_PAIRS:
             out["complement_ok"] = None
-            out["complement_reason"] = "no_common_timestamp"
+            out["complement_reason"] = "too_few_simultaneous_quotes"
+        else:
+            out["complement_share"] = round(share, 4)
+            out["complement_ok"] = share >= COMPLEMENT_MIN_EXACT_SHARE
     else:
         out["complement_sum"] = None
         out["complement_ok"] = None

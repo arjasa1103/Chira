@@ -45,7 +45,8 @@ SCHEMA = Path(__file__).with_name("schema.sql")
 #   3: the T-6h / T-24h looks on priced, and the raw price_points series
 #   4: league start time on games; market type/question, cutoff source, Gamma
 #      delta and the original Gamma-cutoff close on priced (Amendment 1)
-SCHEMA_VERSION = 4
+#   5: complement_share / complement_pairs, the evidence behind complement_ok
+SCHEMA_VERSION = 5
 
 _MIGRATIONS: dict[int, tuple[str, ...]] = {
     2: (
@@ -68,6 +69,10 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
         "ALTER TABLE priced ADD COLUMN IF NOT EXISTS gamma_delta_min INTEGER",
         "ALTER TABLE priced ADD COLUMN IF NOT EXISTS p_home_close_gamma DOUBLE",
     ),
+    5: (
+        "ALTER TABLE priced ADD COLUMN IF NOT EXISTS complement_share DOUBLE",
+        "ALTER TABLE priced ADD COLUMN IF NOT EXISTS complement_pairs INTEGER",
+    ),
 }
 
 _PRICED_COLS = (
@@ -77,7 +82,8 @@ _PRICED_COLS = (
     "secs_before_tip", "stale_flat_run", "complement_sum", "complement_ok",
     "market_winner", "label_agreement", "volume", "game_start_time",
     "market_type", "market_question", "cutoff_source", "league_start_time",
-    "gamma_delta_min", "p_home_close_gamma", "run_id",
+    "gamma_delta_min", "p_home_close_gamma", "complement_share", "complement_pairs",
+    "run_id",
 )
 _GAME_COLS = (
     "sport", "season", "game_id", "et_date", "away", "home", "away_pts",

@@ -108,7 +108,7 @@ class TestComplementarity:
     def test_an_unchecked_game_is_counted_not_silently_passed(self, store):
         seed(store, n=10, complement=None)
         c = check_complementarity(store, "nba", "2024-25")
-        assert c["unchecked_no_away_series"] == 10
+        assert c["unchecked"] == 10
         assert not c["passed"], "zero checked rows cannot pass"
 
     def test_a_mostly_unchecked_population_does_not_pass(self, store):
@@ -119,7 +119,7 @@ class TestComplementarity:
                 "UPDATE priced SET complement_ok=NULL, complement_sum=NULL "
                 "WHERE sport='nba' AND season='2024-25' AND game_id=?", [g["game_id"]])
         c = check_complementarity(store, "nba", "2024-25")
-        assert c["checked_ok"] == 1 and c["unchecked_no_away_series"] == 199
+        assert c["checked_ok"] == 1 and c["unchecked"] == 199
         assert not c["passed"], "one verified row of 200 cannot certify complementarity"
 
 

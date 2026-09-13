@@ -128,9 +128,9 @@ def check_complementarity(store: Store, sport: str, season: str) -> dict:
                    and unchecked_fraction <= MAX_UNCHECKED_FRACTION),
         "checked_ok": checked,
         "unchecked_fraction": round(unchecked_fraction, 4),
-        # Not a failure: the away token's series was absent, so the check could
-        # not run. Counted so it can never masquerade as a passing check.
-        "unchecked_no_away_series": unchecked,
+        # Not a failure by itself: no away series, or too few simultaneous quotes
+        # to judge. Counted, and capped, so it can never masquerade as a pass.
+        "unchecked": unchecked,
         "failed": failed,
     }
 

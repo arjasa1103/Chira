@@ -484,7 +484,7 @@ class TestMigrationToV4:
                     "VALUES ('nba','2024-25','g1','2025-01-15','lal','bos','home')")
         con.close()
         with Store(path) as s:
-            assert s.schema_version == 4
+            assert s.schema_version == SCHEMA_VERSION
             gcols = {r[0] for r in s.db.execute("DESCRIBE games").fetchall()}
             pcols = {r[0] for r in s.db.execute("DESCRIBE priced").fetchall()}
             assert "start_time_utc" in gcols

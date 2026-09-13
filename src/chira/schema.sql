@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS priced (
     stale_flat_run   BOOLEAN,
     complement_sum   DOUBLE,
     complement_ok    BOOLEAN,
+    complement_share DOUBLE,             -- share of simultaneous quote pairs summing to 1
+    complement_pairs INTEGER,            -- pairs within 60 s in the last 2 h
     market_winner    TEXT,               -- 'away' | 'home' | NULL, from outcomePrices
     label_agreement  TEXT    NOT NULL,   -- 'agree' | 'disagree' | 'unresolved' (E1)
     volume           DOUBLE,

@@ -150,7 +150,9 @@ def census_game(client: Client, sport: str, game: dict, abbr_map: dict[str, str]
     if cp.get("complement_ok") is False:
         return {"outcome": "miss", "reason": "complementarity_failed",
                 "attempted": attempted,
-                "detail": f"{hit['slug']} sum={cp.get('complement_sum')}"}
+                "detail": (f"{hit['slug']} share={cp.get('complement_share')} "
+                           f"pairs={cp.get('complement_pairs')} "
+                           f"last_sum={cp.get('complement_sum')}")}
 
     if cp.get("reason_excluded"):
         return {"outcome": "miss", "reason": cp["reason_excluded"],
@@ -193,6 +195,8 @@ def census_game(client: Client, sport: str, game: dict, abbr_map: dict[str, str]
         "league_start_time": league_tip if cp.get("cutoff_source") == "league" else None,
         "gamma_delta_min": cp.get("gamma_delta_min"),
         "p_home_close_gamma": cp.get("p_home_close_gamma"),
+        "complement_share": cp.get("complement_share"),
+        "complement_pairs": cp.get("complement_pairs"),
     }
     return {"outcome": "priced", "row": row, "attempted": attempted,
             "series": cp.get("series")}
