@@ -225,5 +225,6 @@ def test_a_snapshot_refuses_to_start_without_disk_room(finished, snaproot, monke
 
 def test_price_points_are_complete_even_without_a_file_order(finished, snaproot):
     con = open_snapshot(create_snapshot(finished, snaproot))
-    got = con.execute("SELECT count(*), count(DISTINCT (game_id, side, t)) FROM price_points").fetchone()
+    got = con.execute(
+        "SELECT count(*), count(DISTINCT (game_id, side, t)) FROM price_points").fetchone()
     assert got == (14, 14)

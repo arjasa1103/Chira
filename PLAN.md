@@ -198,7 +198,7 @@ Five findings that change later phases:
    between home wins and away wins: NHL 0.04-0.06, NBA 0.16-0.21). A real property of
    the sport, and an input to the primary-sport decision in week 4.
 
-## Week 3 — full census and snapshot (in progress, started 2026-09-13)
+## Week 3 — full census and snapshot (done 2026-09-13)
 
 Prep that landed before the ~13,700-request pull (commit 625fc83):
 
@@ -218,6 +218,37 @@ Prep that landed before the ~13,700-request pull (commit 625fc83):
 - **Fresh store.** The week-2 slices were moved to `data/census-week2-slices.duckdb`
   so every row in the week-3 store carries a week-3 `run_id`. Their payloads are all
   cached, so the 800 previously-attempted games cost almost nothing to redo.
+
+**Result: the gate passes all seven checks on all four sport-seasons.** 5,084 games settled:
+4,661 priced, 423 classified misses (421 `no_market`, 2 `no_pre_tipoff_points`), 145.6M raw
+price rows. The snapshot is `data/snapshots/census-20260913-224d6ad985e0/` (162 MB, store
+digest `224d6ad9...`, cut from `1013d72`). Full write-up: notes/week3-census.md.
+
+| Sport | Season | Priced | Misses | Coverage | Median volume |
+|---|---|---|---|---|---|
+| NBA | 2024-25 | 1,229 | 1 | 99.9% | $296k |
+| NHL | 2024-25 | 896 | 416 | 68.3% | $56k |
+| NBA | 2025-26 | 1,226 | 4 | 99.7% | $2.03M |
+| NHL | 2025-26 | 1,310 | 2 | 99.8% | $604k |
+
+It took four passes, because the first failing gate exposed real defects:
+
+1. **Spread markets priced as moneylines.** 5 NHL 2025-26 spreads passed every check; 2 more
+   were caught only because the favourite won by one goal. Now selected by `sportsMarketType`.
+2. **Gamma's `gameStartTime` is unreliable as the cutoff.** Off by >15 min on 76 priced games,
+   up to 360 min late (in-game prices leaking into the close) and 41 NHL games exactly 4-5 h
+   early. The close is now cut at the league's own start time: **PREREGISTRATION.md
+   Amendment 1**, with the original-definition close kept per row (it differs on 65 games).
+3. **The complementarity check compared quotes from different moments.** Now judged on
+   simultaneous quote pairs, with thresholds set from the census's own measured minimums.
+4. **Operational:** a sleeping laptop killed two runs (the census now waits out a lost
+   network), and the first snapshot cut filled the disk with a 6 GB sort spill (price rows are
+   now written unsorted).
+
+Constraints this puts on later weeks: T-24h is missing on 100 NBA and 33 NHL 2024-25 games
+(markets opened less than a day before tipoff), so the time-to-close stratum is unbalanced
+across seasons; and stale closes run 31-52%, so the staleness sensitivity split matters more
+than planned.
 
 ## Phase 0 — Foundations
 
@@ -272,7 +303,7 @@ Answers whether the project is viable, and in which sport.
       that starts at 03:00Z, where the UTC and ET dates differ.
 - [x] Enumerate from the schedule, never by paginating Gamma — DONE. `/markets` caps `limit` at
       100 and returns nothing past `offset ~2100`.
-- [ ] **Seasons 2024-25 and 2025-26 ONLY** (two seasons). 2023-24 is EXCLUDED: probed Dec-2023
+- [x] **Seasons 2024-25 and 2025-26 ONLY** (two seasons). 2023-24 is EXCLUDED: probed Dec-2023
       NBA markets carry $6/$0/$0/$0 volume and Mar-2024 has zero sports slugs, so those
       prices are not calibrated probabilities. **Do not "fix" the missing season later.**
       ~2,460 NBA games and ~2,624 NHL games. Per game: 1 `/events?slug=` + 2
@@ -281,7 +312,7 @@ Answers whether the project is viable, and in which sport.
 - [ ] **Report the two seasons separately as well as pooled.** Per-game liquidity quadrupled
       between them (~$500k in 2024-25 vs ~$1.9M in 2025-26), so they are two different market
       regimes and price sharpness is not constant across them.
-- [ ] Per game, store `outcomePrices` (free label), `gameStartTime`, volume, and the
+- [x] (week 3; the close is cut at league tipoff per Amendment 1) Per game, store `outcomePrices` (free label), `gameStartTime`, volume, and the
       minute-level series via `prices-history?market=<tokenId>&startTs=<unix>&fidelity=1`.
       Extract close, T-1h, T-6h, T-24h.
 - [x] Assert `abs(p_home + p_away - 1) < 1e-6` and fail loudly — DONE; a failure routes
@@ -1098,7 +1129,7 @@ The design doc's architecture description now conflicts with this review on two 
   - Surfaced by: Section 4 F6 — re-run after partial failure double-inserts price rows
   - Files: store/schema.sql, ingest/run.py
   - Verify: chaos test — kill at a random request index, resumed run is byte-identical
-- [ ] **T7 (P2, human: ~3h / CC: ~15min)** — ingest — Snapshot to an immutable Parquet release at the end of the census (week 3, not week 1 — you cannot snapshot data you have not collected); all phases read the snapshot
+- [x] **T7 (P2, human: ~3h / CC: ~15min)** — ingest — Snapshot to an immutable Parquet release at the end of the census (week 3, not week 1 — you cannot snapshot data you have not collected); all phases read the snapshot
   - Surfaced by: Section 1 F2 — one unauthenticated third-party endpoint, no contract, multi-month project
   - Files: ingest/snapshot.py, .github/workflows/release.yml
   - Verify: every downstream phase runs with the network disabled
@@ -1558,7 +1589,7 @@ Corrected here.
 - [ ] **E12 (P2, human: ~2h / CC: ~15min)** — scoring — Replace the impossible trailing-15-min VWAP with two constructions that actually differ (last pre-tipoff value, and T-1h)
   - Surfaced by: Eng Section 3 R6 (conf 8/10), VERIFIED BY PROBE: prices-history points carry only {t,p} with no volume field, so a VWAP has no weights; carry-forward also makes a trailing average equal the last value
   - Files: scoring/closing.py, PREREGISTRATION.md
-- [ ] **E13 (P2, human: ~2h / CC: ~15min)** — store/docs — Correct the price row count to ~94.6M (two tokens per game, not one) and partition the Parquet release by sport and season
+- [x] **E13 (P2, human: ~2h / CC: ~15min)** — store/docs — Correct the price row count to ~94.6M (two tokens per game, not one) and partition the Parquet release by sport and season
   - Surfaced by: Eng Section 4 (conf 8/10), VERIFIED BY PROBE: plan says 46M in two places; 5084 games x 2 tokens x ~9300 points = 94.6M, and GitHub caps a release asset at 2GB
   - Files: PLAN.md, store/schema.sql, .github/workflows/release.yml
 - [ ] **E14 (P2, human: ~2h / CC: ~15min)** — ingest — Phase 0 rate-limit calibration probe: ramp until the first 429, record reset behaviour, add a circuit breaker and 429-count telemetry

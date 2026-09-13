@@ -19,6 +19,12 @@ now holds every raw series itself, so the cache is no longer the only copy of th
 
 **Effort:** S (human ~2h / CC ~15min). **Priority:** P2.
 
+**Related, found cutting the snapshot:** any `ORDER BY` over the raw price table spills its
+sort to DuckDB's temp directory next to the store, uncompressed. Over 145.6M rows that was
+about 6 GB and it filled the disk. Price rows are now written unsorted and the snapshot
+checks free space first, but any future analysis query that sorts the whole raw table will
+hit the same wall. Filter to a sport-season or a set of games before sorting.
+
 ## P2 — Saturate the rate limit with 2 workers
 
 **What:** Run 2 worker threads against a shared token-bucket limiter.
