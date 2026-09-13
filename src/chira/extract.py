@@ -186,9 +186,24 @@ def closing_price(client: Client, market: dict, *, tip_utc: str | None = None) -
     away_pre = [pt for pt in away_all if pt["t"] <= tip]
     out["series"] = {"home": home_all, "away": away_all}
     if away_pre:
-        total = away_pre[-1]["p"] + home_pre[-1]["p"]
-        out["complement_sum"] = round(total, 6)
-        out["complement_ok"] = abs(total - 1.0) < COMPLEMENTARITY_TOL
+        # Compare the two tokens at the SAME moment: the last pre-tipoff timestamp
+        # both series carry. Comparing each series' own last point compared quotes
+        # taken at different times -- measured on the week-3 census, car@phi's
+        # last home and away points were a second apart (sum 0.995) and col@edm's
+        # 67 seconds apart (sum 1.01), yet every common timestamp summed to
+        # exactly 1.000000 (24/24 and 830/830). Those were check artifacts, not
+        # broken markets. No common timestamp is recorded as unchecked, which the
+        # gate counts against its 5% allowance rather than passing silently.
+        home_at = {pt["t"]: pt["p"] for pt in home_pre}
+        common = [pt for pt in away_pre if pt["t"] in home_at]
+        if common:
+            total = common[-1]["p"] + home_at[common[-1]["t"]]
+            out["complement_sum"] = round(total, 6)
+            out["complement_ok"] = abs(total - 1.0) < COMPLEMENTARITY_TOL
+        else:
+            out["complement_sum"] = None
+            out["complement_ok"] = None
+            out["complement_reason"] = "no_common_timestamp"
     else:
         out["complement_sum"] = None
         out["complement_ok"] = None

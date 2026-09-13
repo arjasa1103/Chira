@@ -86,6 +86,13 @@ section 1 here), but the implementation had taken the first market whose outcome
 matched the two teams, which priced 5 NHL 2025-26 spread markets as moneylines. That was
 a bug against the pre-registered definition, not a change to it.
 
+Also not an amendment: the complementarity assertion (`|p_home + p_away - 1| < 1e-6`) is
+now evaluated at the last pre-tipoff timestamp **both** tokens carry, instead of at each
+token's own last point. The two series are sampled independently, so their last points can
+be seconds to a minute apart; on the week-3 census that produced 2 NHL failures (sums 0.995
+and 1.01) on markets whose every common timestamp summed to exactly 1. The assertion and its
+tolerance are unchanged, and no analysis quantity depends on this check.
+
 ## 3. Metrics
 
 - **Primary: Brier score.** Log loss is secondary, with probabilities clipped to

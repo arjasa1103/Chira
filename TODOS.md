@@ -3,26 +3,21 @@
 Deferred work, with enough context to pick up cold. Sourced from the /autoplan
 CEO review (2026-09-11). Items in PLAN.md's task list are NOT duplicated here.
 
-## P1 — Cache sizing before the week-3 full census
+## P2 — Cache sizing (the week-3 census fit, barely)
 
-**What:** A size cap with oldest-first eviction on `Cache`, plus a preflight
-free-space check in `run_census.py` that refuses to start when free space is
-below the projected need.
+**What:** A size cap with oldest-first eviction on `Cache`, or trimming cached prices payloads.
 
-**Why, measured:** `.http-cache` is 786 MB after 2,944 responses — 0.84 MB per
-priced game (prices responses average 392 KB, max 3.36 MB). The full 5,084-game
-census projects to **~3.4 GB**, and `df` reports 12 GiB free at 95% used.
-`Cache.put` no longer raises on a write failure (fixed in the week-2 review), so
-ENOSPC now degrades instead of killing the run — but a census that silently
-stops caching gets slower and slower with no warning.
+**Measured on the full census:** `.http-cache` is **5.1 GB**, not the 3.4 GB projected from
+week-2 slices, because NHL 2025-26 markets open ~27 days before the game and carry ~40k
+points per series. The store is 460 MB for 145.5M raw price rows. The disk sat at **97%
+used with 7.4 GB free** afterwards. `run_census.py` now refuses to start without room for a
+sport-season, and a cache write failure degrades instead of killing the run, so this is no
+longer blocking; but the next full re-census plus a snapshot on this machine is tight.
 
-**Cheaper alternative, also measured:** trimming cached prices payloads to
-[tip-24h, tip] takes the prices cache from ~3.4 GB to ~0.45 GB. Only 10.7% of
-points fall in that window, and every value `closing_price` reads comes from the
-final hour; `n_pre_tipoff` is already persisted in `priced` so the count
-survives trimming. Bump `cache.SCHEMA_VERSION` if you do this.
+**Cheaper alternative, still valid:** trim cached prices payloads to [tip-25h, tip]. The store
+now holds every raw series itself, so the cache is no longer the only copy of the data.
 
-**Effort:** S (human ~2h / CC ~15min). **Priority:** P1, before week 3.
+**Effort:** S (human ~2h / CC ~15min). **Priority:** P2.
 
 ## P2 — Saturate the rate limit with 2 workers
 

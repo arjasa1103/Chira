@@ -314,3 +314,34 @@ class TestLeagueCutoff:
         r = closing_price(c, MKT)
         assert r["cutoff_source"] == "gamma" and r["gamma_delta_min"] == 0
         assert r["p_home_close"] == r["p_home_close_gamma"] == 0.60
+
+
+class TestComplementarityAtACommonMoment:
+    """The two tokens must be compared at the same timestamp (week-3 census finding)."""
+
+    def test_asynchronous_last_quotes_are_not_a_failure(self):
+        """car@phi 2026-04-13: last home 0.58 at T-17s, last away 0.415 at T-16s (sum
+        0.995), while every common timestamp summed to exactly 1."""
+        home = [{"t": TIP - 600, "p": 0.57}, {"t": TIP - 17, "p": 0.58}]
+        away = [{"t": TIP - 600, "p": 0.43}, {"t": TIP - 16, "p": 0.415}]
+        r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
+        assert r["complement_ok"] is True and r["complement_sum"] == 1.0
+        assert r["p_home_close"] == 0.58, "the close is still the home series' own last point"
+
+    def test_a_real_violation_at_a_common_moment_still_fails(self):
+        home = [{"t": TIP - 60, "p": 0.60}]
+        away = [{"t": TIP - 60, "p": 0.30}]
+        r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
+        assert r["complement_ok"] is False and r["complement_sum"] == 0.9
+
+    def test_no_common_timestamp_is_unchecked_not_passed(self):
+        home = [{"t": TIP - 60, "p": 0.60}]
+        away = [{"t": TIP - 30, "p": 0.40}]
+        r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
+        assert r["complement_ok"] is None and r["complement_reason"] == "no_common_timestamp"
+
+    def test_post_tipoff_common_points_are_ignored(self):
+        home = [{"t": TIP - 60, "p": 0.60}, {"t": TIP + 60, "p": 0.99}]
+        away = [{"t": TIP - 60, "p": 0.40}, {"t": TIP + 60, "p": 0.20}]
+        r = closing_price(FakeClient({"2020": home, "1010": away}), MKT)
+        assert r["complement_ok"] is True
