@@ -43,9 +43,8 @@ from .telemetry import git_hash
 
 SNAPSHOT_FORMAT = 1
 
-# (table, SELECT list, partitioned). ORDER BY makes files reproducible for a
-# given store state; game_start_time is cast to text for the timezone reason
-# in the module docstring.
+# (table, SELECT list, partitioned). Small tables are written in ORDER BY order;
+# game_start_time is cast to text for the timezone reason in the module docstring.
 _TABLES: tuple[tuple[str, str, bool], ...] = (
     ("games", "* REPLACE (strftime(start_time_utc AT TIME ZONE 'UTC', "
               "'%Y-%m-%dT%H:%M:%S+00:00') AS start_time_utc)", True),
@@ -62,7 +61,13 @@ _ORDER = {
     "games": "sport, season, game_id",
     "priced": "sport, season, game_id",
     "misses": "sport, season, game_id",
-    "price_points": "sport, season, game_id, side, t",
+    # NOT sorted. Measured on the week-3 census: ORDER BY over 145.6M rows spilled
+    # ~6 GB of uncompressed sort runs to DuckDB's temp directory and filled the disk,
+    # while the same data streamed unsorted at 1.44 bytes/row (~0.21 GB total) with
+    # no spill. Points keep ascending t within a series, but series from different
+    # games interleave; readers must ORDER BY. The snapshot is identified by the
+    # store digest, not by byte-identical files.
+    "price_points": None,
     "runs": "started_at, run_id",
 }
 
@@ -117,9 +122,27 @@ def preflight(store: Store) -> dict:
     return report
 
 
+# Measured 1.44 bytes per raw price row as zstd Parquet; the budget is ~3x that
+# plus a fixed allowance, so a snapshot refuses to start instead of filling the disk.
+BYTES_PER_PRICE_ROW_BUDGET = 4
+FIXED_BYTES_BUDGET = 200 * 1024 * 1024
+
+
+def required_bytes(store: Store) -> int:
+    rows = store.db.execute("SELECT count(*) FROM price_points").fetchone()[0]
+    return rows * BYTES_PER_PRICE_ROW_BUDGET + FIXED_BYTES_BUDGET
+
+
 def create_snapshot(store: Store, root: str | Path, *, immutable: bool = True) -> Path:
     """Cut a snapshot under `root`. Returns its directory. Never overwrites."""
     reconciliation = preflight(store)
+    probe = Path(root)
+    while not probe.exists():
+        probe = probe.parent
+    free, need = shutil.disk_usage(probe).free, required_bytes(store)
+    if free < need:
+        raise SnapshotError(
+            f"not enough disk: {free / 1e9:.2f} GB free, budget {need / 1e9:.2f} GB")
     digest = store.digest()
     snap_id = f"census-{time.strftime('%Y%m%d', time.gmtime())}-{digest[:12]}"
     root = Path(root)
@@ -135,7 +158,8 @@ def create_snapshot(store: Store, root: str | Path, *, immutable: bool = True) -
     try:
         tables = {}
         for name, select, partitioned in _TABLES:
-            query = f"SELECT {select} FROM {name} ORDER BY {_ORDER[name]}"
+            order = _ORDER[name]
+            query = f"SELECT {select} FROM {name}" + (f" ORDER BY {order}" if order else "")
             if partitioned:
                 target = tmp / name
                 store.db.execute(

@@ -211,3 +211,19 @@ def test_league_times_are_written_as_utc_text(snaproot):
     assert con.execute("SELECT league_start_time, cutoff_source FROM priced").fetchone() == (
         "2025-01-16T00:30:00+00:00", "league")
     s.close()
+
+
+def test_a_snapshot_refuses_to_start_without_disk_room(finished, snaproot, monkeypatch):
+    """The first real cut filled the disk (a 145.6M-row ORDER BY spilled ~6 GB)."""
+    import chira.snapshot as snap
+    monkeypatch.setattr(snap.shutil, "disk_usage",
+                        lambda p: type("U", (), {"free": 1024})())
+    with pytest.raises(SnapshotError, match="not enough disk"):
+        create_snapshot(finished, snaproot)
+    assert not snaproot.exists() or list(snaproot.iterdir()) == []
+
+
+def test_price_points_are_complete_even_without_a_file_order(finished, snaproot):
+    con = open_snapshot(create_snapshot(finished, snaproot))
+    got = con.execute("SELECT count(*), count(DISTINCT (game_id, side, t)) FROM price_points").fetchone()
+    assert got == (14, 14)
