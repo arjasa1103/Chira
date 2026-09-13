@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS priced (
     home_nickname    TEXT,
     p_home_close     DOUBLE  NOT NULL,
     p_home_t1h       DOUBLE,
+    p_home_t6h       DOUBLE,
+    p_home_t24h      DOUBLE,
     n_pre_tipoff     INTEGER NOT NULL,
     secs_before_tip  INTEGER NOT NULL,
     stale_flat_run   BOOLEAN,
@@ -69,6 +71,23 @@ CREATE TABLE IF NOT EXISTS misses (
     detail     TEXT,
     run_id        TEXT,
     PRIMARY KEY (sport, season, game_id)
+);
+
+-- The raw minute-level series, both tokens, pre- AND post-tipoff (PLAN.md F10:
+-- the raw series ships in the snapshot; modeling reads only `priced`).
+--
+-- Deliberately NO primary key. At ~120M rows a PK builds an in-memory ART index
+-- and makes per-row upserts the dominant cost. Writes are append-only per game;
+-- store.py deletes a game's points only when that game was already priced, so the
+-- normal census path never scans this table.
+CREATE TABLE IF NOT EXISTS price_points (
+    sport    TEXT    NOT NULL,
+    season   TEXT    NOT NULL,
+    game_id  TEXT    NOT NULL,
+    side     TEXT    NOT NULL,   -- 'home' | 'away'
+    t        BIGINT  NOT NULL,   -- unix seconds
+    p        DOUBLE  NOT NULL,   -- validated finite, in [0, 1]
+    run_id   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS runs (

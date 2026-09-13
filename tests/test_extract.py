@@ -219,3 +219,55 @@ class TestLabelAgreement:
     ])
     def test_table(self, mw, sw, expect):
         assert label_agreement(mw, sw) == expect
+
+
+class TestTimeToCloseLooks:
+    """PREREGISTRATION section 8 treats close, T-1h, T-6h, T-24h as four looks at one
+    sample. Week 2 extracted two of them."""
+
+    def _market_series(self, hours_back: float):
+        n = int(hours_back * 60) + 1
+        return [{"t": TIP - (n - 1 - i) * 60, "p": round(0.40 + i / (10 * n), 6)}
+                for i in range(n)]
+
+    def test_each_look_is_the_last_point_at_or_before_its_offset(self):
+        home = self._market_series(30)
+        c = FakeClient({"2020": home, "1010": [{"t": TIP, "p": 0.5}]})
+        r = closing_price(c, MKT)
+        for key, secs in (("p_home_t1h", 3600), ("p_home_t6h", 21600),
+                          ("p_home_t24h", 86400)):
+            want = [pt["p"] for pt in home if pt["t"] <= TIP - secs][-1]
+            assert r[key] == want, key
+
+    def test_a_market_that_opened_inside_the_window_reports_none(self):
+        """Countable, not zero-filled: a market open 3 hours has no T-6h."""
+        c = FakeClient({"2020": self._market_series(3), "1010": [{"t": TIP, "p": 0.5}]})
+        r = closing_price(c, MKT)
+        assert r["p_home_t1h"] is not None
+        assert r["p_home_t6h"] is None and r["p_home_t24h"] is None
+
+
+class TestRawSeries:
+    """The raw series ships in the snapshot (PLAN.md F10), so it is returned whole."""
+
+    def test_post_tipoff_points_are_kept_in_the_series_but_not_in_the_close(self):
+        home = [{"t": TIP - 60, "p": 0.60}, {"t": TIP + 60, "p": 0.99}]
+        c = FakeClient({"2020": home, "1010": [{"t": TIP - 60, "p": 0.40}]})
+        r = closing_price(c, MKT)
+        assert r["p_home_close"] == 0.60, "post-tipoff leaked into the close"
+        assert [pt["t"] for pt in r["series"]["home"]] == [TIP - 60, TIP + 60]
+
+    def test_the_series_is_sorted_even_if_the_api_is_not(self):
+        home = [{"t": TIP, "p": 0.6}, {"t": TIP - 120, "p": 0.5}, {"t": TIP - 60, "p": 0.55}]
+        r = closing_price(FakeClient({"2020": home, "1010": home}), MKT)
+        ts = [pt["t"] for pt in r["series"]["home"]]
+        assert ts == sorted(ts)
+        assert r["p_home_close"] == 0.6
+
+    @pytest.mark.parametrize("bad_p", [float("nan"), float("inf"), -0.1, 1.5, True, "0.5"])
+    def test_invalid_prices_never_reach_the_series(self, bad_p):
+        """json.loads accepts bare NaN/Infinity; the series is a published artifact."""
+        home = [{"t": TIP - 120, "p": 0.5}, {"t": TIP - 60, "p": bad_p}]
+        r = closing_price(FakeClient({"2020": home, "1010": home}), MKT)
+        assert [pt["p"] for pt in r["series"]["home"]] == [0.5]
+        assert r["p_home_close"] == 0.5

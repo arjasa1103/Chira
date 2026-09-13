@@ -160,6 +160,22 @@ def check_reconciliation(store: Store, sport: str, season: str, *,
                 **store.reconcile(sport, season), **extra}
 
 
+def check_price_series(store: Store, sport: str, season: str) -> dict:
+    """Every priced game carries its raw series, and no series is orphaned.
+
+    The snapshot ships the raw series as its public artifact (PLAN.md F10). A
+    priced game with no stored series would ship an empty one with nothing
+    anywhere saying so.
+    """
+    summary = store.points_summary(sport, season)
+    return {
+        "name": "price_series",
+        "passed": (summary["priced_missing_series"] == 0
+                   and summary["orphan_series"] == 0),
+        **summary,
+    }
+
+
 def check_fault_injection(store: Store, sport: str, season: str) -> dict:
     """Corrupt the store two ways inside a transaction; both asserts must fire.
 
@@ -353,6 +369,7 @@ def run_gate(store: Store, sport: str, season: str, *,
         check_label_agreement(store, sport, season),
         check_complementarity(store, sport, season),
         check_reconciliation(store, sport, season, require_complete=require_complete),
+        check_price_series(store, sport, season),
         check_fault_injection(store, sport, season),
         check_price_discriminates(store, sport, season),
         check_shuffled_join(store, sport, season),

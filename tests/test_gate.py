@@ -19,6 +19,7 @@ from chira.gate import (
     check_fault_injection,
     check_label_agreement,
     check_price_discriminates,
+    check_price_series,
     check_reconciliation,
     check_shuffled_join,
     coverage,
@@ -61,7 +62,8 @@ def seed(store, n=60, *, home_rate=0.55, sport="nba", season="2024-25",
             "label_agreement": agreement, "market_winner": market_winner,
             "complement_ok": complement if complement is not None else None,
             "complement_sum": 1.0 if complement else 0.7,
-        })
+        }, points={"home": [{"t": 1_700_000_000, "p": round(price, 4)}],
+                   "away": [{"t": 1_700_000_000, "p": round(1 - price, 4)}]})
     realized = sum(g["winner"] == "home" for g in games) / len(games)
     assert abs(realized - home_rate) < 1.0 / len(games) + 1e-9, (
         f"fixture drifted from its own parameter: asked {home_rate}, got {realized}")
@@ -139,6 +141,25 @@ class TestReconciliation:
         seed(store, n=60)
         c = check_reconciliation(store, "nba", "2024-25", require_complete=False)
         assert "balanced" not in c and c["partial_pass"] is True
+
+
+class TestPriceSeries:
+    def test_every_priced_game_with_a_series_passes(self, store):
+        seed(store, n=40)
+        c = check_price_series(store, "nba", "2024-25")
+        assert c["passed"] and c["series"] == 80
+
+    def test_a_priced_game_without_its_series_fails(self, store):
+        """It would ship an empty raw series in the snapshot, silently."""
+        seed(store, n=40)
+        store.db.execute("DELETE FROM price_points WHERE game_id='g007'")
+        c = check_price_series(store, "nba", "2024-25")
+        assert not c["passed"] and c["priced_missing_series"] == 1
+
+    def test_an_orphan_series_fails(self, store):
+        seed(store, n=40)
+        store.db.execute("DELETE FROM priced WHERE game_id='g007'")
+        assert not check_price_series(store, "nba", "2024-25")["passed"]
 
 
 class TestFaultInjection:
@@ -280,7 +301,7 @@ class TestWholeGate:
         result = run_gate(store, "nba", "2024-25")
         assert result["passed"], format_report(result)
         assert [c["name"] for c in result["checks"]] == [
-            "label_agreement", "complementarity", "reconciliation",
+            "label_agreement", "complementarity", "reconciliation", "price_series",
             "fault_injection", "price_discriminates", "shuffled_join"]
 
     def test_one_bad_label_fails_the_whole_gate(self, store):

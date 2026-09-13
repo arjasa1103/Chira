@@ -309,6 +309,15 @@ class TestRunCensus:
                    resume=False)
         assert store.digest() == first
 
+    def test_a_priced_game_lands_with_its_raw_series_and_all_four_looks(self, rig):
+        store, tel = rig
+        run_census(standard_client(), store, tel, "nba", "2024-25", [game("g1")], {})
+        summary = store.points_summary("nba", "2024-25")
+        assert summary["series"] == 2 and summary["priced_missing_series"] == 0
+        row = store.priced_rows("nba", "2024-25")[0]
+        assert row["p_home_close"] == 0.62
+        assert {"p_home_t1h", "p_home_t6h", "p_home_t24h"} <= set(row)
+
     def test_the_limit_slice_spreads_across_the_season(self, rig):
         store, tel = rig
         games = [game(f"g{i}", et_date=f"2025-01-{(i % 28) + 1:02d}") for i in range(40)]

@@ -109,23 +109,36 @@ def closing_price(client: Client, market: dict) -> dict:
     start = start_dt.timestamp() if start_dt else tip - DEFAULT_LOOKBACK_DAYS * 86400
 
     def series(token: str) -> list[dict]:
+        """Every VALID point the market returned, pre- and post-tipoff.
+
+        The full series is kept rather than only the pre-tipoff part because
+        PLAN.md F10 keeps the raw series in the snapshot release (it is the
+        valuable public artifact), while modeling reads only the narrow `priced`
+        table. Post-tipoff points are what the deferred in-game analysis needs.
+        """
         h = client.prices_history(token, int(start) - HISTORY_PAD_SECONDS,
                                   fidelity=FIDELITY_MINUTES)
         # Validate shape before indexing: a point missing "t", or carrying "t"
         # as a string, raised KeyError/TypeError here (both confirmed).
-        return [
-            pt for pt in h
-            if isinstance(pt, dict)
-            and isinstance(pt.get("t"), (int, float))
-            and not isinstance(pt.get("t"), bool)
-            and math.isfinite(pt["t"])
-            and _is_probability(pt.get("p"))
-            and pt["t"] <= tip
-        ]
+        return sorted(
+            (pt for pt in h
+             if isinstance(pt, dict)
+             and isinstance(pt.get("t"), (int, float))
+             and not isinstance(pt.get("t"), bool)
+             and math.isfinite(pt["t"])
+             and _is_probability(pt.get("p"))),
+            key=lambda pt: pt["t"],
+        )
 
-    home_pre = series(toks[1])
+    home_all = series(toks[1])
+    home_pre = [pt for pt in home_all if pt["t"] <= tip]
     if not home_pre:
         return {"ok": False, "reason": "no_pre_tipoff_points"}
+
+    def look(seconds_out: int) -> float | None:
+        """Last home price at or before `seconds_out` before tipoff, else None."""
+        return next((pt["p"] for pt in reversed(home_pre)
+                     if pt["t"] <= tip - seconds_out), None)
 
     out = {
         "ok": True,
@@ -134,8 +147,13 @@ def closing_price(client: Client, market: dict) -> dict:
         "p_home_close": home_pre[-1]["p"],
         "n_pre_tipoff": len(home_pre),
         "secs_before_tip": int(tip - home_pre[-1]["t"]),
-        "p_home_t1h": next((pt["p"] for pt in reversed(home_pre)
-                            if pt["t"] <= tip - 3600), None),
+        # Time-to-close looks. PREREGISTRATION.md section 8 treats close, T-1h,
+        # T-6h and T-24h as four looks at one sample, and PLAN.md Phase 1 lists
+        # all four -- but week 2 only extracted two. None when the market opened
+        # inside the window, which is a real and countable condition.
+        "p_home_t1h": look(3600),
+        "p_home_t6h": look(6 * 3600),
+        "p_home_t24h": look(24 * 3600),
     }
     # staleness: a long flat run immediately pre-tipoff is carry-forward, not quoting
     tail = [pt["p"] for pt in home_pre[-STALE_FLAT_RUN:]]
@@ -143,7 +161,9 @@ def closing_price(client: Client, market: dict) -> dict:
 
     # Always set complement_ok so an absent away series is countable rather than
     # indistinguishable from a passing check.
-    away_pre = series(toks[0])
+    away_all = series(toks[0])
+    away_pre = [pt for pt in away_all if pt["t"] <= tip]
+    out["series"] = {"home": home_all, "away": away_all}
     if away_pre:
         total = away_pre[-1]["p"] + home_pre[-1]["p"]
         out["complement_sum"] = round(total, 6)

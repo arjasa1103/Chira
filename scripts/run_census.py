@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import shutil
 import sys
 
 sys.path.insert(0, "src")
@@ -30,6 +31,8 @@ from chira.store import Store
 from chira.telemetry import Telemetry, run_id
 
 ABBR = "data/abbr_map_resolved.json"
+MB_PER_GAME = 0.95           # 0.84 cache (measured) + ~0.1 raw series in the store
+GAMES_PER_SPORT_SEASON = 1312
 
 
 def main() -> int:
@@ -56,6 +59,17 @@ def main() -> int:
 
     abbr_map = load_abbr_map(ABBR, args.season, args.sport)
     store = Store(args.store)
+
+    if not args.gate_only:
+        # Preflight. Measured week 2: 0.84 MB of cache per priced game, and the
+        # store's raw series adds roughly 0.1 MB more. Refuse to start rather
+        # than die at request 12,000 with a full disk. Margin 2x.
+        free = shutil.disk_usage(pathlib.Path(args.store).resolve().parent).free
+        need = int(MB_PER_GAME * 1024 * 1024 * GAMES_PER_SPORT_SEASON * 2)
+        if free < need:
+            print(f"REFUSING TO START: {free / 1e9:.1f} GB free, need about "
+                  f"{need / 1e9:.1f} GB for one sport-season with 2x margin")
+            return 2
 
     if not args.gate_only:
         client = Client(cache=Cache(args.cache, abbr_version=map_fingerprint(abbr_map)))

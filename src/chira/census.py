@@ -166,6 +166,8 @@ def census_game(client: Client, sport: str, game: dict, abbr_map: dict[str, str]
         "home_nickname": cp.get("home_nickname"),
         "p_home_close": cp["p_home_close"],
         "p_home_t1h": cp.get("p_home_t1h"),
+        "p_home_t6h": cp.get("p_home_t6h"),
+        "p_home_t24h": cp.get("p_home_t24h"),
         "n_pre_tipoff": cp["n_pre_tipoff"],
         "secs_before_tip": cp["secs_before_tip"],
         "stale_flat_run": cp.get("stale_flat_run"),
@@ -176,7 +178,8 @@ def census_game(client: Client, sport: str, game: dict, abbr_map: dict[str, str]
         "volume": _volume(market),
         "game_start_time": market.get("gameStartTime"),
     }
-    return {"outcome": "priced", "row": row, "attempted": attempted}
+    return {"outcome": "priced", "row": row, "attempted": attempted,
+            "series": cp.get("series")}
 
 
 def slice_games(games: list[dict], limit: int | None, strategy: str = "stride") -> list[dict]:
@@ -232,7 +235,8 @@ def run_census(client: Client, store: Store, tel: Telemetry, sport: str, season:
     for i, g in enumerate(todo, 1):
         res = census_game(client, sport, g, abbr_map, labels, blocked=blocked)
         if res["outcome"] == "priced":
-            store.put_priced(sport, season, g["game_id"], res["row"])
+            store.put_priced(sport, season, g["game_id"], res["row"],
+                             points=res.get("series"))
             counts["priced"] += 1
             tel.event("game", sport=sport, season=season, game_id=g["game_id"],
                       outcome="priced", slug=res["row"]["slug"],
@@ -302,7 +306,8 @@ def reprobe_misses(client: Client, store: Store, tel: Telemetry, sport: str, sea
         res = census_game(client, sport, g, abbr_map, labels, bypass_cache=True,
                           blocked=blocked)
         if res["outcome"] == "priced":
-            store.put_priced(sport, season, game_id, res["row"])
+            store.put_priced(sport, season, game_id, res["row"],
+                             points=res.get("series"))
             out["recovered"] += 1
             tel.event("reprobe_recovered", sport=sport, season=season,
                       game_id=game_id, slug=res["row"]["slug"])

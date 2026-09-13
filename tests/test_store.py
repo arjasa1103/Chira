@@ -180,7 +180,7 @@ class TestSchemaMigration:
     """CREATE TABLE IF NOT EXISTS made the store immutable once it existed."""
 
     def test_a_fresh_store_is_stamped_at_the_current_version(self, store):
-        assert store.schema_version == 2
+        assert store.schema_version == 3
 
     def test_an_unstamped_existing_store_is_migrated_not_ignored(self, tmp_path):
         """Simulates a week-2 store: tables exist, no meta row, no run_id column."""
@@ -196,7 +196,7 @@ class TestSchemaMigration:
         con.close()
 
         with Store(path) as s:
-            assert s.schema_version == 2
+            assert s.schema_version == 3
             cols = [r[0] for r in s.db.execute("DESCRIBE games").fetchall()]
             assert "run_id" in cols, "the migration did not run"
             assert s.reconcile("nba", "2024-25")["scheduled"] == 1, "data was lost"
@@ -207,7 +207,7 @@ class TestSchemaMigration:
             s.put_games("nba", "2024-25", [game("g1")])
             first = s.digest()
         with Store(path) as s:
-            assert s.schema_version == 2 and s.digest() == first
+            assert s.schema_version == 3 and s.digest() == first
 
 
 class TestProvenance:
@@ -361,3 +361,107 @@ class TestScoping:
         assert two_sports.miss_reasons(season="2025-26") == {"no_pre_tipoff_points": 1}
         assert two_sports.label_agreement(season="2024-25") == {"agree": 1}
         assert two_sports.label_agreement(season="2025-26") == {}
+
+
+def pts(n=5, base=1_700_000_000, p0=0.5):
+    return [{"t": base + 60 * i, "p": round(p0 + i * 0.001, 6)} for i in range(n)]
+
+
+class TestPriceSeriesWrites:
+    def test_a_priced_game_stores_both_sides(self, seeded):
+        seeded.put_priced("nba", "2024-25", "g1", priced_row(),
+                          points={"home": pts(5), "away": pts(4, p0=0.4)})
+        summary = seeded.points_summary("nba", "2024-25")
+        assert summary == {"rows": 9, "series": 2, "priced_missing_series": 0,
+                           "orphan_series": 0}
+
+    def test_the_unnest_zip_keeps_t_and_p_aligned(self, seeded):
+        home = pts(50)
+        seeded.put_priced("nba", "2024-25", "g1", priced_row(), points={"home": home})
+        got = seeded.db.execute(
+            "SELECT t, p FROM price_points WHERE side='home' ORDER BY t").fetchall()
+        assert got == [(pt["t"], pt["p"]) for pt in home]
+
+    def test_re_pricing_replaces_the_series_rather_than_appending(self, seeded):
+        seeded.put_priced("nba", "2024-25", "g1", priced_row(), points={"home": pts(5)})
+        seeded.put_priced("nba", "2024-25", "g1", priced_row(), points={"home": pts(3)})
+        assert seeded.points_summary()["rows"] == 3
+
+    def test_downgrading_to_a_miss_drops_the_series(self, seeded):
+        """Otherwise the snapshot ships a raw series for a game it calls missed."""
+        seeded.put_priced("nba", "2024-25", "g1", priced_row(), points={"home": pts(5)})
+        seeded.put_miss("nba", "2024-25", "g1", "label_disagreement", ["s"])
+        assert seeded.points_summary() == {"rows": 0, "series": 0,
+                                           "priced_missing_series": 0,
+                                           "orphan_series": 0}
+
+    def test_a_priced_row_without_points_is_counted_as_missing_its_series(self, seeded):
+        seeded.put_priced("nba", "2024-25", "g1", priced_row())
+        assert seeded.points_summary()["priced_missing_series"] == 1
+
+    def test_an_unknown_side_is_refused_and_nothing_is_written(self, seeded):
+        with pytest.raises(ValueError, match="side"):
+            seeded.put_priced("nba", "2024-25", "g1", priced_row(),
+                              points={"over": pts(3)})
+        assert seeded.reconcile("nba", "2024-25")["priced"] == 0
+        assert seeded.points_summary()["rows"] == 0
+
+    def test_a_failed_series_insert_rolls_back_the_priced_row(self, seeded):
+        """Row and series are one transaction: a kill between them must not leave a
+        priced game whose snapshot series is silently empty."""
+        real = seeded.db
+        seeded.db = FlakyDB(real, "INSERT INTO price_points")
+        with pytest.raises(RuntimeError):
+            seeded.put_priced("nba", "2024-25", "g1", priced_row(),
+                              points={"home": pts(3)})
+        seeded.db = real
+        assert seeded.reconcile("nba", "2024-25")["priced"] == 0
+
+    def test_the_series_carries_the_run_id(self, seeded):
+        seeded.start_run("run-x", {})
+        seeded.put_priced("nba", "2024-25", "g1", priced_row(), points={"home": pts(2)})
+        assert {r[0] for r in seeded.db.execute(
+            "SELECT DISTINCT run_id FROM price_points").fetchall()} == {"run-x"}
+
+    def test_the_digest_sees_a_moved_price_point(self, seeded):
+        seeded.put_priced("nba", "2024-25", "g1", priced_row(), points={"home": pts(5)})
+        before = seeded.digest()
+        seeded.db.execute("UPDATE price_points SET p = p + 0.01 WHERE t = 1700000120")
+        assert seeded.digest() != before
+
+    def test_the_digest_is_stable_when_the_same_series_is_rewritten(self, seeded):
+        seeded.put_priced("nba", "2024-25", "g1", priced_row(), points={"home": pts(5)})
+        before = seeded.digest()
+        seeded.put_priced("nba", "2024-25", "g1", priced_row(), points={"home": pts(5)})
+        assert seeded.digest() == before
+
+    def test_new_looks_round_trip(self, seeded):
+        seeded.put_priced("nba", "2024-25", "g1",
+                          priced_row(p_home_t6h=0.55, p_home_t24h=0.52))
+        row = seeded.priced_rows("nba", "2024-25")[0]
+        assert (row["p_home_t6h"], row["p_home_t24h"]) == (0.55, 0.52)
+
+
+class TestMigrationToV3:
+    def test_a_v2_store_gains_the_looks_and_the_series_table(self, tmp_path):
+        import duckdb
+
+        from chira.store import SCHEMA
+        path = tmp_path / "v2.duckdb"
+        con = duckdb.connect(str(path))
+        v2_schema = (SCHEMA.read_text()
+                     .replace("    p_home_t6h       DOUBLE,\n", "")
+                     .replace("    p_home_t24h      DOUBLE,\n", ""))
+        v2_schema = v2_schema[:v2_schema.index("CREATE TABLE IF NOT EXISTS price_points")] \
+            + v2_schema[v2_schema.index("CREATE TABLE IF NOT EXISTS runs"):]
+        con.execute(v2_schema)
+        con.execute("INSERT INTO meta VALUES ('schema_version', '2')")
+        con.close()
+
+        with Store(path) as s:
+            assert s.schema_version == 3
+            cols = {r[0] for r in s.db.execute("DESCRIBE priced").fetchall()}
+            assert {"p_home_t6h", "p_home_t24h"} <= cols
+            s.put_games("nba", "2024-25", [game("g1")])
+            s.put_priced("nba", "2024-25", "g1", priced_row(), points={"home": pts(2)})
+            assert s.points_summary()["rows"] == 2
