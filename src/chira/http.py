@@ -53,6 +53,16 @@ class TransientError(RuntimeError):
     """
 
 
+class NetworkUnavailable(TransientError):
+    """Every attempt failed to even connect: DNS failure, no route, refused.
+
+    That is a statement about THIS machine's network, not about the server, so it
+    does not count toward the circuit breaker. Measured cause twice on 2026-09-13:
+    the laptop slept (lid closed) mid-census, DNS stopped resolving, and a single
+    exhausted request killed a multi-hour run. The census waits these out.
+    """
+
+
 class CircuitOpen(RuntimeError):
     """Too many consecutive failures. Aborts the run.
 
@@ -175,6 +185,7 @@ class Client:
                 self.stats["cache:hit"] += 1
                 return hit
         last: Exception = TransientError("no attempts made")
+        conn_failures = 0
         backoff = BACKOFF_START
         for attempt in range(max_attempts):
             self._pace()
@@ -182,6 +193,8 @@ class Client:
                 r = self.s.get(url, timeout=30)
             except requests.RequestException as e:
                 self.stats[f"exc:{type(e).__name__}"] += 1
+                if isinstance(e, requests.ConnectionError):
+                    conn_failures += 1
                 last = TransientError(str(e))
             else:
                 self.stats[f"http:{r.status_code}"] += 1
@@ -236,6 +249,9 @@ class Client:
             if attempt < max_attempts - 1:
                 time.sleep(backoff)
                 backoff = min(backoff * 2, BACKOFF_CAP)
+        if conn_failures == max_attempts:
+            self.stats["network_unavailable"] += 1
+            raise NetworkUnavailable(str(last))
         self._consecutive_failures += 1
         if self._consecutive_failures >= CIRCUIT_BREAK_AFTER:
             raise CircuitOpen(

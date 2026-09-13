@@ -520,3 +520,54 @@ class TestManifest:
         a = manifest("nba", "2024-25", [game()], {"vgk": "las"})
         b = manifest("nba", "2024-25", [game()], {"vgk": "vgk"})
         assert a["abbr_map_fingerprint"] != b["abbr_map_fingerprint"]
+
+
+class TestNetworkPatience:
+    """The census waits out a local network outage instead of dying mid-run."""
+
+    class Flaky(FakeClient):
+        def __init__(self, fail_times, **kw):
+            super().__init__(**kw)
+            self.fail_times = fail_times
+
+        def event_by_slug(self, slug, *, bypass_cache=False):
+            if self.fail_times > 0:
+                self.fail_times -= 1
+                from chira.http import NetworkUnavailable
+                raise NetworkUnavailable("Failed to resolve")
+            return super().event_by_slug(slug, bypass_cache=bypass_cache)
+
+    def _client(self, fail_times):
+        base = standard_client()
+        return self.Flaky(fail_times, events=base.events, prices=base.prices)
+
+    def test_an_outage_is_waited_out_and_the_game_is_still_priced(self, monkeypatch):
+        from chira import census
+        slept = []
+        monkeypatch.setattr(census.time, "sleep", slept.append)
+        store, tel = Store(), Telemetry(None, "t", {})
+        counts = run_census(self._client(3), store, tel, "nba", "2024-25", [game("g1")], {})
+        assert counts["priced"] == 1
+        assert slept == [30.0, 60.0, 120.0], "capped exponential backoff"
+        assert tel.counts["network_wait"] == 3
+        store.close()
+
+    def test_a_retried_game_is_written_exactly_once(self, monkeypatch):
+        from chira import census
+        monkeypatch.setattr(census.time, "sleep", lambda s: None)
+        store, tel = Store(), Telemetry(None, "t", {})
+        run_census(self._client(2), store, tel, "nba", "2024-25", [game("g1")], {})
+        assert store.assert_reconciled("nba", "2024-25")["priced"] == 1
+        assert store.points_summary("nba", "2024-25")["series"] == 2
+        store.close()
+
+    def test_past_patience_the_outage_is_raised(self, monkeypatch):
+        from chira import census
+        from chira.http import NetworkUnavailable
+        monkeypatch.setattr(census.time, "sleep", lambda s: None)
+        monkeypatch.setattr(census, "NETWORK_PATIENCE_SECONDS", 60)
+        store, tel = Store(), Telemetry(None, "t", {})
+        with pytest.raises(NetworkUnavailable):
+            run_census(self._client(99), store, tel, "nba", "2024-25", [game("g1")], {})
+        assert store.reconcile("nba", "2024-25")["priced"] == 0
+        store.close()

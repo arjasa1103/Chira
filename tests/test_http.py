@@ -18,6 +18,7 @@ from chira.http import (
     CIRCUIT_BREAK_AFTER,
     CircuitOpen,
     Client,
+    NetworkUnavailable,
     SchemaError,
     TransientError,
     _retry_after_seconds,
@@ -340,3 +341,41 @@ class TestCacheIntegration:
         cached.prices_history("12345", 1700000000, bypass_cache=True)
         assert seen["bypass_cache"] is True
         assert seen["validator"] is validate_prices
+
+
+class TestNetworkUnavailable:
+    """A sleeping laptop is not an upstream failure (measured cause, 2026-09-13)."""
+
+    def _dead(self, client, monkeypatch):
+        import requests
+        def boom(*a, **k):
+            raise requests.ConnectionError("Failed to resolve 'gamma-api.polymarket.com'")
+        monkeypatch.setattr(client.s, "get", boom)
+
+    def test_every_attempt_failing_to_connect_is_network_unavailable(self, client, monkeypatch):
+        self._dead(client, monkeypatch)
+        with pytest.raises(NetworkUnavailable):
+            client.get_json("https://x")
+        assert isinstance(NetworkUnavailable("x"), TransientError)
+
+    def test_it_never_opens_the_circuit_however_long_it_lasts(self, client, monkeypatch):
+        self._dead(client, monkeypatch)
+        for _ in range(CIRCUIT_BREAK_AFTER * 3):
+            with pytest.raises(NetworkUnavailable):
+                client.get_json("https://x")
+        assert client._consecutive_failures == 0
+
+    def test_a_server_response_among_the_attempts_is_an_ordinary_failure(self, client, monkeypatch):
+        import requests
+        calls = iter([Resp(503), requests.ConnectionError("x"), requests.ConnectionError("x"),
+                      requests.ConnectionError("x")])
+        def mixed(*a, **k):
+            item = next(calls)
+            if isinstance(item, Exception):
+                raise item
+            return item
+        monkeypatch.setattr(client.s, "get", mixed)
+        with pytest.raises(TransientError) as e:
+            client.get_json("https://x")
+        assert not isinstance(e.value, NetworkUnavailable)
+        assert client._consecutive_failures == 1

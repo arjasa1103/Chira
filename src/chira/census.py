@@ -22,6 +22,7 @@ So:
 from __future__ import annotations
 
 import json
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ from zoneinfo import ZoneInfo
 from .cache import fingerprint
 from .constants import TIPOFF_ET_HOUR_BAND
 from .extract import closing_price, label_agreement
-from .http import Client
+from .http import Client, NetworkUnavailable
 from .resolve import confirm, team_labels
 from .store import Store
 from .telemetry import Telemetry
@@ -197,6 +198,30 @@ def census_game(client: Client, sport: str, game: dict, abbr_map: dict[str, str]
             "series": cp.get("series")}
 
 
+# How long a census waits out a local network outage before giving up. Measured
+# cause on 2026-09-13: the laptop slept mid-run and DNS stopped resolving. Waiting
+# is safe because census_game writes nothing until a game is fully resolved, so a
+# retried game starts clean; its already-fetched payloads come back from cache.
+NETWORK_PATIENCE_SECONDS = 2 * 3600
+NETWORK_WAIT_START = 30.0
+NETWORK_WAIT_CAP = 300.0
+
+
+def _patiently(tel: Telemetry, fn):
+    """Call fn, waiting out NetworkUnavailable with capped backoff; re-raise past patience."""
+    waited, wait = 0.0, NETWORK_WAIT_START
+    while True:
+        try:
+            return fn()
+        except NetworkUnavailable as e:
+            if waited >= NETWORK_PATIENCE_SECONDS:
+                raise
+            tel.event("network_wait", seconds=wait, waited=waited, error=str(e)[:200])
+            time.sleep(wait)
+            waited += wait
+            wait = min(wait * 2, NETWORK_WAIT_CAP)
+
+
 def slice_games(games: list[dict], limit: int | None, strategy: str = "stride") -> list[dict]:
     """Pick `limit` games for a partial run.
 
@@ -248,7 +273,8 @@ def run_census(client: Client, store: Store, tel: Telemetry, sport: str, season:
     tel.event("rematch_guard", sport=sport, season=season, blocked_games=len(blocked))
     counts: dict[str, int] = {"priced": 0, "miss": 0}
     for i, g in enumerate(todo, 1):
-        res = census_game(client, sport, g, abbr_map, labels, blocked=blocked)
+        res = _patiently(tel, lambda g=g: census_game(client, sport, g, abbr_map, labels,
+                                                       blocked=blocked))
         if res["outcome"] == "priced":
             store.put_priced(sport, season, g["game_id"], res["row"],
                              points=res.get("series"))
@@ -318,8 +344,8 @@ def reprobe_misses(client: Client, store: Store, tel: Telemetry, sport: str, sea
             out["not_in_schedule"] += 1
             continue
         out["reprobed"] += 1
-        res = census_game(client, sport, g, abbr_map, labels, bypass_cache=True,
-                          blocked=blocked)
+        res = _patiently(tel, lambda g=g: census_game(client, sport, g, abbr_map, labels,
+                                                       bypass_cache=True, blocked=blocked))
         if res["outcome"] == "priced":
             store.put_priced(sport, season, game_id, res["row"],
                              points=res.get("series"))
