@@ -11,6 +11,7 @@ import sys
 import time
 
 sys.path.insert(0, "src")
+from chira.cache import Cache
 from chira.constants import USABLE_SEASONS
 from chira.http import Client
 from chira.nhl import nhl_games
@@ -21,7 +22,13 @@ DATA = pathlib.Path("data")
 learned = json.loads((DATA / "abbr_map.json").read_text())
 
 out = {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "seasons": {}}
-client = Client()
+# Share the census cache. This script fetches the 64 NHL club-schedule payloads
+# (~12 MB) that run_census.py then fetched again -- the only place in the pipeline
+# where the same url was provably requested twice in normal operation. Those are
+# map-independent keys, so both runs hit the same cache entry. The ~91 slug probes
+# ARE keyed by abbr_version and will not be shared with the census; that is
+# correct, since the map they are keyed under is the one being derived.
+client = Client(cache=Cache(".http-cache", abbr_version="resolver"))
 
 for season in USABLE_SEASONS:
     out["seasons"][season] = {}
@@ -31,8 +38,6 @@ for season in USABLE_SEASONS:
             games = nba_games(season)
         else:
             games = nhl_games(client, season)
-        # Priors, best first: this season's learned map, then the OTHER season's
-        # (conventions mostly persist), then nothing.
         # Priors, best first: this season's learned map, then the other
         # season's (conventions mostly persist across seasons, but not always,
         # which is why this is a prior and not the answer).

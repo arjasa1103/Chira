@@ -17,9 +17,15 @@ actively dangerous here, in three specific ways this module is built around:
    which is what E6's second-pass re-probe requires.
 
 3. **The abbreviation map is an input to every slug.** If the map changes, every
-   cached miss computed under the old map is stale. The key therefore includes
-   a map fingerprint, so correcting an abbreviation automatically invalidates
-   the lookups that depended on the old one instead of silently reusing them.
+   cached slug lookup computed under the old map is stale, so those keys include
+   a map fingerprint and a corrected abbreviation invalidates them automatically.
+
+   That fingerprint is scoped to SLUG-DERIVED urls only. It used to be mixed into
+   every key, including prices-history, which is addressed by CLOB token id and
+   has no dependency on the abbreviation map at all. Measured cost of that
+   mistake: 0.84 MB of cache per priced game, so correcting one team's
+   abbreviation would have thrown away ~3.4 GB of price history and ~2 hours of
+   re-fetching to fix something that can only affect `/events?slug=`.
 """
 
 from __future__ import annotations
@@ -50,10 +56,20 @@ class Cache:
         self.abbr_version = abbr_version
         self.schema_version = schema_version
         self.stats: Counter[str] = Counter()
+        self.last_error: str | None = None
+
+    def abbr_sensitive(self, url: str) -> bool:
+        """True for slug lookups, whose RESULT depends on the abbreviation map.
+
+        Everything else (prices-history by token id, club-schedule by team) is
+        addressed by an identifier the map cannot change.
+        """
+        return "slug=" in url
 
     def key(self, url: str) -> str:
+        version = self.abbr_version if self.abbr_sensitive(url) else "-"
         return hashlib.sha256(
-            f"{self.schema_version}|{self.abbr_version}|{url}".encode()
+            f"{self.schema_version}|{version}|{url}".encode()
         ).hexdigest()
 
     def path(self, url: str) -> Path:
@@ -80,7 +96,13 @@ class Cache:
         return entry.get("payload")
 
     def put(self, url: str, payload: Any) -> None:
-        """Write atomically. A half-written entry would read back as corrupt."""
+        """Write atomically, and never let a cache failure end a census.
+
+        A cache write is an optimization. The census projects to ~3.4 GB of cached
+        responses, so ENOSPC at request 12,000 is a realistic way to end a
+        multi-day run -- and ending it is the one thing the whole resumable design
+        exists to prevent. Serialization bugs still raise, because those are ours.
+        """
         p = self.path(url)
         p.parent.mkdir(parents=True, exist_ok=True)
         entry = {
@@ -89,11 +111,21 @@ class Cache:
             "abbr_version": self.abbr_version,
             "payload": payload,
         }
-        fd, tmp = tempfile.mkstemp(dir=p.parent, suffix=".tmp")
+        try:
+            fd, tmp = tempfile.mkstemp(dir=p.parent, suffix=".tmp")
+        except OSError as e:
+            self.stats["put_failed"] += 1
+            self.last_error = str(e)
+            return
         try:
             with os.fdopen(fd, "w") as fh:
                 json.dump(entry, fh)
             os.replace(tmp, p)
+        except OSError as e:
+            Path(tmp).unlink(missing_ok=True)
+            self.stats["put_failed"] += 1
+            self.last_error = str(e)
+            return
         except BaseException:
             Path(tmp).unlink(missing_ok=True)
             raise

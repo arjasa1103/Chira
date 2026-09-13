@@ -154,24 +154,29 @@ Modules: `cache.py`, `store.py` + `schema.sql`, `telemetry.py`, `census.py`, `ga
   re-probed once with the cache bypassed.
 - **Telemetry (T13).** One flushed JSONL line per game plus a manifest carrying the git
   hash, date window and map fingerprint.
-- **The census validation gate PASSES on all four sport-seasons.** 1,200 games attempted,
-  **960 priced, 960/960 label agreement, zero disagreements**, complementarity clean on
-  all 960. That is 960 independent confirmations of the orientation chain on top of
-  week 1's 128.
+- **The census validation gate PASSES on all four sport-seasons**, on 200-game stride
+  slices. 800 games attempted, **735 priced, 735/735 label agreement, zero
+  disagreements**, complementarity clean on all 735, and the clobTokenIds leg of the
+  orientation chain independently verified in every sport-season.
 
-| Sport | Season | Attempted | Priced | Label agreement | `et` / `et_plus_1` |
-|---|---|---|---|---|---|
-| NBA | 2024-25 | 400 | 400 (100%) | 400/400 | 400 / 0 |
-| NHL | 2024-25 | 400 | 161 (40%) | 161/161 | 161 / 0 |
-| NBA | 2025-26 | 200 | 199 (99.5%) | 199/199 | 184 / 15 |
-| NHL | 2025-26 | 200 | 200 (100%) | 200/200 | 189 / 11 |
+| Sport | Season | Attempted | Priced | Label agreement | `et` / `et_plus_1` | Discrimination |
+|---|---|---|---|---|---|---|
+| NBA | 2024-25 | 200 | 200 (100%) | 200/200 | 200 / 0 | 5.9σ |
+| NHL | 2024-25 | 200 | 136 (68%) | 136/136 | 136 / 0 | 2.7σ |
+| NBA | 2025-26 | 200 | 199 (99.5%) | 199/199 | 184 / 15 | 7.6σ |
+| NHL | 2025-26 | 200 | 200 (100%) | 200/200 | 189 / 11 | 3.0σ |
+
+  The first version of this table reported 960 priced and NHL 2024-25 at 40%. Two
+  slices were contaminated by pre-fix runs (one censused the season's last 200 games,
+  one its first 200) and were discarded and re-run; see notes/week2-census-gate.md.
 
 Five findings that change later phases:
 
-1. **Polymarket's NHL coverage starts in December 2024.** All 234 attempted
-   October-November games returned `no_market` and all 234 survived a cache-bypassed
-   re-probe. The early-season stratum for headline 2 does not exist for NHL 2024-25,
-   and NHL's usable 2024-25 n is roughly 1,000, not 1,312.
+1. **Polymarket's NHL coverage starts in December 2024.** Every attempted
+   October-November game returned `no_market` and every one survived a cache-bypassed
+   re-probe, on both the contaminated and the clean sample. The early-season stratum
+   for headline 2 does not exist for NHL 2024-25, and NHL's usable 2024-25 n is
+   roughly 1,000, not 1,312.
 2. **The second date convention is load-bearing, and only in 2025-26.** 26 of 960 games
    hit via `et_plus_1` and would otherwise have been booked `no_market`; zero of 561
    games in 2024-25 needed it. **Correction to week 1:** the upstream slug bug was
@@ -189,6 +194,9 @@ Five findings that change later phases:
    to a stride slice across the season.
 5. **The last quote lands closer to tipoff in 2025-26** (mean 43s vs 56s). A property of
    the closing-price construction, better recorded now than discovered in week 9.
+6. **NHL's price discriminates ~3x more weakly than NBA's** (mean p_home_close gap
+   between home wins and away wins: NHL 0.04-0.06, NBA 0.16-0.21). A real property of
+   the sport, and an input to the primary-sport decision in week 4.
 
 ## Phase 0 — Foundations
 

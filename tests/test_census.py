@@ -11,6 +11,7 @@ No network: the client is a dict-backed stub.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 import pytest
 
@@ -18,9 +19,11 @@ from chira.census import (
     census_game,
     load_abbr_map,
     manifest,
+    rematch_slugs,
     reprobe_misses,
     run_census,
     slice_games,
+    tipoff_is_plausible,
 )
 from chira.store import Store
 from chira.telemetry import Telemetry
@@ -74,10 +77,13 @@ class FakeClient:
         return self.prices.get(str(token_id), [])
 
 
-def standard_client(**market_kw):
+def standard_client(*, slug="nba-lal-bos-2025-01-15", **market_kw):
+    """Price series always ends one minute before whatever tipoff the market claims."""
+    gst = market_kw.get("gst", TIP)
+    tip = datetime.fromisoformat(gst.replace("Z", "+00:00")).timestamp()
     return FakeClient(
-        events={"nba-lal-bos-2025-01-15": [{"markets": [market(**market_kw)]}]},
-        prices={"2": series(0.62), "1": series(0.38)},
+        events={slug: [{"markets": [market(**market_kw)]}]},
+        prices={"2": series(0.62, end=tip - 60), "1": series(0.38, end=tip - 60)},
     )
 
 
@@ -124,14 +130,23 @@ class TestMissClassification:
         assert res["reason"] == "no_market"
         assert res["attempted"] == ["nba-lal-bos-2025-01-15", "nba-lal-bos-2025-01-16"]
 
-    def test_a_market_whose_labels_do_not_match_is_not_accepted(self, labels):
-        """A slug can hit and be a different game."""
+    def test_a_market_whose_labels_do_not_match_is_its_own_reason(self, labels):
+        """A slug can hit and be a different game.
+
+        This must NOT be `no_market`: that bucket is the sole evidence for the
+        claim that Polymarket's NHL coverage starts in December 2024, and it
+        cannot support it if it also contains "a market is there under labels we
+        did not recognise".
+        """
         client = FakeClient(
             events={"nba-lal-bos-2025-01-15": [
                 {"markets": [market(outcomes=("Knicks", "Heat"))]}]},
             prices={"2": series(0.62)})
         res = census_game(client, "nba", game(), {}, labels)
-        assert res["reason"] == "no_market"
+        assert res["reason"] == "label_mismatch_at_slug"
+
+    def test_an_empty_event_list_is_still_no_market(self, labels):
+        assert census_game(FakeClient(), "nba", game(), {}, labels)["reason"] == "no_market"
 
     def test_a_postponed_game_is_its_own_reason_not_an_away_win(self, labels):
         res = census_game(standard_client(prices=("0.5", "0.5")), "nba",
@@ -187,6 +202,79 @@ class TestMissClassification:
         assert "market=away" in res["detail"] and "league=home" in res["detail"]
 
 
+class TestTipoffPlausibility:
+    """gameStartTime is supplied by the party being benchmarked AND is the
+    pre-tipoff cutoff, so a late one admits settled quotes as the closing price."""
+
+    def test_the_live_bad_row_is_now_rejected(self, labels):
+        """nba-dal-uta-2024-11-14: 00:57 ET tipoff, p_home_close 0.9995 on a
+        115-113 game. A perfect predictor manufactured by a bad timestamp."""
+        client = standard_client(slug="nba-lal-bos-2024-11-14",
+                                 gst="2024-11-15T05:57:00Z")
+        res = census_game(client, "nba", game(et_date="2024-11-14"), {}, labels)
+        assert res["reason"] == "implausible_game_start_time"
+        assert "ET date" in res["detail"]
+
+    def test_a_morning_faceoff_is_rejected(self, labels):
+        """nhl-nsh-pit-2025-11-16 carried a 09:00 ET faceoff, truncating the
+        closing price nine hours early."""
+        res = census_game(standard_client(gst="2025-01-15T14:00:00Z"), "nba",
+                          game(), {}, labels)
+        assert res["reason"] == "implausible_game_start_time"
+        assert "ET hour" in res["detail"]
+
+    @pytest.mark.parametrize("gst,et_date", [
+        ("2025-01-16T00:30:00Z", "2025-01-15"),   # 19:30 ET, the common case
+        ("2025-01-15T17:00:00Z", "2025-01-15"),   # 12:00 ET matinee
+        ("2025-01-16T03:30:00Z", "2025-01-15"),   # 22:30 ET west coast
+    ])
+    def test_real_tipoff_shapes_are_accepted(self, labels, gst, et_date):
+        res = census_game(standard_client(gst=gst), "nba",
+                          game(et_date=et_date), {}, labels)
+        assert res["outcome"] == "priced", res
+
+    def test_a_naive_timestamp_is_rejected(self, labels):
+        res = census_game(standard_client(gst="2025-01-16 00:30:00"), "nba",
+                          game(), {}, labels)
+        assert res["reason"] == "implausible_game_start_time"
+
+
+class TestRematchGuard:
+    """19 consecutive-day same-orientation pairs exist; for the earlier game the
+    et_plus_1 slug IS the later game's primary slug."""
+
+    def test_the_blocked_slug_is_not_probed_and_is_recorded(self, labels):
+        games = [game("g1", et_date="2025-01-15"), game("g2", et_date="2025-01-16")]
+        blocked = rematch_slugs("nba", games, {})
+        assert blocked == {"g1": "nba-lal-bos-2025-01-16"}
+
+        client = FakeClient(
+            events={"nba-lal-bos-2025-01-16": [{"markets": [market()]}]},
+            prices={"2": series(0.62), "1": series(0.38)})
+        res = census_game(client, "nba", games[0], {}, labels, blocked=blocked)
+        assert res["outcome"] == "miss"
+        assert "nba-lal-bos-2025-01-16" not in client.slugs_tried
+        assert any("blocked" in a for a in res["attempted"])
+
+    def test_the_later_game_still_uses_its_own_primary_slug(self, labels):
+        games = [game("g1", et_date="2025-01-15"), game("g2", et_date="2025-01-16")]
+        blocked = rematch_slugs("nba", games, {})
+        client = standard_client(slug="nba-lal-bos-2025-01-16",
+                                 gst="2025-01-17T00:30:00Z")
+        res = census_game(client, "nba", games[1], {}, labels, blocked=blocked)
+        assert res["outcome"] == "priced"
+
+    def test_a_non_rematch_schedule_blocks_nothing(self):
+        games = [game("g1", et_date="2025-01-15"),
+                 game("g2", et_date="2025-01-16", away="bos", home="lal")]
+        assert rematch_slugs("nba", games, {}) == {}
+
+    def test_the_block_is_computed_on_slug_abbreviations(self):
+        games = [game("g1", et_date="2025-01-15"), game("g2", et_date="2025-01-16")]
+        assert rematch_slugs("nhl", games, {"lal": "las"})["g1"] == \
+            "nhl-las-bos-2025-01-16"
+
+
 class TestRunCensus:
     @pytest.fixture
     def rig(self):
@@ -239,7 +327,8 @@ class TestReprobe:
 
         live = standard_client()
         out = reprobe_misses(live, store, tel, "nba", "2024-25", games, {})
-        assert out == {"reprobed": 1, "recovered": 1, "still_missing": 0}
+        assert out == {"reprobed": 1, "recovered": 1, "still_missing": 0,
+                       "not_in_schedule": 0}
         assert store.miss_reasons("nba", "2024-25") == {}
         assert store.reconcile("nba", "2024-25")["priced"] == 1
         assert live.bypassed, "the re-probe must bypass the cache"
@@ -254,6 +343,22 @@ class TestReprobe:
         assert store.assert_reconciled("nba", "2024-25")["balanced"]
         store.close()
 
+    def test_a_miss_whose_game_left_the_schedule_is_counted_not_swallowed(self):
+        """E6's second pass quietly not running must not look like it ran clean."""
+        store, tel = Store(), Telemetry(None, "t", {})
+        games = [game("g1")]
+        run_census(FakeClient(), store, tel, "nba", "2024-25", games, {})
+        out = reprobe_misses(FakeClient(), store, tel, "nba", "2024-25", [], {})
+        assert out["not_in_schedule"] == 1 and out["reprobed"] == 0
+        store.close()
+
+    def test_an_empty_reason_tuple_is_refused_rather_than_building_invalid_sql(self):
+        store, tel = Store(), Telemetry(None, "t", {})
+        with pytest.raises(ValueError, match="non-empty"):
+            reprobe_misses(FakeClient(), store, tel, "nba", "2024-25", [], {},
+                           reasons=())
+        store.close()
+
     def test_reasons_other_than_no_market_are_not_reprobed(self):
         store, tel = Store(), Telemetry(None, "t", {})
         games = [game("g1")]
@@ -262,6 +367,22 @@ class TestReprobe:
         out = reprobe_misses(standard_client(), store, tel, "nba", "2024-25", games, {})
         assert out["reprobed"] == 0
         store.close()
+
+
+class TestTipoffHelper:
+    @pytest.mark.parametrize("gst,et_date,ok", [
+        ("2025-01-16T00:30:00Z", "2025-01-15", True),
+        ("2025-01-16T05:57:00Z", "2025-01-15", False),   # 00:57 ET next day
+        ("2025-01-15T14:00:00Z", "2025-01-15", False),   # 09:00 ET
+        ("2025-01-15 19:30:00", "2025-01-15", False),    # naive
+        (None, "2025-01-15", False),
+        ("not-a-date", "2025-01-15", False),
+    ])
+    def test_plausibility(self, gst, et_date, ok):
+        assert tipoff_is_plausible(gst, et_date)[0] is ok
+
+    def test_a_rejection_says_why(self):
+        assert "ET hour" in tipoff_is_plausible("2025-01-15T14:00:00Z", "2025-01-15")[1]
 
 
 class TestSliceGames:
@@ -283,10 +404,35 @@ class TestSliceGames:
         with pytest.raises(ValueError, match="unknown slice strategy"):
             slice_games(games, 2, "vibes")
 
-    def test_stride_never_repeats_a_game(self):
-        games = [game(f"g{i}") for i in range(5)]
-        picked = slice_games(games, 5)
+    @pytest.mark.parametrize("n,limit", [(5, 3), (7, 4), (1312, 200), (1230, 200)])
+    def test_stride_never_repeats_a_game(self, n, limit):
+        """Previously called slice_games(games, 5) on 5 games, which returns early
+        on `limit >= len(games)` and never reached the stride branch at all."""
+        games = [game(f"g{i:05d}") for i in range(n)]
+        picked = slice_games(games, limit)
         assert len({g["game_id"] for g in picked}) == len(picked)
+        assert len(picked) == limit
+
+    def test_stride_spans_the_whole_list(self):
+        games = [game(f"g{i:05d}") for i in range(1000)]
+        picked = slice_games(games, 10)
+        assert picked[0]["game_id"] == "g00000"
+        assert picked[-1]["game_id"] == "g00900"
+
+
+class TestVolumeParsing:
+    """Which key wins decides the liquidity tier a game lands in."""
+
+    @pytest.mark.parametrize("mkt,want", [
+        ({"volumeNum": 5.0, "volume": "9"}, 5.0),     # volumeNum is preferred
+        ({"volume": "1900000"}, 1900000.0),           # the string form Gamma sends
+        ({"volumeNum": "n/a", "volume": 7}, 7.0),     # unparseable falls through
+        ({"volume": None}, None),
+        ({}, None),
+    ])
+    def test_volume_parsing(self, mkt, want):
+        from chira.census import _volume
+        assert _volume(mkt) == want
 
 
 class TestAbbrMapLoading:

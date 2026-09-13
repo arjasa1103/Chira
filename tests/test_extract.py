@@ -18,7 +18,7 @@ from chira.extract import _parse_gst, closing_price, label_agreement
 TIP_ISO = "2025-10-30 23:00:00+00"
 TIP = 1761865200.0  # 2025-10-30T23:00:00Z
 MKT = {
-    "clobTokenIds": '["AWAY","HOME"]',
+    "clobTokenIds": '["1010","2020"]',
     "outcomes": '["Wizards","Thunder"]',
     "gameStartTime": TIP_ISO,
 }
@@ -31,7 +31,10 @@ class FakeClient:
         self.by_token = by_token
         self.calls: list[str] = []
 
-    def prices_history(self, token, start_ts, fidelity=1):
+    def prices_history(self, token, start_ts, fidelity=1, *, bypass_cache=False):
+        # Signature mirrors the real Client, bypass_cache included: a fake that
+        # has drifted from the interface is a test passing against code that
+        # no longer exists.
         self.calls.append(token)
         return self.by_token.get(token, [])
 
@@ -46,18 +49,18 @@ def _pts(n: int, *, flat: bool = True, base: float = 0.60, end: float = TIP) -> 
 
 class TestOrientation:
     def test_home_is_index_one_on_both_tokens_and_outcomes(self):
-        c = FakeClient({"HOME": [{"t": TIP, "p": 0.62}], "AWAY": [{"t": TIP, "p": 0.38}]})
+        c = FakeClient({"2020": [{"t": TIP, "p": 0.62}], "1010": [{"t": TIP, "p": 0.38}]})
         r = closing_price(c, MKT)
         assert r["home_nickname"] == "Thunder"
         assert r["away_nickname"] == "Wizards"
         assert r["p_home_close"] == 0.62
-        assert "HOME" in c.calls, "the home series must come from clobTokenIds[1]"
+        assert "2020" in c.calls, "the home series must come from clobTokenIds[1]"
 
     def test_a_point_exactly_at_tipoff_is_pre_tipoff(self):
         """Off by one here leaks the result into the 'closing' price."""
         c = FakeClient({
-            "HOME": [{"t": TIP - 60, "p": 0.60}, {"t": TIP, "p": 0.62}, {"t": TIP + 60, "p": 0.99}],
-            "AWAY": [{"t": TIP, "p": 0.38}],
+            "2020": [{"t": TIP - 60, "p": 0.60}, {"t": TIP, "p": 0.62}, {"t": TIP + 60, "p": 0.99}],
+            "1010": [{"t": TIP, "p": 0.38}],
         })
         r = closing_price(c, MKT)
         assert r["p_home_close"] == 0.62, "post-tipoff point must be excluded"
@@ -68,14 +71,14 @@ class TestOrientation:
 class TestT1hConstruction:
     def test_picks_the_last_point_at_or_before_one_hour_out(self):
         c = FakeClient({
-            "HOME": [{"t": TIP - 7200, "p": 0.50}, {"t": TIP - 3600, "p": 0.55},
+            "2020": [{"t": TIP - 7200, "p": 0.50}, {"t": TIP - 3600, "p": 0.55},
                      {"t": TIP - 1800, "p": 0.58}, {"t": TIP, "p": 0.62}],
-            "AWAY": [],
+            "1010": [],
         })
         assert closing_price(c, MKT)["p_home_t1h"] == 0.55
 
     def test_is_none_when_the_market_opened_inside_the_hour(self):
-        c = FakeClient({"HOME": [{"t": TIP - 10, "p": 0.6}], "AWAY": []})
+        c = FakeClient({"2020": [{"t": TIP - 10, "p": 0.6}], "1010": []})
         assert closing_price(c, MKT)["p_home_t1h"] is None
 
 
@@ -88,26 +91,26 @@ class TestStaleness:
         (1, True, False),
     ])
     def test_flat_run_boundaries(self, n, flat, expect):
-        c = FakeClient({"HOME": _pts(n, flat=flat), "AWAY": []})
+        c = FakeClient({"2020": _pts(n, flat=flat), "1010": []})
         assert closing_price(c, MKT)["stale_flat_run"] is expect
 
 
 class TestComplementarity:
     def test_passing_pair_is_recorded(self):
-        c = FakeClient({"HOME": [{"t": TIP, "p": 0.585}], "AWAY": [{"t": TIP, "p": 0.415}]})
+        c = FakeClient({"2020": [{"t": TIP, "p": 0.585}], "1010": [{"t": TIP, "p": 0.415}]})
         r = closing_price(c, MKT)
         assert r["complement_ok"] is True
         assert r["complement_sum"] == pytest.approx(1.0)
 
     def test_violation_is_flagged_with_the_sum(self):
-        c = FakeClient({"HOME": [{"t": TIP, "p": 0.585}], "AWAY": [{"t": TIP, "p": 0.500}]})
+        c = FakeClient({"2020": [{"t": TIP, "p": 0.585}], "1010": [{"t": TIP, "p": 0.500}]})
         r = closing_price(c, MKT)
         assert r["complement_ok"] is False
         assert r["complement_sum"] == pytest.approx(1.085)
 
     def test_missing_away_series_is_none_not_silently_passing(self):
         """None must be distinguishable from True, or a skipped check reads as a pass."""
-        c = FakeClient({"HOME": [{"t": TIP, "p": 0.6}], "AWAY": []})
+        c = FakeClient({"2020": [{"t": TIP, "p": 0.6}], "1010": []})
         r = closing_price(c, MKT)
         assert r["complement_ok"] is None
         assert r["complement_reason"] == "no_away_series"
@@ -125,13 +128,13 @@ class TestResolutionLabel:
         ('["1","0","0"]', None, "malformed_outcome_prices"),
     ])
     def test_every_outcome_price_shape_has_a_distinct_verdict(self, op, winner, excluded):
-        c = FakeClient({"HOME": [{"t": TIP, "p": 0.6}], "AWAY": [{"t": TIP, "p": 0.4}]})
+        c = FakeClient({"2020": [{"t": TIP, "p": 0.6}], "1010": [{"t": TIP, "p": 0.4}]})
         r = closing_price(c, {**MKT, "outcomePrices": op})
         assert r["market_winner"] == winner
         assert r.get("reason_excluded") == excluded
 
     def test_a_postponed_game_never_reports_a_winner(self):
-        c = FakeClient({"HOME": [{"t": TIP, "p": 0.6}], "AWAY": [{"t": TIP, "p": 0.4}]})
+        c = FakeClient({"2020": [{"t": TIP, "p": 0.6}], "1010": [{"t": TIP, "p": 0.4}]})
         r = closing_price(c, {**MKT, "outcomePrices": '["0.5","0.5"]'})
         assert r["market_winner"] is None, "a tie must never become y=0 in the sample"
 
@@ -148,8 +151,15 @@ class TestMalformedInputNeverRaises:
           "gameStartTime": TIP_ISO}, "unparseable_market"),
         ({"clobTokenIds": '["a","b"]', "outcomes": '["a","b","c"]',
           "gameStartTime": TIP_ISO}, "unparseable_market"),
-        ({"clobTokenIds": '["a","b"]', "outcomes": '["a","b"]'}, "missing_gameStartTime"),
-        ({"clobTokenIds": '["a","b"]', "outcomes": '["a","b"]',
+        # Token ids must be decimal strings: a hex or placeholder id used to
+        # raise ValueError out of prices_history and abort the census.
+        ({"clobTokenIds": '["0xdead","0xbeef"]', "outcomes": '["a","b"]',
+          "gameStartTime": TIP_ISO}, "unparseable_market"),
+        ({"clobTokenIds": '[null,"2020"]', "outcomes": '["a","b"]',
+          "gameStartTime": TIP_ISO}, "unparseable_market"),
+        ({"clobTokenIds": '["1010","2020"]', "outcomes": '["a","b"]'},
+         "missing_gameStartTime"),
+        ({"clobTokenIds": '["1010","2020"]', "outcomes": '["a","b"]',
           "gameStartTime": "not-a-date"}, "unparseable_gameStartTime"),
     ])
     def test_returns_a_sentinel_with_a_distinct_reason(self, mkt, reason):
@@ -159,13 +169,13 @@ class TestMalformedInputNeverRaises:
 
     def test_a_real_list_instead_of_a_json_string_is_tolerated(self):
         """Defensive: an upstream change to real arrays must not crash the census."""
-        c = FakeClient({"HOME": [{"t": TIP, "p": 0.6}], "AWAY": []})
-        r = closing_price(c, {**MKT, "clobTokenIds": ["AWAY", "HOME"]})
+        c = FakeClient({"2020": [{"t": TIP, "p": 0.6}], "1010": []})
+        r = closing_price(c, {**MKT, "clobTokenIds": ["1010", "2020"]})
         assert r["ok"] is True
 
     def test_price_points_of_the_wrong_shape_are_dropped_not_fatal(self):
-        c = FakeClient({"HOME": [{"t": "notanumber", "p": 0.5}, {"p": 0.5},
-                                 "junk", {"t": TIP, "p": 0.61}], "AWAY": []})
+        c = FakeClient({"2020": [{"t": "notanumber", "p": 0.5}, {"p": 0.5},
+                                 "junk", {"t": TIP, "p": 0.61}], "1010": []})
         r = closing_price(c, MKT)
         assert r["ok"] is True
         assert r["n_pre_tipoff"] == 1

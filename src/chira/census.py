@@ -22,15 +22,68 @@ So:
 from __future__ import annotations
 
 import json
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .cache import fingerprint
+from .constants import TIPOFF_ET_HOUR_BAND
 from .extract import closing_price, label_agreement
 from .http import Client
 from .resolve import confirm, team_labels
 from .store import Store
 from .telemetry import Telemetry
+
+ET = ZoneInfo("America/New_York")
+
+
+def rematch_slugs(sport: str, games: list[dict],
+                  abbr_map: dict[str, str]) -> dict[str, str]:
+    """{game_id: the et_plus_1 slug that would bind the WRONG game}.
+
+    A game whose next-day rematch has the same away/home orientation shares its
+    `et_plus_1` slug with that rematch's primary slug. Measured: 19 such pairs
+    across the two schedules, 10 of which share a winner, so label agreement
+    cannot see the mis-binding. The fallback fires exactly in the contaminated
+    Oct-Dec 2025 window where those slugs are most likely to be reached.
+    """
+    by_key: dict[tuple[str, str, str], set[str]] = {}
+    for g in games:
+        by_key.setdefault((g["away"], g["home"], g["et_date"]), set()).add(g["game_id"])
+    blocked: dict[str, str] = {}
+    for g in games:
+        nxt = (date.fromisoformat(g["et_date"]) + timedelta(days=1)).isoformat()
+        if (g["away"], g["home"], nxt) in by_key:
+            a = abbr_map.get(g["away"], g["away"])
+            h = abbr_map.get(g["home"], g["home"])
+            blocked[g["game_id"]] = f"{sport}-{a}-{h}-{nxt}"
+    return blocked
+
+
+def tipoff_is_plausible(gst: str | None, et_date: str) -> tuple[bool, str]:
+    """Does the market's tipoff agree with the league schedule?
+
+    `gameStartTime` comes from the same third party being benchmarked and is the
+    pre-tipoff cutoff, so a late one admits in-game and settled quotes into the
+    "closing" price. Verified live: nba-dal-uta-2024-11-14 carries a 00:57 ET
+    tipoff and a stored p_home_close of 0.9995 on a 115-113 game.
+    """
+    if not gst:
+        return False, "missing"
+    try:
+        dt = datetime.fromisoformat(gst)
+    except (TypeError, ValueError):
+        return False, "unparseable"
+    if dt.tzinfo is None:
+        return False, "naive"
+    local = dt.astimezone(ET)
+    if local.date().isoformat() != et_date:
+        return False, f"ET date {local.date()} != schedule {et_date}"
+    lo, hi = TIPOFF_ET_HOUR_BAND
+    if not lo <= local.hour <= hi:
+        return False, f"ET hour {local.hour} outside {TIPOFF_ET_HOUR_BAND}"
+    return True, ""
 
 
 def _volume(market: dict) -> float | None:
@@ -47,8 +100,8 @@ def _volume(market: dict) -> float | None:
 
 
 def census_game(client: Client, sport: str, game: dict, abbr_map: dict[str, str],
-                labels: dict[str, tuple[str, ...]], *,
-                bypass_cache: bool = False) -> dict:
+                labels: dict[str, tuple[str, ...]], *, bypass_cache: bool = False,
+                blocked: dict[str, str] | None = None) -> dict:
     """Resolve one game to either a priced row or a classified miss.
 
     Returns {'outcome': 'priced'|'miss', 'attempted': [...], plus either 'row'
@@ -56,13 +109,27 @@ def census_game(client: Client, sport: str, game: dict, abbr_map: dict[str, str]
     """
     away = abbr_map.get(game["away"], game["away"])
     home = abbr_map.get(game["home"], game["home"])
-    hit = confirm(client, sport, game, away, home, labels, bypass_cache=bypass_cache)
+    block = {blocked[game["game_id"]]} if blocked and game["game_id"] in blocked else None
+    hit = confirm(client, sport, game, away, home, labels,
+                  bypass_cache=bypass_cache, blocked=block)
     attempted = hit["attempted"]
     if not hit["market"]:
-        return {"outcome": "miss", "reason": "no_market", "attempted": attempted,
-                "detail": None}
+        # "No market exists" and "a market is there under labels we did not
+        # recognise" are different facts, and only the first one licenses the
+        # coverage conclusion.
+        return {"outcome": "miss",
+                "reason": "label_mismatch_at_slug" if hit["saw_events"] else "no_market",
+                "attempted": attempted,
+                "detail": "slug returned events that matched no team labels"
+                          if hit["saw_events"] else None}
 
     market = hit["market"]
+    ok, why = tipoff_is_plausible(market.get("gameStartTime"), game["et_date"])
+    if not ok:
+        return {"outcome": "miss", "reason": "implausible_game_start_time",
+                "attempted": attempted,
+                "detail": f"{hit['slug']}: gameStartTime "
+                          f"{market.get('gameStartTime')!r} ({why})"}
     cp = closing_price(client, market)
     if not cp.get("ok"):
         return {"outcome": "miss", "reason": cp.get("reason", "unparseable_market"),
@@ -159,9 +226,11 @@ def run_census(client: Client, store: Store, tel: Telemetry, sport: str, season:
               already_settled=len(settled), todo=len(todo), strategy=strategy,
               date_span=[todo[0]["et_date"], todo[-1]["et_date"]] if todo else None)
 
+    blocked = rematch_slugs(sport, games, abbr_map)
+    tel.event("rematch_guard", sport=sport, season=season, blocked_games=len(blocked))
     counts: dict[str, int] = {"priced": 0, "miss": 0}
     for i, g in enumerate(todo, 1):
-        res = census_game(client, sport, g, abbr_map, labels)
+        res = census_game(client, sport, g, abbr_map, labels, blocked=blocked)
         if res["outcome"] == "priced":
             store.put_priced(sport, season, g["game_id"], res["row"])
             counts["priced"] += 1
@@ -184,9 +253,26 @@ def run_census(client: Client, store: Store, tel: Telemetry, sport: str, season:
     return counts
 
 
+# Every reason that can be produced by an EMPTY or MALFORMED payload gets a
+# cache-bypassed second look. Re-probing only `no_market` defeated the cache's
+# central rule ("an empty result is never cached") through the store instead:
+# settled_game_ids treats any miss as settled, so a transient empty that landed
+# as no_pre_tipoff_points or unparseable_market was frozen into the dataset on
+# the first run and never looked at again.
+REPROBE_REASONS = (
+    "no_market",
+    "label_mismatch_at_slug",
+    "no_pre_tipoff_points",
+    "unparseable_market",
+    "unresolved_market",
+    "missing_gameStartTime",
+    "unparseable_gameStartTime",
+)
+
+
 def reprobe_misses(client: Client, store: Store, tel: Telemetry, sport: str, season: str,
                    games: list[dict], abbr_map: dict[str, str], *,
-                   reasons: tuple[str, ...] = ("no_market",)) -> dict:
+                   reasons: tuple[str, ...] = REPROBE_REASONS) -> dict:
     """E6 second pass: re-probe every `no_market` with the cache bypassed.
 
     An empty `/events?slug=` response is indistinguishable from a transient
@@ -194,19 +280,27 @@ def reprobe_misses(client: Client, store: Store, tel: Telemetry, sport: str, sea
     this pass can be meaningful. A miss that survives a cache-bypassed re-probe
     is a real miss; one that does not was an artifact.
     """
+    if not reasons:
+        raise ValueError("reasons must be non-empty; an empty IN () is invalid SQL")
     labels = team_labels(games)
+    blocked = rematch_slugs(sport, games, abbr_map)
     by_id = {g["game_id"]: g for g in games}
     rows = store.db.execute(
         f"SELECT game_id, reason FROM misses WHERE sport=? AND season=? "
         f"AND reason IN ({','.join('?' * len(reasons))})",
         [sport, season, *reasons]).fetchall()
-    out = {"reprobed": 0, "recovered": 0, "still_missing": 0}
+    out = {"reprobed": 0, "recovered": 0, "still_missing": 0, "not_in_schedule": 0}
     for game_id, _reason in rows:
         g = by_id.get(game_id)
         if g is None:
+            # A schedule that shifted between the census pass and this one leaves
+            # these misses permanently un-re-probed. Counted, not swallowed: E6's
+            # second pass quietly not running must not look like it ran clean.
+            out["not_in_schedule"] += 1
             continue
         out["reprobed"] += 1
-        res = census_game(client, sport, g, abbr_map, labels, bypass_cache=True)
+        res = census_game(client, sport, g, abbr_map, labels, bypass_cache=True,
+                          blocked=blocked)
         if res["outcome"] == "priced":
             store.put_priced(sport, season, game_id, res["row"])
             out["recovered"] += 1

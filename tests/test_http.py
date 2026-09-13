@@ -160,20 +160,20 @@ class TestStatusHandling:
 
 class TestRetryAfter:
     def test_delta_seconds_is_honoured_up_to_the_cap(self):
-        assert _retry_after_seconds("5", 2) == 5.0
-        assert _retry_after_seconds("99999", 2) == BACKOFF_CAP
+        assert _retry_after_seconds("5") == 5.0
+        assert _retry_after_seconds("99999") == BACKOFF_CAP
 
     def test_the_http_date_form_is_parsed_not_swallowed(self):
         """RFC 9110 permits a date. float() rejects it, and swallowing that left
         the client retrying on a stale 2s backoff against a longer instruction."""
-        v = _retry_after_seconds("Wed, 21 Oct 2026 07:28:00 GMT", 2)
+        v = _retry_after_seconds("Wed, 21 Oct 2026 07:28:00 GMT")
         assert 0.0 <= v <= BACKOFF_CAP
 
     def test_an_unparseable_value_backs_off_maximally(self):
-        assert _retry_after_seconds("soon", 2) == BACKOFF_CAP
+        assert _retry_after_seconds("soon") == BACKOFF_CAP
 
     def test_a_past_date_does_not_produce_a_negative_backoff(self):
-        assert _retry_after_seconds("Wed, 21 Oct 2020 07:28:00 GMT", 2) >= 0.0
+        assert _retry_after_seconds("Wed, 21 Oct 2020 07:28:00 GMT") >= 0.0
 
 
 class TestUrlConstruction:
@@ -181,7 +181,7 @@ class TestUrlConstruction:
         """token_id comes from remote data. An unencoded & would rewrite the
         query and the resulting empty history would be recorded as a real miss."""
         for bad in ["abc", "123&fidelity=99", "1 2", "", "12#x"]:
-            with pytest.raises(ValueError, match="numeric"):
+            with pytest.raises(ValueError, match="ASCII digits"):
                 client.prices_history(bad, 0)
 
     def test_parameters_are_percent_encoded(self, client, monkeypatch):

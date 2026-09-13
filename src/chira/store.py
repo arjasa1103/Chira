@@ -31,22 +31,63 @@ from .constants import MISS_REASONS
 
 SCHEMA = Path(__file__).with_name("schema.sql")
 
+# Bump when schema.sql changes, and add the forward-only statements below.
+#
+# Without this, `CREATE TABLE IF NOT EXISTS` made the store immutable the moment
+# it existed: every later edit to schema.sql was silently ignored and the next
+# write died with a Binder Error. Mid-census the only remedies were deleting an
+# in-progress store (~15,000 paid requests) or hand-patching the file. Verified
+# on duckdb 1.5.5.
+#
+#   1: the original week-2 schema
+#   2: run_id on games/priced/misses, so a resumed census across a code change
+#      is not an unlabelled mixture
+SCHEMA_VERSION = 2
+
+_MIGRATIONS: dict[int, tuple[str, ...]] = {
+    2: (
+        "ALTER TABLE games ADD COLUMN IF NOT EXISTS run_id TEXT",
+        "ALTER TABLE priced ADD COLUMN IF NOT EXISTS run_id TEXT",
+        "ALTER TABLE misses ADD COLUMN IF NOT EXISTS run_id TEXT",
+    ),
+}
+
 _PRICED_COLS = (
     "sport", "season", "game_id", "slug", "convention", "away_nickname",
     "home_nickname", "p_home_close", "p_home_t1h", "n_pre_tipoff",
     "secs_before_tip", "stale_flat_run", "complement_sum", "complement_ok",
-    "market_winner", "label_agreement", "volume", "game_start_time",
+    "market_winner", "label_agreement", "volume", "game_start_time", "run_id",
 )
 _GAME_COLS = (
     "sport", "season", "game_id", "et_date", "away", "home", "away_pts",
-    "home_pts", "winner", "neutral_site",
+    "home_pts", "winner", "neutral_site", "run_id",
 )
-_MISS_COLS = ("sport", "season", "game_id", "reason", "attempted", "detail")
+_MISS_COLS = ("sport", "season", "game_id", "reason", "attempted", "detail",
+              "run_id")
 
 # DuckDB converts TIMESTAMPTZ to a Python object via pytz, which is not a
 # dependency and should not become one. Reading these columns as text keeps the
 # store dependency-free and gives the digest a canonical form for free.
 _TZ_COLS = frozenset({"game_start_time"})
+
+
+def _scope(sport: str | None, season: str | None,
+           prefix: str = "") -> tuple[str, list]:
+    """One filter builder for every read method.
+
+    Four sibling readers used to filter four different ways: `reconcile` handled
+    season-only, `miss_reasons` and `priced_rows` SILENTLY IGNORED it and
+    returned every season, and `label_agreement` took no season argument at all.
+    `priced_rows(season="2024-25")` quietly returned 2025-26 rows too.
+    """
+    clauses, args = [], []
+    if sport:
+        clauses.append(f"{prefix}sport=?")
+        args.append(sport)
+    if season:
+        clauses.append(f"{prefix}season=?")
+        args.append(season)
+    return (" WHERE " + " AND ".join(clauses)) if clauses else "", args
 
 
 def _select(cols: tuple[str, ...]) -> str:
@@ -67,7 +108,40 @@ class Store:
         # machines, and it is the same class of bug as the naive-datetime drift
         # fixed in extract._parse_gst.
         self.db.execute("SET TimeZone='UTC'")
+        self.run_id: str | None = None
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Create or upgrade the schema. Forward-only, one transaction per step."""
+        existed = self.db.execute(
+            "SELECT count(*) FROM duckdb_tables() WHERE table_name = 'games'"
+        ).fetchone()[0] > 0
         self.db.execute(SCHEMA.read_text())
+        current = self.db.execute(
+            "SELECT v FROM meta WHERE k = 'schema_version'").fetchone()
+        if current is not None:
+            version = int(current[0])
+        elif existed:
+            version = 1  # pre-dates the meta table
+        else:
+            version = SCHEMA_VERSION  # fresh store, schema.sql is already current
+        for step in range(version + 1, SCHEMA_VERSION + 1):
+            self.db.execute("BEGIN")
+            try:
+                for stmt in _MIGRATIONS.get(step, ()):
+                    self.db.execute(stmt)
+                self.db.execute("COMMIT")
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+        self.db.execute(
+            "INSERT OR REPLACE INTO meta (k, v) VALUES ('schema_version', ?)",
+            [str(SCHEMA_VERSION)])
+
+    @property
+    def schema_version(self) -> int:
+        return int(self.db.execute(
+            "SELECT v FROM meta WHERE k = 'schema_version'").fetchone()[0])
 
     def close(self) -> None:
         self.db.close()
@@ -84,7 +158,7 @@ class Store:
         rows = [
             (sport, season, g["game_id"], g["et_date"], g["away"], g["home"],
              g.get("away_pts"), g.get("home_pts"), g["winner"],
-             bool(g.get("neutral_site", False)))
+             bool(g.get("neutral_site", False)), self.run_id)
             for g in games
         ]
         if rows:
@@ -94,7 +168,8 @@ class Store:
         return len(rows)
 
     def put_priced(self, sport: str, season: str, game_id: str, row: dict) -> None:
-        vals = [sport, season, game_id] + [row.get(c) for c in _PRICED_COLS[3:]]
+        vals = ([sport, season, game_id]
+                + [row.get(c) for c in _PRICED_COLS[3:-1]] + [self.run_id])
         for required in ("slug", "convention", "p_home_close", "label_agreement"):
             if row.get(required) is None:
                 raise ValueError(f"priced row for {game_id} missing {required!r}")
@@ -122,8 +197,9 @@ class Store:
         try:
             self.db.execute(
                 f"INSERT OR REPLACE INTO misses ({','.join(_MISS_COLS)}) "
-                f"VALUES (?,?,?,?,?,?)",
-                [sport, season, game_id, reason, json.dumps(sorted(attempted)), detail])
+                f"VALUES (?,?,?,?,?,?,?)",
+                [sport, season, game_id, reason, json.dumps(sorted(attempted)),
+                 detail, self.run_id])
             self.db.execute(
                 "DELETE FROM priced WHERE sport=? AND season=? AND game_id=?",
                 [sport, season, game_id])
@@ -133,6 +209,8 @@ class Store:
             raise
 
     def start_run(self, run_id: str, manifest: dict) -> None:
+        """Record the run AND stamp it onto every row this run writes."""
+        self.run_id = run_id
         self.db.execute(
             "INSERT OR REPLACE INTO runs (run_id, started_at, manifest) "
             "VALUES (?, now(), ?)", [run_id, json.dumps(manifest, sort_keys=True)])
@@ -150,19 +228,40 @@ class Store:
             [sport, season, sport, season]).fetchall()
         return {r[0] for r in rows}
 
+    def attempted_game_ids(self, sport: str, season: str) -> set[str]:
+        """Alias of settled_game_ids, named for the gate's use of it.
+
+        The gate snapshots this BEFORE injecting a fault so it can assert that
+        every game the run touched is still settled. `settled` describes the
+        store's state; `attempted` describes the run's intent, and the fault
+        injection is about the second.
+        """
+        return self.settled_game_ids(sport, season)
+
+    def assert_attempted_settled(self, sport: str, season: str,
+                                 attempted: set[str]) -> int:
+        """Every game in `attempted` must still be in exactly one table.
+
+        This is the identity that holds instant by instant on a SLICE. The
+        full-pass identity (`scheduled == priced + misses`) cannot see a lost
+        game mid-run, because `pending > 0` is expected and a lost game just
+        makes it one larger -- so a deleted priced row passed every gate.
+        """
+        settled = self.settled_game_ids(sport, season)
+        lost = attempted - settled
+        if lost:
+            raise AssertionError(
+                f"{len(lost)} attempted games are settled in NEITHER table for "
+                f"{sport}/{season}: {sorted(lost)[:5]}")
+        return len(attempted)
+
     def reconcile(self, sport: str | None = None, season: str | None = None) -> dict:
         """Counts plus `balanced` and `pending`.
 
         `pending` exists so a mid-run call cannot be read as a passing final
         check: `balanced` is only meaningful once `pending` is zero.
         """
-        where, args = "", []
-        if sport:
-            where, args = " WHERE sport=?", [sport]
-            if season:
-                where, args = " WHERE sport=? AND season=?", [sport, season]
-        elif season:
-            where, args = " WHERE season=?", [season]
+        where, args = _scope(sport, season)
         n = {}
         for table in ("games", "priced", "misses"):
             n[table] = self.db.execute(
@@ -229,29 +328,22 @@ class Store:
         return r
 
     def miss_reasons(self, sport: str | None = None, season: str | None = None) -> dict:
-        where, args = "", []
-        if sport and season:
-            where, args = " WHERE sport=? AND season=?", [sport, season]
-        elif sport:
-            where, args = " WHERE sport=?", [sport]
+        where, args = _scope(sport, season)
         rows = self.db.execute(
             f"SELECT reason, count(*) FROM misses{where} GROUP BY reason ORDER BY reason",
             args).fetchall()
         return dict(rows)
 
-    def label_agreement(self, sport: str | None = None) -> dict:
-        where, args = ("", []) if not sport else (" WHERE sport=?", [sport])
+    def label_agreement(self, sport: str | None = None,
+                        season: str | None = None) -> dict:
+        where, args = _scope(sport, season)
         rows = self.db.execute(
             f"SELECT label_agreement, count(*) FROM priced{where} "
             f"GROUP BY label_agreement ORDER BY label_agreement", args).fetchall()
         return dict(rows)
 
     def priced_rows(self, sport: str | None = None, season: str | None = None) -> list[dict]:
-        where, args = "", []
-        if sport and season:
-            where, args = " WHERE sport=? AND season=?", [sport, season]
-        elif sport:
-            where, args = " WHERE sport=?", [sport]
+        where, args = _scope(sport, season)
         cur = self.db.execute(
             f"SELECT {_select(_PRICED_COLS)} FROM priced{where} "
             f"ORDER BY sport, season, game_id", args)

@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from chira.nhl import GAMES_PER_SEASON, NHL_TEAMS, nhl_games, season_code
+from chira.http import SchemaError
+from chira.nhl import NHL_TEAMS, nhl_games, season_code
 
 
 class FakeClient:
@@ -18,10 +19,19 @@ class FakeClient:
         self.by_team = by_team
         self.calls: list[str] = []
 
-    def get_json(self, url):
+    def get_json(self, url, *, validator=None, **kw):
+        """Mirrors Client.get_json, validator included.
+
+        A fake whose signature has drifted from the real one is a test that passes
+        against an interface that no longer exists: adding the schedule validator
+        broke six tests here, which is the fake doing its job.
+        """
         self.calls.append(url)
         team = url.rstrip("/").split("/")[-2]
-        return {"games": self.by_team.get(team, [])}
+        payload = {"games": self.by_team.get(team, [])}
+        if validator is not None and payload["games"]:
+            validator(payload)
+        return payload
 
 
 def raw(gid=2024020006, date="2024-10-09", away="TOR", home="MTL",
@@ -59,8 +69,21 @@ class TestVendoredTeams:
         """Utah entered the league in 2024-25, inside the usable window."""
         assert "UTA" in NHL_TEAMS
 
-    def test_the_measured_season_size_is_recorded(self):
-        assert GAMES_PER_SEASON == 1312
+    def test_a_short_full_team_enumeration_refuses_to_be_censused(self):
+        """GAMES_PER_SEASON was documented as a measured invariant and never enforced.
+
+        A half-failed 32-team fetch is invisible downstream: games that never enter
+        `games` never become rows on either side of `scheduled == priced + misses`,
+        so every store guard still passes on a census missing 40 games.
+        """
+        client = FakeClient({"TOR": [raw()]})
+        with pytest.raises(SchemaError, match="expected 1312"):
+            nhl_games(client, "2024-25")
+
+    def test_a_partial_team_list_skips_the_count_check(self):
+        """The count invariant only holds for the full vendored list."""
+        client = FakeClient({"TOR": [raw()]})
+        assert len(nhl_games(client, "2024-25", teams=("TOR",))) == 1
 
 
 class TestReading:
@@ -107,6 +130,14 @@ class TestFiltering:
         client = FakeClient({"TOR": [raw(gtype=gtype)]})
         assert nhl_games(client, "2024-25", teams=("TOR",)) == []
 
+    @pytest.mark.parametrize("state", ["OFF", "FINAL"])
+    def test_both_completed_states_are_accepted(self, state):
+        """nhl.py accepts ("OFF", "FINAL"); only OFF was ever exercised, so
+        deleting FINAL from that tuple failed no test while silently dropping
+        every game the API reports as FINAL."""
+        client = FakeClient({"TOR": [raw(state=state)]})
+        assert len(nhl_games(client, "2024-25", teams=("TOR",))) == 1
+
     @pytest.mark.parametrize("state", ["FUT", "PRE", "LIVE", "CRIT"])
     def test_an_unplayed_game_is_neither_a_row_nor_a_miss(self, state):
         client = FakeClient({"TOR": [raw(state=state)]})
@@ -121,6 +152,29 @@ class TestFiltering:
         client = FakeClient({"TOR": [raw(away_score=3, home_score=3)]})
         with pytest.raises(ValueError, match="equal scores"):
             nhl_games(client, "2024-25", teams=("TOR",))
+
+
+class TestHostileShapes:
+    def test_a_missing_abbreviation_raises_rather_than_becoming_empty(self):
+        """An empty abbrev collides in resolve.team_labels and silently swaps a
+        team's labels, which is the wrong-game class of error, not a missing row."""
+        bad = raw()
+        del bad["awayTeam"]["abbrev"]
+        with pytest.raises(SchemaError, match="no abbrev"):
+            nhl_games(FakeClient({"TOR": [bad]}), "2024-25", teams=("TOR",))
+
+    def test_a_localized_label_that_is_not_an_object_raises_schema_error(self):
+        """Previously an AttributeError: 'str' object has no attribute 'get'."""
+        bad = raw()
+        bad["homeTeam"]["commonName"] = "Canadiens"
+        with pytest.raises(SchemaError, match="commonName"):
+            nhl_games(FakeClient({"TOR": [bad]}), "2024-25", teams=("TOR",))
+
+    def test_a_missing_localized_label_is_tolerated(self):
+        bad = raw()
+        del bad["homeTeam"]["placeName"]
+        assert nhl_games(FakeClient({"TOR": [bad]}), "2024-25",
+                         teams=("TOR",))[0]["home_place"] == ""
 
 
 class TestRequestShape:

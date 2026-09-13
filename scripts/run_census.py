@@ -47,6 +47,11 @@ def main() -> int:
     ap.add_argument("--no-reprobe", action="store_true")
     ap.add_argument("--gate-only", action="store_true",
                     help="skip fetching; just re-run the gate on what is stored")
+    ap.add_argument("--complete", action="store_true",
+                    help="assert the full-pass identity scheduled == priced + misses. "
+                         "Set automatically by a full census run; required explicitly "
+                         "for --gate-only, which cannot tell a finished census from "
+                         "a slice on its own")
     args = ap.parse_args()
 
     abbr_map = load_abbr_map(ABBR, args.season, args.sport)
@@ -73,11 +78,17 @@ def main() -> int:
         tel.close(**counts)
         print(f"http: {dict(client.stats)}")
         print(f"cache: {dict(client.cache.stats)}")
+        if client.cache.last_error:
+            print(f"cache WRITE FAILURES: {client.cache.last_error}")
+        print(f"store digest: {store.digest()}")
 
     # A slice run cannot satisfy the full-pass balance; the gate checks the
     # instant-by-instant invariants instead. See store.assert_reconciled.
+    # --gate-only defaults to the partial check because re-checking a stored
+    # slice is its whole purpose; pass --complete after a full census.
+    require_complete = args.complete or (args.limit is None and not args.gate_only)
     result = run_gate(store, args.sport, args.season,
-                      require_complete=args.limit is None)
+                      require_complete=require_complete)
     print()
     print(format_report(result))
     out = pathlib.Path(f"data/gate-{args.sport}-{args.season}.json")

@@ -56,16 +56,36 @@ class TestRoundTrip:
 
 
 class TestInvalidation:
-    def test_a_different_abbr_map_does_not_see_the_old_entry(self, tmp_path):
-        """The abbreviation map is an input to every slug.
+    def test_a_different_abbr_map_does_not_see_an_old_slug_lookup(self, tmp_path):
+        """The abbreviation map is an input to every SLUG.
 
         Without this, correcting `vgk` to `las` would leave 164 cached
         "no market" answers computed under the old, wrong map.
         """
+        url = "https://gamma/events?slug=nhl-nyr-vgk-2025-01-11"
         a = Cache(tmp_path / "c", abbr_version="v1")
-        a.put("https://x/1", ["old"])
+        a.put(url, ["old"])
         b = Cache(tmp_path / "c", abbr_version="v2")
-        assert b.get("https://x/1") is None
+        assert b.get(url) is None
+
+    def test_a_different_abbr_map_KEEPS_price_history_entries(self, tmp_path):
+        """Prices-history is addressed by CLOB token id, which the map cannot change.
+
+        Mixing the fingerprint into these keys too would have thrown away ~3.4 GB
+        of price history (0.84 MB per priced game) and ~2 hours of re-fetching
+        every time one team's abbreviation was corrected.
+        """
+        url = "https://clob/prices-history?market=1010&startTs=1&fidelity=1"
+        a = Cache(tmp_path / "c", abbr_version="v1")
+        a.put(url, {"history": [{"t": 1, "p": 0.5}]})
+        b = Cache(tmp_path / "c", abbr_version="v2")
+        assert b.get(url) == {"history": [{"t": 1, "p": 0.5}]}
+
+    def test_the_schedule_endpoint_is_also_map_independent(self, tmp_path):
+        url = "https://api-web.nhle.com/v1/club-schedule-season/TOR/20242025"
+        a = Cache(tmp_path / "c", abbr_version="v1")
+        a.put(url, {"games": [1]})
+        assert Cache(tmp_path / "c", abbr_version="v2").get(url) == {"games": [1]}
 
     def test_a_different_schema_version_does_not_see_the_old_entry(self, tmp_path):
         a = Cache(tmp_path / "c", abbr_version="v1", schema_version=1)

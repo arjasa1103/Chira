@@ -26,9 +26,8 @@ proof is a run from an Actions runner. That is the week-4 collector dry run.
 
 from __future__ import annotations
 
-from .http import Client
-
-NHL_API = "https://api-web.nhle.com/v1"
+from .constants import NHL_API
+from .http import Client, SchemaError, validate_schedule
 
 # Vendored from /standings/2025-04-01 on 2026-09-12. Vendored rather than
 # fetched so a census cannot silently enumerate 31 teams because one standings
@@ -57,6 +56,16 @@ def season_code(season: str) -> str:
     return f"{y0}{y0 + 1}"
 
 
+def _label(team: dict, field: str) -> str:
+    """Read a localized label, refusing a shape change rather than crashing on it."""
+    val = team.get(field)
+    if val is None:
+        return ""
+    if not isinstance(val, dict):
+        raise SchemaError(f"NHL {field} is {type(val).__name__}, expected an object")
+    return val.get("default", "")
+
+
 def _side(team: dict) -> tuple[str, str, str, int | None]:
     """(abbrev lowercased, nickname, place, score) from a game's team object.
 
@@ -67,12 +76,17 @@ def _side(team: dict) -> tuple[str, str, str, int | None]:
     other -- which is exactly what happened before this was added.
     """
     score = team.get("score")
-    return (
-        str(team.get("abbrev", "")).lower(),
-        (team.get("commonName") or {}).get("default", ""),
-        (team.get("placeName") or {}).get("default", ""),
-        int(score) if isinstance(score, (int, float)) else None,
-    )
+    abbrev = str(team.get("abbrev") or "").lower()
+    if not abbrev:
+        # Every other field here is strict (equal scores raise), and an empty
+        # abbreviation is worse than a missing score: the game still enters the
+        # denominator, every slug candidate becomes `nhl--bos-<date>` and books a
+        # guaranteed no_market, AND resolve.team_labels keys on it, so two teams
+        # with a blank abbreviation collide and one silently overwrites the other's
+        # labels. That is the wrong-game class of error, not a missing row.
+        raise SchemaError(f"NHL team object has no abbrev: {sorted(team)}")
+    return (abbrev, _label(team, "commonName"), _label(team, "placeName"),
+            int(score) if isinstance(score, (int, float)) else None)
 
 
 def nhl_games(client: Client, season: str, *, teams: tuple[str, ...] = NHL_TEAMS,
@@ -86,7 +100,8 @@ def nhl_games(client: Client, season: str, *, teams: tuple[str, ...] = NHL_TEAMS
     code = season_code(season)
     by_id: dict[int, dict] = {}
     for t in teams:
-        payload = client.get_json(f"{NHL_API}/club-schedule-season/{t}/{code}")
+        payload = client.get_json(f"{NHL_API}/club-schedule-season/{t}/{code}",
+                                  validator=validate_schedule)
         for g in (payload or {}).get("games", []):
             if g.get("gameType") != REGULAR_SEASON or g.get("id") in by_id:
                 continue
@@ -120,4 +135,13 @@ def nhl_games(client: Client, season: str, *, teams: tuple[str, ...] = NHL_TEAMS
             }
         if verbose:
             print(f"    {season} {t}: {len(by_id)} unique games so far", flush=True)
+    if teams == NHL_TEAMS and len(by_id) != GAMES_PER_SEASON:
+        # The measured invariant was documented and never enforced. A half-failed
+        # enumeration (31 teams fetched, ~40 games short) is invisible downstream:
+        # games that never enter `games` never become rows on either side of the
+        # reconciliation identity, so every store guard still passes.
+        raise SchemaError(
+            f"NHL {season}: enumerated {len(by_id)} regular-season games, expected "
+            f"{GAMES_PER_SEASON}. A short count means the 32-team fetch half-failed; "
+            f"do NOT census this schedule.")
     return sorted(by_id.values(), key=lambda g: (g["et_date"], g["game_id"]))

@@ -164,23 +164,42 @@ def _outcomes(market: dict) -> list | None:
 
 
 def confirm(client: Client, sport: str, game: dict, away: str, home: str,
-            labels: dict[str, tuple[str, ...]], *,
-            bypass_cache: bool = False) -> dict:
+            labels: dict[str, tuple[str, ...]], *, bypass_cache: bool = False,
+            blocked: set[str] | None = None) -> dict:
     """Probe every date convention for one (away, home) pair; confirm by label.
 
     Always returns a dict carrying `attempted` (every slug tried, in order) so a
     miss can be classified as "no market exists" rather than "we never tried the
     right slug". `market` is None when nothing confirmed.
 
+    Also returns `saw_events`: True when some slug returned a non-empty event
+    list that simply did not match these teams. Without it, "no market exists"
+    and "a market is there under labels we did not recognise" collapsed into the
+    same `no_market` row -- and that bucket is the sole evidence for the
+    week-2 claim that Polymarket's NHL coverage starts in December 2024.
+
+    `blocked` drops candidates that would bind the WRONG GAME. The `et_plus_1`
+    fallback resolves to the next day's slug, and the schedules contain 19
+    consecutive-day same-orientation rematches; for those, the fallback slug IS
+    the later game's primary slug. The label check cannot catch it (same teams,
+    same order) and label agreement catches it only when the two games have
+    different winners, which is true for 9 of the 19.
+
     Both sides must match in the away-then-home order the slug asserts. That
     ordering check is not decoration: a swap does not crash, it mirrors the
     calibration curve about 0.5 and looks like a finding.
     """
     attempted: list[str] = []
+    saw_events = False
     probe = dict(game, away=away, home=home)
     for convention, cand in slug_candidates(sport, probe):
+        if blocked and cand in blocked:
+            attempted.append(f"{cand} [blocked: same-orientation rematch]")
+            continue
         attempted.append(cand)
-        for ev in client.event_by_slug(cand, bypass_cache=bypass_cache) or []:
+        events = client.event_by_slug(cand, bypass_cache=bypass_cache) or []
+        saw_events = saw_events or bool(events)
+        for ev in events:
             for market in (ev.get("markets") or []):
                 outs = _outcomes(market)
                 if not outs:
@@ -188,8 +207,10 @@ def confirm(client: Client, sport: str, game: dict, away: str, home: str,
                 if (label_match(labels[game["away"]], outs[0])
                         and label_match(labels[game["home"]], outs[1])):
                     return {"slug": cand, "convention": convention,
-                            "market": market, "attempted": attempted}
-    return {"slug": None, "convention": None, "market": None, "attempted": attempted}
+                            "market": market, "attempted": attempted,
+                            "saw_events": True}
+    return {"slug": None, "convention": None, "market": None,
+            "attempted": attempted, "saw_events": saw_events}
 
 
 def resolve(client: Client, sport: str, games: list[dict], priors: list[dict[str, str]],

@@ -12,6 +12,14 @@
 --
 -- Primary keys make the census idempotent: a resumed run REPLACEs the rows it
 -- re-fetches rather than appending a second copy.
+--
+-- `run_id` on every data row answers "which rows predate the fix?". A census is
+-- written incrementally across multi-day resumable runs and `settled_game_ids`
+-- permanently skips anything already settled, so without it a finished store is
+-- an unlabelled mixture of however many code versions the run spanned.
+--
+-- This file is applied as CREATE TABLE IF NOT EXISTS, so it describes a FRESH
+-- store only. Changes to an existing store go through store._MIGRATIONS.
 
 CREATE TABLE IF NOT EXISTS games (
     sport         TEXT    NOT NULL,
@@ -24,6 +32,7 @@ CREATE TABLE IF NOT EXISTS games (
     home_pts      INTEGER,
     winner        TEXT    NOT NULL,   -- 'away' | 'home', from the LEAGUE, never the market
     neutral_site  BOOLEAN DEFAULT FALSE,
+    run_id        TEXT,
     PRIMARY KEY (sport, season, game_id)
 );
 
@@ -46,6 +55,7 @@ CREATE TABLE IF NOT EXISTS priced (
     label_agreement  TEXT    NOT NULL,   -- 'agree' | 'disagree' | 'unresolved' (E1)
     volume           DOUBLE,
     game_start_time  TIMESTAMPTZ,
+    run_id        TEXT,
     PRIMARY KEY (sport, season, game_id)
 );
 
@@ -57,6 +67,7 @@ CREATE TABLE IF NOT EXISTS misses (
     attempted  TEXT NOT NULL,   -- JSON array of every slug tried, so "slug variant
                                 -- not tried" is distinguishable from "no market"
     detail     TEXT,
+    run_id        TEXT,
     PRIMARY KEY (sport, season, game_id)
 );
 
@@ -66,4 +77,10 @@ CREATE TABLE IF NOT EXISTS runs (
     finished_at  TIMESTAMPTZ,
     manifest     TEXT NOT NULL,   -- JSON: season windows, abbr-map fingerprint, versions
     PRIMARY KEY (run_id)
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+    k TEXT NOT NULL,
+    v TEXT NOT NULL,
+    PRIMARY KEY (k)
 );

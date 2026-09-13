@@ -102,7 +102,8 @@ class TestMutualExclusion:
         seeded.put_priced("nba", "2024-25", "g1", priced_row())
         # Bypass the mutual delete to simulate the bug the delete prevents.
         seeded.db.execute(
-            "INSERT INTO misses VALUES ('nba','2024-25','g1','no_market','[]',NULL)")
+            "INSERT INTO misses (sport, season, game_id, reason, attempted) "
+            "VALUES ('nba','2024-25','g1','no_market','[]')")
         assert seeded.double_counted() == 1
         with pytest.raises(AssertionError, match="BOTH"):
             seeded.assert_reconciled("nba", "2024-25", require_complete=False)
@@ -173,6 +174,63 @@ class TestResume:
         store.put_games("nba", "2025-26", [game("g1")])
         store.put_priced("nba", "2024-25", "g1", priced_row())
         assert store.settled_game_ids("nba", "2025-26") == set()
+
+
+class TestSchemaMigration:
+    """CREATE TABLE IF NOT EXISTS made the store immutable once it existed."""
+
+    def test_a_fresh_store_is_stamped_at_the_current_version(self, store):
+        assert store.schema_version == 2
+
+    def test_an_unstamped_existing_store_is_migrated_not_ignored(self, tmp_path):
+        """Simulates a week-2 store: tables exist, no meta row, no run_id column."""
+        import duckdb
+        path = tmp_path / "old.duckdb"
+        con = duckdb.connect(str(path))
+        con.execute("CREATE TABLE games (sport TEXT, season TEXT, game_id TEXT, "
+                    "et_date DATE, away TEXT, home TEXT, away_pts INTEGER, "
+                    "home_pts INTEGER, winner TEXT, neutral_site BOOLEAN, "
+                    "PRIMARY KEY (sport, season, game_id))")
+        con.execute("INSERT INTO games VALUES "
+                    "('nba','2024-25','g1','2025-01-15','lal','bos',1,2,'home',FALSE)")
+        con.close()
+
+        with Store(path) as s:
+            assert s.schema_version == 2
+            cols = [r[0] for r in s.db.execute("DESCRIBE games").fetchall()]
+            assert "run_id" in cols, "the migration did not run"
+            assert s.reconcile("nba", "2024-25")["scheduled"] == 1, "data was lost"
+
+    def test_reopening_is_idempotent(self, tmp_path):
+        path = tmp_path / "c.duckdb"
+        with Store(path) as s:
+            s.put_games("nba", "2024-25", [game("g1")])
+            first = s.digest()
+        with Store(path) as s:
+            assert s.schema_version == 2 and s.digest() == first
+
+
+class TestProvenance:
+    def test_rows_carry_the_run_that_wrote_them(self, seeded):
+        seeded.start_run("run-a", {})
+        seeded.put_priced("nba", "2024-25", "g1", priced_row())
+        seeded.put_miss("nba", "2024-25", "g2", "no_market", [])
+        assert seeded.priced_rows("nba", "2024-25")[0]["run_id"] == "run-a"
+        assert seeded.db.execute(
+            "SELECT run_id FROM misses").fetchone()[0] == "run-a"
+
+    def test_a_resumed_census_is_labelled_by_run_not_blended(self, seeded):
+        seeded.start_run("run-a", {})
+        seeded.put_priced("nba", "2024-25", "g1", priced_row())
+        seeded.start_run("run-b", {})
+        seeded.put_priced("nba", "2024-25", "g2", priced_row())
+        runs = dict(seeded.db.execute(
+            "SELECT game_id, run_id FROM priced").fetchall())
+        assert runs == {"g1": "run-a", "g2": "run-b"}
+
+    def test_rows_written_outside_a_run_are_null_not_mislabelled(self, seeded):
+        seeded.put_priced("nba", "2024-25", "g1", priced_row())
+        assert seeded.priced_rows("nba", "2024-25")[0]["run_id"] is None
 
 
 class TestPersistence:
@@ -295,3 +353,11 @@ class TestScoping:
     def test_priced_rows_unfiltered_and_by_sport(self, two_sports):
         assert len(two_sports.priced_rows()) == 1
         assert two_sports.priced_rows("nhl") == []
+
+    def test_a_season_only_filter_is_honoured_not_ignored(self, two_sports):
+        """priced_rows(season=...) used to return every season silently."""
+        assert two_sports.priced_rows(season="2024-25")[0]["game_id"] == "g1"
+        assert two_sports.priced_rows(season="2025-26") == []
+        assert two_sports.miss_reasons(season="2025-26") == {"no_pre_tipoff_points": 1}
+        assert two_sports.label_agreement(season="2024-25") == {"agree": 1}
+        assert two_sports.label_agreement(season="2025-26") == {}

@@ -26,7 +26,7 @@ BACKOFF_CAP = 60.0
 CIRCUIT_BREAK_AFTER = 5
 
 
-def _retry_after_seconds(ra: str, fallback: float) -> float:
+def _retry_after_seconds(ra: str) -> float:
     """Retry-After is either delta-seconds or an HTTP-date (RFC 9110).
 
     float() rejects the date form; swallowing that left the client retrying on a
@@ -107,6 +107,25 @@ def validate_prices(payload: Any) -> bool:
         if not isinstance(pt, dict):
             raise SchemaError("prices-history point is not an object")
     return bool(history)
+
+
+def validate_schedule(payload: Any) -> bool:
+    """NHL club-schedule-season -> {"games": [...]}.
+
+    This call had NO validator, which meant `cacheable = True` and ANY JSON 200 --
+    including `{}` or `{"games": []}` -- was written to the cache permanently. One
+    truncated 200 for one team would freeze that team's games out of the census
+    DENOMINATOR, where they are invisible: a game never enumerated never becomes a
+    row on either side of `scheduled == priced + misses`, so every store guard
+    still passes. The whole cache module is built on "an empty result is never
+    cached", and this was the one call exempt from it.
+    """
+    if not isinstance(payload, dict):
+        raise SchemaError(f"club-schedule expected an object, got {type(payload).__name__}")
+    games = payload.get("games")
+    if not isinstance(games, list):
+        raise SchemaError("club-schedule has no games list")
+    return bool(games)
 
 
 def validate_markets(payload: Any) -> bool:
@@ -192,7 +211,7 @@ class Client:
                 elif r.status_code in (429, 403, 503, 502, 504):
                     ra = r.headers.get("Retry-After")
                     if ra:
-                        backoff = _retry_after_seconds(ra, backoff)
+                        backoff = _retry_after_seconds(ra)
                     if r.status_code == 403:
                         # A 403 from a WAF is an IP-level block, not congestion.
                         # Retrying it is how a soft throttle becomes a ban, so
@@ -201,7 +220,8 @@ class Client:
                         if self._consecutive_failures >= CIRCUIT_BREAK_AFTER:
                             raise CircuitOpen(
                                 f"HTTP 403 x{self._consecutive_failures}: treating as an "
-                                f"IP block and aborting. NO state saved."
+                                f"IP block and aborting. Resume from the store, which "
+                                f"holds every completed game."
                             )
                     last = TransientError(f"HTTP {r.status_code} (Retry-After={ra!r})")
                 else:
@@ -209,7 +229,8 @@ class Client:
                     if self._consecutive_failures >= CIRCUIT_BREAK_AFTER:
                         raise CircuitOpen(
                             f"{self._consecutive_failures} consecutive failures "
-                            f"(last HTTP {r.status_code}); aborting. NO state saved."
+                            f"(last HTTP {r.status_code}); aborting. Resume from the "
+                            f"store, which holds every completed game."
                         )
                     raise RuntimeError(f"HTTP {r.status_code} for {url}")
             if attempt < max_attempts - 1:
@@ -247,8 +268,12 @@ class Client:
         # old markets; startTs+endTs together returns 400 "interval is too long".
         # token_id originates in remote data. An unencoded & or # would silently
         # rewrite the query and the empty result would be recorded as a real miss.
-        if not str(token_id).isdigit():
-            raise ValueError(f"token_id must be numeric, got {token_id!r}")
+        # isascii() as well as isdigit(): '١٢٣'.isdigit() and '²'.isdigit() are both
+        # True, so isdigit alone admits ids that can never be valid and turns a loud
+        # ValueError into an ordinary empty-history miss.
+        tok = str(token_id)
+        if not (tok.isascii() and tok.isdigit()):
+            raise ValueError(f"token_id must be ASCII digits, got {token_id!r}")
         q = urlencode({"market": token_id, "startTs": start_ts, "fidelity": fidelity})
         data = self.get_json(f"{CLOB}/prices-history?{q}",
                              validator=validate_prices, bypass_cache=bypass_cache)

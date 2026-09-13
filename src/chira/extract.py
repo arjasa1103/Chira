@@ -15,6 +15,7 @@ defence is an independent label: nba_api's WL. That is the E1 assert.
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime
 
 from .constants import (
@@ -65,6 +66,24 @@ def _load_pair(market: dict, field: str) -> list | None:
     return val if isinstance(val, list) and len(val) == 2 else None
 
 
+def _is_probability(v: object) -> bool:
+    """A finite number in [0, 1].
+
+    json.loads accepts bare NaN / Infinity / -Infinity literals, all of which are
+    floats and all of which would sail through an isinstance check into
+    p_home_close -- the single column the entire calibration statistic is computed
+    from. Out-of-range values (5.0, -3.0) are equally accepted by DuckDB's DOUBLE.
+    """
+    return isinstance(v, (int, float)) and not isinstance(v, bool) \
+        and math.isfinite(v) and 0.0 <= float(v) <= 1.0
+
+
+def _numeric_token(v: object) -> bool:
+    """CLOB token ids are decimal strings. Anything else raises out of
+    Client.prices_history, from a function documented never to raise on remote data."""
+    return isinstance(v, str) and v.isascii() and v.isdigit()
+
+
 def closing_price(client: Client, market: dict) -> dict:
     """Extract the home-side closing price plus provenance and quality flags.
 
@@ -75,6 +94,10 @@ def closing_price(client: Client, market: dict) -> dict:
     outs = _load_pair(market, "outcomes")
     gst = market.get("gameStartTime")
     if toks is None or outs is None:
+        return {"ok": False, "reason": "unparseable_market"}
+    if not all(_numeric_token(t) for t in toks):
+        # Confirmed by execution: a hex token id raised ValueError out of
+        # prices_history and aborted the census, despite this function's promise.
         return {"ok": False, "reason": "unparseable_market"}
     if not gst:
         return {"ok": False, "reason": "missing_gameStartTime"}
@@ -94,7 +117,9 @@ def closing_price(client: Client, market: dict) -> dict:
             pt for pt in h
             if isinstance(pt, dict)
             and isinstance(pt.get("t"), (int, float))
-            and isinstance(pt.get("p"), (int, float))
+            and not isinstance(pt.get("t"), bool)
+            and math.isfinite(pt["t"])
+            and _is_probability(pt.get("p"))
             and pt["t"] <= tip
         ]
 

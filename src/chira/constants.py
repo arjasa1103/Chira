@@ -6,6 +6,9 @@ record the evidence, because several of these look wrong until you know why.
 
 GAMMA = "https://gamma-api.polymarket.com"
 CLOB = "https://clob.polymarket.com"
+# Probed 2026-09-12; see notes/week2-nhl-schedule.md. Lives here with its two
+# peers so "which third parties does this study depend on" is one file, not three.
+NHL_API = "https://api-web.nhle.com/v1"
 
 # Slug dates are USUALLY the US-Eastern local game date, but NOT ALWAYS.
 #
@@ -97,7 +100,9 @@ GATE_INTERCEPT_BAND = (-0.07, 0.07)
 # string is how "no market exists" and "we never tried the right slug" end up
 # as the same row, which is the one distinction the coverage chart depends on.
 MISS_REASONS = (
-    "no_market",                       # every candidate slug missed, twice
+    # every candidate slug missed; re-probed once with the cache bypassed UNLESS
+    # the run passed --no-reprobe, which nothing on the row records
+    "no_market",
     "no_pre_tipoff_points",            # market exists, price series empty before tipoff
     "unparseable_market",              # clobTokenIds / outcomes malformed
     "missing_gameStartTime",
@@ -106,6 +111,20 @@ MISS_REASONS = (
     "outcome_prices_not_complementary",
     "malformed_outcome_prices",
     "complementarity_failed",          # last pre-tipoff prices do not sum to 1
+    "label_mismatch_at_slug",          # a slug returned events, none matched the teams
+    "implausible_game_start_time",     # market tipoff disagrees with the schedule
     "unresolved_market",               # market exists but carries no outcomePrices
     "label_disagreement",              # E1: market winner != league winner
 )
+
+# Tipoff plausibility. `gameStartTime` comes from the same third party being
+# benchmarked and is the pre-tipoff cutoff, so when it is late the "closing"
+# price is a settled price. Live example: nba-dal-uta-2024-11-14 carries a
+# 00:57 ET tipoff (about 4 hours late) and stored p_home_close = 0.9995 on a
+# 115-113 game, i.e. a perfect predictor manufactured by a bad timestamp.
+#
+# Measured over the 960 priced games in the week-2 slices: 959 have an ET tipoff
+# date equal to the schedule's ET date, and the hour histogram runs 12..23. The
+# band below is one hour wider on the early side; it rejects exactly the two
+# known-bad rows and nothing else.
+TIPOFF_ET_HOUR_BAND = (11, 23)
