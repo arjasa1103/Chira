@@ -91,6 +91,22 @@ worse than no cron: it burns quota and produces silence that nobody is watching 
 
 **Effort:** M (human ~4h / CC ~40min). **Priority:** P1, deadline-driven (late Oct 2026).
 
+## P3 — CI actions target the deprecated Node 20
+
+**What:** Bump `actions/checkout` and `astral-sh/setup-uv` in `.github/workflows/tests.yml`
+and `.github/workflows/collector.yml` to versions that run on Node 24.
+
+**Why, observed on the first CI run** (2026-09-16, run 35116703705, green in 50 s): GitHub
+annotates every run with "Node.js 20 is deprecated. The following actions target Node.js 20
+but are being forced to run on Node.js 24: actions/checkout@v4, astral-sh/setup-uv@v5."
+Harmless today and the run passes, but the forcing is a transition measure, not a permanent
+one.
+
+**Do not guess the tags.** Check which versions actually exist before bumping. A tag that
+does not exist turns a green pipeline red, which is strictly worse than a warning annotation.
+
+**Effort:** XS. **Priority:** P3.
+
 ## P2 — Cache sizing (the week-3 census fit, barely)
 
 **What:** A size cap with oldest-first eviction on `Cache`, or trimming cached prices payloads.
