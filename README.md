@@ -13,10 +13,18 @@ Chira asks two questions:
 
 The claim is about calibration, not profit. Nothing here places bets.
 
-> **Project status: week 2 of 11 (September 2026).** The data pipeline is built and
-> validated: schedule sources, abbreviation resolution, the census runner, the DuckDB store
-> and the validation gate. The full census, the Parquet snapshot, the charts and the model are
-> not built yet. See [What exists today](#what-exists-today) before reading further, and
+> **Project status: week 4 of 11 (September 2026).** The census, the immutable snapshot and
+> both gate charts are done. All 5,084 games in the two usable seasons are settled (4,661
+> priced, 423 classified misses) and the validation gate passes on all four sport-seasons.
+> The market's own calibration has now been measured for the first time: **no sport-season
+> shows detectable miscalibration at the close**, and **NBA is the primary sport** on
+> coverage, market informativeness and usable price range. The feature store and the model
+> are not built yet.
+>
+> Week 4 also found two defects in week-1 machinery, one of which changed a pre-registered
+> bound (PREREGISTRATION.md Amendment 2). See [What exists today](#what-exists-today) before
+> reading further, [notes/week4-charts.md](notes/week4-charts.md) for the charts and what
+> they found, [notes/week3-census.md](notes/week3-census.md) for the census, and
 > [PLAN.md](PLAN.md) for the schedule.
 
 ---
@@ -35,6 +43,8 @@ The claim is about calibration, not profit. Nothing here places bets.
   - [How to read the snapshot](#how-to-read-the-snapshot)
   - [How to query the census store](#how-to-query-the-census-store)
   - [How to compute calibration metrics](#how-to-compute-calibration-metrics)
+  - [How to cut the two charts](#how-to-cut-the-two-charts)
+  - [How to dry-run the forward collector](#how-to-dry-run-the-forward-collector)
   - [How to regenerate the noise floor](#how-to-regenerate-the-noise-floor)
   - [How to re-run the week-1 probes](#how-to-re-run-the-week-1-probes)
   - [How to run the tests and the linter](#how-to-run-the-tests-and-the-linter)
@@ -74,19 +84,46 @@ The claim is about calibration, not profit. Nothing here places bets.
 | Closing-price extraction (close, T-1h, T-6h, T-24h, staleness, complementarity, raw series) | Built | `src/chira/extract.py` |
 | Census runner (resumable, idempotent, re-probes misses) | Built | `src/chira/census.py`, `scripts/run_census.py` |
 | DuckDB census store with reconciliation invariants | Built | `src/chira/store.py`, `src/chira/schema.sql` |
-| Census validation gate | Built; passes on all four sport-seasons (200-game slices) | `src/chira/gate.py` |
+| Census validation gate (7 checks) | Built; passes on all four sport-seasons on the full census | `src/chira/gate.py` |
 | Calibration metrics and null-distribution simulator | Built | `src/chira/calibration.py` |
 | JSONL run telemetry and manifests | Built | `src/chira/telemetry.py` |
 | Snapshot writer, verifier and offline reader | Built | `src/chira/snapshot.py`, `scripts/make_snapshot.py` |
-| Test suite | 413 tests, offline, ruff-clean | `tests/` |
-| Full census of all 5,084 games | **Not run yet** (week 3) | |
-| Immutable Parquet snapshot | **Not built** (week 3) | |
-| Coverage and calibration charts | **Not built** (week 4) | |
+| Snapshot analysis frame (home side, canonical order, the four looks) | Built | `src/chira/analysis.py` |
+| Test suite | 597 tests, offline, ruff-clean | `tests/` |
+| Full census of all 5,084 games | **Done** (week 3): 4,661 priced, 423 misses, 145.6M raw price rows | `data/census.duckdb` (gitignored) |
+| Immutable Parquet snapshot | **Cut** (week 3): `census-20260913-224d6ad985e0`, 162 MB | `data/snapshots/` (gitignored) |
+| Coverage and calibration charts | **Built** (week 4) | `src/chira/charts.py`, `scripts/make_charts.py`, `docs/charts/` |
+| Forward prices-only collector and dead-man's switch | **Built, deliberately NOT enabled** (week 4). Every gate is tested offline; the live poll itself is unexercised | `src/chira/collector.py`, `scripts/run_collector.py`, `.github/workflows/collector.yml` |
 | Feature store, hierarchical model, nested test | **Not built** (weeks 7-9) | |
-| Forward price collector | **Not built** (week 4+) | |
 
-Current store state from the week-2 slices: 5,084 games scheduled, 735 priced, 65 misses,
-4,284 pending.
+Census results (full pass, all four sport-seasons):
+
+| Sport | Season | Priced | Misses | Coverage | Median volume |
+|---|---|---|---|---|---|
+| NBA | 2024-25 | 1,229 | 1 | 99.9% | $296k |
+| NHL | 2024-25 | 896 | 416 | 68.3% | $56k |
+| NBA | 2025-26 | 1,226 | 4 | 99.7% | $2.03M |
+| NHL | 2025-26 | 1,310 | 2 | 99.8% | $604k |
+
+NHL 2024-25's 416 misses are the whole of October and November 2024, before Polymarket
+listed NHL games.
+
+The market's own calibration at the close, home side only, one observation per game. **This
+is a reported result, not a gate** (see [PREREGISTRATION.md](PREREGISTRATION.md) section 4):
+
+| Sport | Season | n | Brier | ECE | null ECE p99 at this n | Cox slope [95% CI] | Resolution |
+|---|---|---|---|---|---|---|---|
+| NBA | 2024-25 | 1,229 | 0.1992 | 0.0271 | 0.0515 | 0.990 [0.864, 1.130] | 0.0481 |
+| NBA | 2025-26 | 1,226 | 0.1941 | 0.0241 | 0.0515 | 1.045 [0.914, 1.193] | 0.0517 |
+| NHL | 2024-25 | 896 | 0.2304 | 0.0349 | 0.0655 | 1.024 [0.754, 1.322] | 0.0147 |
+| NHL | 2025-26 | 1,310 | 0.2446 | 0.0321 | 0.0553 | 0.790 [0.513, 1.082] | 0.0055 |
+
+Every ECE sits well inside its own per-n noise floor, so none of these is a detectable
+miscalibration. The difference that matters is **resolution**, the Murphy term measuring how
+far the price moves away from the base rate: an NHL 2025-26 closing price improves on "always
+pick the home team" by 0.005 Brier, against 0.052 for NBA 2025-26. A market that quotes near
+the base rate is perfectly calibrated and nearly uninformative, which is why NBA is the
+primary sport. Full write-up: [notes/week4-charts.md](notes/week4-charts.md).
 
 ---
 
@@ -105,8 +142,8 @@ spread across the 2024-25 season, and see the validation gate pass on them. It t
   says `3.12`.
 - **A residential or campus IP.** `stats.nba.com` blocks most datacenter and cloud IPs, so
   NBA schedule fetches from CI or a cloud VM usually time out.
-- **Disk space.** A 200-game slice caches a few hundred MB. A full census is projected at
-  about 3.4 GB of cache (see [TODOS.md](TODOS.md)).
+- **Disk space.** A 200-game slice caches a few hundred MB. The full census used 5.1 GB of
+  cache, a 460 MB store and a 162 MB snapshot (see [TODOS.md](TODOS.md)).
 
 ### Step 1: Install
 
@@ -133,7 +170,7 @@ You should see `0.1.0`.
 uv run pytest
 ```
 
-Expected: `413 passed`. The suite is offline. Any test that opens a socket fails, so this
+Expected: `597 passed`. The suite is offline. Any test that opens a socket fails, so this
 passes without a network connection.
 
 ### Step 3: Learn the week-1 abbreviation prior
@@ -241,7 +278,7 @@ This censuses every game for one sport-season and asserts the full reconciliatio
 **Prerequisites:** `data/abbr_map_resolved.json` exists with no unresolved teams, and the
 disk has room for the cache.
 
-1. Check free disk space. There is no cache size cap yet (TODOS P1):
+1. Check free disk space. There is no cache size cap yet (TODOS P2):
 
    ```bash
    df -h .
@@ -271,8 +308,17 @@ Without `--limit` the gate runs with `require_complete=True`, so the reconciliat
 fails unless every scheduled game is settled.
 
 **Cost, measured:** about 16,400 requests for all four, at an achieved 2.42 requests/second
-(single-threaded against a 5 rps limit), so roughly 1.9 hours of network time plus the
-re-probe pass.
+(single-threaded against a 5 rps limit). The week-3 first pass took about 80 minutes, with
+800 games already cached from week 2. Re-deriving the whole census from a warm cache takes
+about 15 minutes.
+
+**Keep the machine awake and the lid open.** A sleeping laptop drops DNS. The census now waits
+out a lost network for up to 2 hours and continues the same game, but a closed lid freezes
+it. Run it under `caffeinate -i`:
+
+```bash
+caffeinate -i uv run python scripts/run_census.py --sport nba --season 2024-25
+```
 
 **Verification:** each report shows `reconciliation` passing with `pending=0`, and no
 `partial_pass` field.
@@ -287,7 +333,9 @@ uv run python scripts/run_census.py --sport nba --season 2024-25
 ```
 
 This also applies after a `CircuitOpen` abort (five consecutive failures, or five HTTP 403s).
-Wait before resuming: a run of 403s usually means an IP-level block.
+Wait before resuming: a run of 403s usually means an IP-level block. A lost network (DNS
+failure, laptop sleep) does not abort a run: it logs `network_wait` and retries for up to
+2 hours before giving up.
 
 Each resume also re-probes **every** accumulated retryable miss with the cache bypassed,
 because empty results are never cached. At the projected miss rate that is about 2,000
@@ -431,7 +479,9 @@ con.execute("""
 """).fetchall()
 ```
 
-Partition columns `sport` and `season` come back as text. `priced.game_start_time` is text in
+Partition columns `sport` and `season` come back as text. Rows in `price_points` are stored
+in no guaranteed order (writing them sorted needs several GB of temp space), so always
+`ORDER BY` when order matters. `priced.game_start_time` is text in
 the form `2025-01-16T00:30:00+00:00` (UTC) whatever your session timezone.
 
 Read one partition directly if you don't want the whole series table:
@@ -472,8 +522,8 @@ print(db.execute("""
 """).fetchall())
 ```
 
-On the week-2 slices that prints median volumes of about $313k (NBA 2024-25), $1.88M
-(NBA 2025-26), $58k (NHL 2024-25) and $614k (NHL 2025-26).
+On the full census that prints median volumes of $296k (NBA 2024-25), $2.03M (NBA 2025-26),
+$56k (NHL 2024-25) and $604k (NHL 2025-26).
 
 Useful queries:
 
@@ -529,11 +579,75 @@ Every metric raises `ValueError` on an empty or length-mismatched sample rather 
 returning `nan`. `cox_slope_intercept` also raises if its Newton-Raphson fit doesn't
 converge.
 
+### How to cut the two charts
+
+```bash
+uv run python scripts/make_charts.py
+```
+
+Reads the newest `data/snapshots/census-*`, verifying every checksum first. It never touches
+the live store and never the network. Writes `docs/charts/chart1-coverage.png`,
+`docs/charts/chart2-calibration.png` and `docs/charts/chart-data.json`, the last holding every
+number behind both figures plus the store digest and census git hash they were cut from.
+
+Needs the `store` extra for matplotlib:
+
+```bash
+uv sync --extra store
+```
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--snapshot PATH` | newest `data/snapshots/census-*` | Which snapshot to read |
+| `--out DIR` | `docs/charts` | Where the PNGs and JSON go |
+| `--reps N` | `2000` | Bootstrap replicates. Resamples **games**, never rows |
+| `--no-verify` | off | Skip snapshot checksums. Faster; not for a quoted result |
+
+Two bin counts appear in the output on purpose. The plotted curve uses `n_bins_for`, honouring
+the pre-registered floor of 150 games per bin, so the shape is not noise. The ECE quoted
+against `GATE_ECE_MAX` uses 10 bins, because the section-4 noise floor was simulated at 10
+bins and a threshold is only comparable to the null it came from.
+
+The charts are **derived aggregates**, so unlike the raw price series they are committed to
+the repository. See [Data and terms of use](#data-and-terms-of-use).
+
+### How to dry-run the forward collector
+
+The collector targets the 2026-27 seasons and does nothing before late October 2026. Its
+workflow is committed with the cron **commented out**, because a `schedule:` trigger on the
+default branch is armed by GitHub the moment it lands.
+
+```bash
+uv run python scripts/run_collector.py --dry-run
+```
+
+This makes no network call. It prints what a real session would decide: the ET offset it
+computed, which seasons are active, whether the poll window is open, and whether a monitoring
+URL is configured. It warns loudly when `CHIRA_HEARTBEAT_URL` is unset, because an unarmed
+dead-man's switch is the failure the switch exists to catch.
+
+| Env var | Default | Effect |
+|---|---|---|
+| `CHIRA_HEARTBEAT_URL` | unset | The monitor to ping. Unset means the switch is **not armed** |
+| `CHIRA_HEARTBEAT_PROVIDER` | `healthchecks` | Any key of `collector.HEARTBEAT_PROVIDERS`. An unknown name raises |
+
+**Exit status:** `0` captured something, or correctly no-opped off-season or outside the
+window. `1` the run should have captured and did not, which is the outage signal. `2` refused
+to start.
+
+**Providers are not interchangeable**, which is why an unknown name raises instead of falling
+back. Healthchecks.io takes `<url>` on success and `<url>/fail` on failure; Cronitor takes
+`?state=complete|fail` as a query parameter; Better Stack heartbeats have no failure path at
+all, so on failure the collector sends **nothing** and lets the monitor alert on the silence.
+Pinging the wrong shape leaves a check green while the collector is dead.
+
 ### How to regenerate the noise floor
 
-`data/noise_floor.json` is the null distribution the gate thresholds were derived from. No
-script in the repo writes it. It comes from `calibration.simulate_null` run over the week-1
-price sample, which `scripts/probe_price_distribution.py` writes to `data/price_sample.json`.
+Two files, for two different price pools.
+
+`data/noise_floor.json` is the **week-1** null the gate thresholds were first derived from,
+simulated from a 128-game NBA-only sample that `scripts/probe_price_distribution.py` writes to
+`data/price_sample.json`. No script in the repo writes it:
 
 ```python
 import json
@@ -546,9 +660,27 @@ null = {str(n): simulate_null(pool, n=n, reps=1500, seed=0)
 json.dump(null, open("data/noise_floor.json", "w"), indent=2)
 ```
 
+`data/noise_floor_census.json` is the **week-4** re-derivation from the real census pool,
+which [PREREGISTRATION.md](PREREGISTRATION.md) section 4 required once NHL prices existed:
+
+```bash
+uv run python scripts/derive_null_bands.py
+```
+
+It reads the newest snapshot, bootstraps the NBA, NHL and pooled price pools at the n values a
+real analysis runs at, and **exits non-zero if any adopted `GATE_*` constant sits inside the
+null it governs**. That is exactly what happened: the pooled null slope CI came back as
+`[0.9183, 1.0908]`, escaping the adopted `(0.93, 1.08)`, so Amendment 2 widened the band to
+`(0.91, 1.10)`. Only the pooled full-census row is compared against the constants, because
+section 4 adopts them at that n alone; the per-n rows are the reference table that
+per-stratum work must use instead.
+
 Each entry holds `mean`, `p50`, `p95`, `p99`, `lo2.5` and `hi97.5` for `ece`, `max_bin_dev`,
 `slope`, `intercept` and `brier`. If you change the estimator or the gate constants,
-`tests/test_week1_facts.py::TestNoiseFloorIsRespected` fails until the two agree again.
+`tests/test_week1_facts.py::TestNoiseFloorIsRespected` fails until the two agree again. That
+test asserts against the committed `CENSUS_NULL_*` numbers rather than re-simulating, because
+`data/` is gitignored and because its earlier fabricated `uniform(0.1, 0.9)` pool is precisely
+why it missed the breach Amendment 2 fixed.
 
 ### How to re-run the week-1 probes
 
@@ -605,6 +737,8 @@ Chira/
 ├── pyproject.toml            dependencies, extras, ruff and pytest config
 ├── uv.lock                   pinned dependency lock
 ├── docs/designs/             approved design document
+├── docs/charts/              the two Phase 2 charts, committed (derived aggregates)
+├── .github/workflows/        tests on push; the collector cron, committed disabled
 ├── notes/                    week-by-week measurement write-ups
 ├── scripts/                  runnable entry points (census, resolver, probes)
 ├── src/chira/                the library
@@ -650,6 +784,9 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 |---|---|---|---|---|
 | `run_census.py` | Census plus validation gate for one sport-season | `data/abbr_map_resolved.json`, schedules | store, cache, log, gate report | Polymarket, `nba_api` or NHL |
 | `make_snapshot.py` | Cut, read back and verify the immutable Parquet snapshot | store | `data/snapshots/<id>/` | none |
+| `make_charts.py` | Cut both Phase 2 charts and the statistics behind them | snapshot | `docs/charts/` | none |
+| `derive_null_bands.py` | Re-derive the section-4 null from real census prices; exits 1 on a breach | snapshot | `data/noise_floor_census.json` | none |
+| `run_collector.py` | One forward-collector session, or a dry run of one | schedules, CLOB | `data/collector/live.duckdb`, log | Polymarket; none with `--dry-run` |
 | `learn_abbr.py` | Learn the `{slug_abbr: nickname}` prior from Gamma | none | `data/abbr_map.json` | Gamma, ~180 requests |
 | `resolve_abbrs.py` | Resolve `{schedule_abbr: slug_abbr}` for both sports and seasons | `data/abbr_map.json` | `data/abbr_map_resolved.json`, cache | Gamma, NHL, `nba_api` |
 | `probe_rate_limit.py` | Burst rate-limit ramp | none | stdout | Gamma, CLOB |
@@ -673,7 +810,10 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 | `chira.store` | DuckDB store, migrations, reconciliation, raw series, digest | `Store` |
 | `chira.snapshot` | Immutable Parquet snapshot: preflight, write, verify, offline read | `create_snapshot`, `verify_snapshot`, `open_snapshot`, `preflight`, `SnapshotError` |
 | `chira.gate` | Validation gate checks and report | `run_gate(store, sport, season, require_complete=...)`, `format_report` |
-| `chira.calibration` | Metrics and the null simulator | `equal_count_bins`, `ece`, `max_bin_dev`, `cox_slope_intercept`, `brier`, `murphy`, `simulate_null` |
+| `chira.calibration` | Metrics, binning, the game-level bootstrap and the null simulator | `equal_count_bins`, `n_bins_for`, `quantile_bin_edges`, `binned_curve`, `ece`, `max_bin_dev`, `cox_slope_intercept`, `brier`, `murphy`, `bootstrap_curve`, `bootstrap_scalars`, `simulate_null` |
+| `chira.analysis` | The snapshot read as an analysis frame: home side, canonical order, the four looks | `open_frame`, `frame`, `look`, `look_coverage`, `coverage_by_week`, `price_pool`, `sport_seasons`, `assert_canonical` |
+| `chira.charts` | The two Phase 2 charts and every statistic they report | `chart_coverage`, `chart_calibration`, `calibration_stats` |
+| `chira.collector` | Forward prices-only collector: ET gates, dedup, quote store, heartbeat | `CollectorStore`, `Heartbeat`, `HEARTBEAT_PROVIDERS`, `is_season_active`, `in_poll_window`, `dedup_key`, `quote_row`, `parse_book`, `upcoming_targets`, `zero_capture_is_a_failure`, `describe_plan` |
 | `chira.telemetry` | JSONL event log and run manifest | `Telemetry`, `run_id`, `git_hash` |
 
 **Game dict shape.** `nba_games` and `nhl_games` both return a list sorted by
@@ -867,6 +1007,7 @@ same inputs, the digest should match.
 | Retried statuses | 429, 403, 502, 503, 504, request exceptions, non-JSON 200s, undecodable JSON |
 | Backoff | Starts at 2 s, doubles, capped at 60 s. `Retry-After` is honoured in delta-seconds or HTTP-date form; unparseable values back off 60 s |
 | Circuit breaker | Raises `CircuitOpen` after 5 consecutive failures. Every 403 counts immediately, since a WAF 403 is usually an IP block |
+| Lost network | If every attempt fails to even connect, raises `NetworkUnavailable`, which does not count toward the circuit; the census waits it out |
 | Other non-200 | Raises `RuntimeError` at once and counts toward the circuit |
 | Schema change | Validators raise `SchemaError`: valid JSON in the wrong shape stops the run instead of producing fake misses |
 | `bypass_cache=True` | Skips the cache read but still writes a fresh valid response |
@@ -892,7 +1033,7 @@ a `Counter` of `http:<status>`, `cache:hit`, `nonjson200`, `badjson` and excepti
 - **Corrupt entries** count as misses.
 - **To force a full re-fetch,** delete `.http-cache/`, or bump `cache.SCHEMA_VERSION`.
 
-Measured size: about 0.84 MB per priced game.
+Measured size: about 1.1 MB per priced game (5.1 GB for the full census).
 
 ### Telemetry events
 
@@ -908,6 +1049,7 @@ and `kind`.
 | `census_end` | `priced`, `miss`, and a count per miss reason |
 | `reprobe_recovered` | `game_id`, `slug` |
 | `reprobe_end` | `reprobed`, `recovered`, `still_missing`, `not_in_schedule` |
+| `network_wait` | `seconds`, `waited`, `error`: the census paused for a lost network |
 | `run_end` | `counts` per event kind, plus census counts |
 
 Run ids look like `census-nba-20260912T115106Z-63345` (prefix, UTC time, pid).
@@ -929,10 +1071,13 @@ From `src/chira/constants.py` unless noted.
 | `DEFAULT_LOOKBACK_DAYS` | `7` | Price window start when a market has no `startDate` |
 | `HISTORY_PAD_SECONDS` | `3600` | Padding before the price window |
 | `GAMMA_LIMIT_CAP` / `GAMMA_OFFSET_CEILING` | `100` / `2100` | Why the census enumerates from schedules, not Gamma |
-| `GATE_ECE_MAX` | `0.03` | Full-census ECE ceiling |
-| `GATE_MAX_BIN_DEV` | `0.08` | Full-census max per-bin deviation |
-| `GATE_SLOPE_BAND` | `(0.93, 1.08)` | Cox slope 95% CI must lie inside |
-| `GATE_INTERCEPT_BAND` | `(-0.07, 0.07)` | Cox intercept 95% CI must lie inside |
+| `GATE_ECE_MAX` | `0.03` | Full-census ECE ceiling; re-measured null p99 is 0.0272 |
+| `GATE_MAX_BIN_DEV` | `0.08` | Full-census max per-bin deviation; null p99 is 0.0729 |
+| `GATE_SLOPE_BAND` | `(0.91, 1.10)` | Cox slope 95% CI must lie inside. **Widened from `(0.93, 1.08)` by PREREGISTRATION.md Amendment 2**: the real pooled null is `[0.9183, 1.0908]`, so the old band would have failed a perfectly calibrated market |
+| `GATE_INTERCEPT_BAND` | `(-0.07, 0.07)` | Cox intercept 95% CI must lie inside; null is `[-0.0606, 0.0620]` |
+| `CENSUS_NULL_*` | see `constants.py` | The null re-measured on real census prices at the operative n of 4,661, plus `CENSUS_NULL_ECE_P99_BY_N`, the per-n reference rows that per-stratum analyses must use instead of the pooled cap |
+| `collector.DEFAULT_HEARTBEAT_PROVIDER` | `"healthchecks"` | Overridden by `CHIRA_HEARTBEAT_PROVIDER` |
+| `collector.SESSION_MAX_SECONDS` | `19800` (5h30) | Stops short of the 6 h Actions job cap so a session can report its own outcome |
 | `http.RATE_RPS` | `5.0` | Default request rate |
 | `http.CIRCUIT_BREAK_AFTER` | `5` | Consecutive failures before abort |
 | `gate.MIN_DISCRIMINATION_SIGMA` | `2.0` | Price-discrimination floor |
@@ -946,7 +1091,7 @@ From `src/chira/constants.py` unless noted.
 | Group | Packages | Needed for |
 |---|---|---|
 | default | `requests`, `duckdb`, `numpy`, `scipy`, `nba_api>=1.5,<2` | Everything that exists today |
-| `store` extra | `pyarrow`, `matplotlib` | Charts (week 4+; no code uses them yet). The snapshot does **not** need this extra: it is written and read with DuckDB's own Parquet support |
+| `store` extra | `pyarrow`, `matplotlib` | The charts. `chira.charts` imports matplotlib, so `scripts/make_charts.py` and `tests/test_charts.py` need this extra. The snapshot does **not**: it is written and read with DuckDB's own Parquet support |
 | `model` extra | `numpyro`, `jax` | The hierarchical model (week 8; no code uses them yet) |
 | `dev` group | `pytest`, `pytest-cov`, `ruff` | Tests and lint; installed by `uv sync` |
 
@@ -1066,7 +1211,7 @@ hash is its timestamp.
 
 **Trade-offs taken.** Single-threaded requests mean a full census takes ~1.9 h instead of
 ~0.9 h, in exchange for no shared mutable state. There's no cache eviction yet, so a full
-census needs ~3.4 GB of free disk. The gate runs on 200-game slices before the full pull, so a
+census needs ~5 GB of free disk. The gate runs on 200-game slices before the full pull, so a
 label-agreement failure costs 600 requests instead of 16,000.
 
 ---
@@ -1094,8 +1239,14 @@ label-agreement failure costs 600 requests instead of 16,000.
 | `REFUSED: ... priced games have no raw series` | A priced row was written without its series (for example by an older schema version) | Re-census those games so row and series are written together |
 | `SnapshotError: ... already exists; snapshots are immutable` | The store hasn't changed since the last snapshot | Nothing to do; use the existing snapshot |
 | `SnapshotError: N files fail their checksum` | A snapshot file was edited or corrupted | Don't use it. Cut a fresh snapshot from the store |
+| `SnapshotError: not enough disk` | Free space is below about 4 bytes per raw price row plus 200 MB | Free disk space, then re-run `make_snapshot.py` |
 | `game_start_time` shows a non-UTC offset in your own query | DuckDB renders TIMESTAMPTZ in the session zone | `SET TimeZone='UTC'` on your connection |
 | A test fails with `unit tests must not open sockets` | The test reached the real network | Stub `http.Client` in the test |
+| `ValueError: cox fit did not converge in 60 damped iterations` | The sample is separable, or otherwise has no finite MLE | Not a calibration result and must not be reported as one. Check the stratum's size and whether outcomes are perfectly ordered by price |
+| `ValueError: empty frame for sport=... season=...` | `analysis.frame` was scoped to a sport-season the snapshot has no priced rows for | Check `sport_seasons(con)` for what the snapshot actually holds |
+| `ValueError: frame is not in canonical ... order` | Rows were reordered after loading | Re-load through `analysis.frame`. Binning ties depend on row order, so an out-of-order frame silently changes every binned metric |
+| `ValueError: unknown heartbeat provider ...` | `CHIRA_HEARTBEAT_PROVIDER` is not a key of `collector.HEARTBEAT_PROVIDERS` | Use one of the listed names. It refuses to guess, because a wrong URL shape leaves the monitor green while the collector is dead |
+| `run_collector.py` exits `1` with "nothing was captured" | The season is active and the poll window was open, but no quotes landed | This is the outage signal, not a warning. Check the live poll path and the workflow logs |
 
 ---
 
@@ -1113,6 +1264,8 @@ label-agreement failure costs 600 requests instead of 16,000.
 | [notes/week2-abbr-resolution.md](notes/week2-abbr-resolution.md) | How abbreviations are resolved and regenerated |
 | [notes/week2-nhl-schedule.md](notes/week2-nhl-schedule.md) | The NHL schedule source and its verified properties |
 | [notes/week2-census-gate.md](notes/week2-census-gate.md) | Gate results, coverage findings, and the contaminated-slice correction |
+| [notes/week3-census.md](notes/week3-census.md) | The full census: coverage, the four defects the first gate failure exposed, and Amendment 1 |
+| [notes/week4-charts.md](notes/week4-charts.md) | Both gate charts, the market's measured calibration, the primary-sport answer, Amendment 2, and the Cox-fit bug |
 
 ---
 
@@ -1127,5 +1280,10 @@ and `stats.nba.com` via the community-maintained `nba_api` client.
 - keep `data/` and `.http-cache/` out of version control (the `.gitignore` already does),
 - share the collector code and derived aggregates, not raw price series,
 - let others regenerate the census themselves with the commands in this README.
+
+The charts committed under `docs/charts/` are derived aggregates in exactly that sense:
+curves, bin counts, Murphy decompositions and the statistics behind them. No raw price series
+is committed, and `chart-data.json` carries the store digest and census git hash, so any
+figure can be traced back to the census it was cut from.
 
 No license file has been added to the repository yet.
