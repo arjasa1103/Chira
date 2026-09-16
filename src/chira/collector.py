@@ -305,6 +305,44 @@ class CollectorStore:
         return self.db.execute("SELECT count(*) FROM live_quotes").fetchone()[0]
 
 
+def _with_query(url: str, extra: str) -> str:
+    """Append a query parameter, respecting a URL that already has one."""
+    return f"{url}{'&' if '?' in url else '?'}{extra}"
+
+
+# How each provider is told "the run succeeded" and "the run failed".
+#
+# These are NOT interchangeable, which an earlier draft of this module got
+# wrong by assuming every provider accepts `<url>/fail`:
+#
+#   healthchecks  <url> on success, <url>/fail on failure. A real failure
+#                 channel, so an outage is reported the moment it is known
+#                 rather than waiting out the grace period.
+#   cronitor      state is a query parameter, not a path segment. Appending
+#                 /fail to a Cronitor URL pings a telemetry endpoint that does
+#                 not exist and the check stays green while the run is broken.
+#   betterstack   heartbeats have NO failure path. Silence is the only signal,
+#                 so a failed run must NOT ping at all -- pinging on failure
+#                 would report success.
+#   plain         any bare "GET this URL" heartbeat, same caveat as betterstack.
+#
+# `None` means "send nothing", which is a deliberate, meaningful action for the
+# providers whose only failure signal is an absent ping.
+HEARTBEAT_PROVIDERS: dict[str, Any] = {
+    "healthchecks": lambda url, ok: url if ok else url.rstrip("/") + "/fail",
+    "cronitor": lambda url, ok: _with_query(url, "state=complete" if ok
+                                            else "state=fail"),
+    "betterstack": lambda url, ok: url if ok else None,
+    "plain": lambda url, ok: url if ok else None,
+}
+
+# Healthchecks.io is the default: it is purpose-built for alerting on a ping's
+# absence, its free tier covers this project, it has a real failure channel, and
+# it can be self-hosted later if depending on a third party becomes a problem.
+DEFAULT_HEARTBEAT_PROVIDER = "healthchecks"
+HEARTBEAT_PROVIDER_ENV = "CHIRA_HEARTBEAT_PROVIDER"
+
+
 class Heartbeat:
     """Pings an external monitor. The monitor alerts on the ping's ABSENCE.
 
@@ -314,18 +352,34 @@ class Heartbeat:
     dropped under load. Only a third party expecting a regular ping can notice
     silence.
 
-    Provider-agnostic on purpose: any of Healthchecks.io, Better Stack, Cronitor
-    or an UptimeRobot heartbeat works, because all of them are "GET this URL on
-    success". The URL is a secret supplied by the environment, so it is absent in
-    forks and in local dry runs.
+    **Provider is pluggable, because providers really do differ.** Set
+    `CHIRA_HEARTBEAT_PROVIDER` to any key of `HEARTBEAT_PROVIDERS`; the default
+    is Healthchecks.io. Switching later is an env var, not a code change. An
+    UNKNOWN provider name RAISES rather than falling back to a default: a typo
+    that silently pinged the wrong URL shape would leave the check green while
+    the collector was dead, which is the one outcome this class exists to
+    prevent.
+
+    The URL is a secret supplied by the environment, so it is absent in forks
+    and in local dry runs, and that absence is reported rather than ignored.
 
     **A heartbeat never breaks the run.** Failing to report success is not a
     reason to discard captured data, so every error here is swallowed and
-    recorded.
+    recorded in `last_error`.
     """
 
-    def __init__(self, url: str | None = None, *, session: Any = None) -> None:
+    def __init__(self, url: str | None = None, *, provider: str | None = None,
+                 session: Any = None) -> None:
         self.url = url if url is not None else os.environ.get(HEARTBEAT_ENV)
+        self.provider = (provider if provider is not None
+                         else os.environ.get(HEARTBEAT_PROVIDER_ENV)
+                         or DEFAULT_HEARTBEAT_PROVIDER)
+        if self.provider not in HEARTBEAT_PROVIDERS:
+            raise ValueError(
+                f"unknown heartbeat provider {self.provider!r}; expected one of "
+                f"{sorted(HEARTBEAT_PROVIDERS)}. Refusing to guess: a wrong URL "
+                f"shape leaves the monitor green while the collector is dead"
+            )
         self.session = session
         self.pings: list[tuple[str, bool]] = []
         self.last_error: str | None = None
@@ -334,17 +388,29 @@ class Heartbeat:
     def configured(self) -> bool:
         return bool(self.url)
 
-    def ping(self, *, ok: bool = True, detail: str = "") -> bool:
-        """GET the ping URL (with /fail appended when the run failed).
+    def target(self, *, ok: bool) -> str | None:
+        """The URL this provider wants for this outcome, or None to send nothing."""
+        if not self.url:
+            return None
+        return HEARTBEAT_PROVIDERS[self.provider](self.url, ok)
 
-        Returns whether the ping was delivered, which the caller reports but
-        must not act on.
+    def ping(self, *, ok: bool = True, detail: str = "") -> bool:
+        """Report the run's outcome. Returns whether a ping was delivered.
+
+        The caller reports the return value and must not act on it.
         """
         self.pings.append((detail, ok))
         if not self.configured:
-            self.last_error = f"{HEARTBEAT_ENV} not set; no external monitor to ping"
+            self.last_error = (f"{HEARTBEAT_ENV} not set; no external monitor to "
+                               f"ping (provider {self.provider})")
             return False
-        url = self.url if ok else self.url.rstrip("/") + "/fail"
+        url = self.target(ok=ok)
+        if url is None:
+            # Correct behaviour, not a failure: for this provider the absence of
+            # a ping IS the failure report, so sending one would say "fine".
+            self.last_error = (f"provider {self.provider} has no failure channel; "
+                               f"stayed silent so the monitor alerts on absence")
+            return False
         try:
             sess = self.session
             if sess is None:

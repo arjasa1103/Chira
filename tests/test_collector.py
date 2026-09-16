@@ -19,6 +19,7 @@ import pytest
 
 from chira.collector import (
     ET,
+    HEARTBEAT_PROVIDERS,
     UTC,
     CollectorStore,
     Heartbeat,
@@ -252,6 +253,95 @@ class TestHeartbeatSemantics:
         hb = Heartbeat("https://hc.example/abc", session=self.FakeSession(code=500))
         assert hb.ping() is False
         assert "500" in hb.last_error
+
+
+class TestHeartbeatProviders:
+    """Providers are NOT interchangeable, and guessing wrong fails silently.
+
+    The whole point of a dead-man's switch is that the monitor is right about
+    whether the run happened. A URL shape that the provider ignores leaves the
+    check green while the collector is dead, which is worse than having no
+    monitor at all because it actively reassures.
+    """
+
+    class FakeSession:
+        def __init__(self):
+            self.urls = []
+
+        def get(self, url, timeout=None):
+            self.urls.append(url)
+            return type("R", (), {"status_code": 200})()
+
+    def test_healthchecks_is_the_default(self):
+        hb = Heartbeat("https://hc.example/abc")
+        assert hb.provider == "healthchecks"
+        assert hb.target(ok=True) == "https://hc.example/abc"
+        assert hb.target(ok=False) == "https://hc.example/abc/fail"
+
+    def test_cronitor_uses_a_query_parameter_not_a_path(self):
+        """Appending /fail to a Cronitor URL hits nothing and stays green."""
+        hb = Heartbeat("https://cronitor.link/p/abc", provider="cronitor")
+        assert hb.target(ok=True) == "https://cronitor.link/p/abc?state=complete"
+        assert hb.target(ok=False) == "https://cronitor.link/p/abc?state=fail"
+
+    def test_cronitor_respects_an_existing_query_string(self):
+        hb = Heartbeat("https://cronitor.link/p/abc?env=prod", provider="cronitor")
+        assert hb.target(ok=True).endswith("?env=prod&state=complete")
+
+    def test_betterstack_stays_silent_on_failure(self):
+        """It has no failure path, so pinging would REPORT SUCCESS."""
+        hb = Heartbeat("https://uptime.example/hb", provider="betterstack")
+        assert hb.target(ok=True) == "https://uptime.example/hb"
+        assert hb.target(ok=False) is None
+
+    def test_silence_on_failure_sends_no_request_at_all(self):
+        sess = self.FakeSession()
+        hb = Heartbeat("https://uptime.example/hb", provider="betterstack",
+                       session=sess)
+        assert hb.ping(ok=False) is False
+        assert sess.urls == [], "a failed run must not ping a no-fail provider"
+        assert "no failure channel" in hb.last_error
+
+    def test_silence_is_recorded_as_deliberate_not_as_an_error(self):
+        hb = Heartbeat("https://uptime.example/hb", provider="plain")
+        hb.ping(ok=False)
+        assert "alerts on absence" in hb.last_error
+
+    def test_success_still_pings_a_no_fail_provider(self):
+        sess = self.FakeSession()
+        hb = Heartbeat("https://uptime.example/hb", provider="plain", session=sess)
+        assert hb.ping(ok=True) is True
+        assert sess.urls == ["https://uptime.example/hb"]
+
+    def test_an_unknown_provider_raises_instead_of_guessing(self):
+        with pytest.raises(ValueError, match="unknown heartbeat provider"):
+            Heartbeat("https://x.example/abc", provider="nope")
+
+    def test_the_provider_is_selectable_by_env_var(self, monkeypatch):
+        """Switching provider must be an env var, not a code change."""
+        monkeypatch.setenv("CHIRA_HEARTBEAT_PROVIDER", "cronitor")
+        assert Heartbeat("https://x.example/abc").provider == "cronitor"
+
+    def test_an_explicit_provider_beats_the_env_var(self, monkeypatch):
+        monkeypatch.setenv("CHIRA_HEARTBEAT_PROVIDER", "cronitor")
+        hb = Heartbeat("https://x.example/abc", provider="healthchecks")
+        assert hb.provider == "healthchecks"
+
+    def test_an_empty_env_var_falls_back_to_the_default(self, monkeypatch):
+        monkeypatch.setenv("CHIRA_HEARTBEAT_PROVIDER", "")
+        assert Heartbeat("https://x.example/abc").provider == "healthchecks"
+
+    def test_every_provider_handles_both_outcomes(self):
+        """A provider that crashed on one outcome would be found in production."""
+        for name in HEARTBEAT_PROVIDERS:
+            hb = Heartbeat("https://x.example/abc", provider=name)
+            hb.target(ok=True)
+            hb.target(ok=False)
+
+    def test_an_unconfigured_url_has_no_target_for_any_provider(self):
+        for name in HEARTBEAT_PROVIDERS:
+            hb = Heartbeat(None, provider=name)
+            assert hb.target(ok=True) is None
 
 
 class TestZeroCaptureRule:

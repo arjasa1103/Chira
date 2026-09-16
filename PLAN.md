@@ -74,12 +74,22 @@ late October, after week 4 ends Oct 12):
   verification is the dry run plus offline tests of the gates. See notes/week4-charts.md.
 - **Week 7:** one timeboxed slot to prove an availability source against live games. If it
   cannot be proven in that slot, **collect prices only and drop availability entirely.**
-- **OUTSTANDING, needs the user:** the dead-man's switch needs a third-party monitoring
-  account. The code is provider-agnostic — it GETs `$CHIRA_HEARTBEAT_URL` on success and
-  `<url>/fail` on failure, which is the contract Healthchecks.io, Better Stack, Cronitor and
-  an UptimeRobot heartbeat all share — so picking one is an account and a repo secret, not a
-  code change. **Until it is set, the switch is not armed** and a collector that never
-  starts reports nothing to nobody. Must be done before late October.
+- **Provider chosen: Healthchecks.io** (user decision, 2026-09-16), kept swappable. It is
+  purpose-built for alerting on a ping's absence, its free tier covers this project, it has
+  a real failure channel, and it can be self-hosted later if depending on a third party
+  becomes a problem.
+  **Switching provider is an env var, not a code change:** `CHIRA_HEARTBEAT_PROVIDER`
+  selects any key of `collector.HEARTBEAT_PROVIDERS`, and an unknown name raises rather
+  than falling back, because a typo that pinged the wrong URL shape would leave the monitor
+  green while the collector was dead.
+  An earlier draft of this note claimed every provider accepts `<url>/fail`. **That was
+  wrong**, and writing the registry is what exposed it: Cronitor takes state as a query
+  parameter (`?state=complete|fail`), and Better Stack heartbeats have no failure path at
+  all, so on failure the collector must send NOTHING — pinging would report success.
+- **STILL OUTSTANDING, needs the user:** create the Healthchecks.io check and set
+  `CHIRA_HEARTBEAT_URL` as a repo secret. **Until it is set the switch is not armed** and a
+  collector that never starts reports nothing to nobody. Must be done before late October,
+  and before the cron in `.github/workflows/collector.yml` is uncommented.
 
 ## Goal
 
