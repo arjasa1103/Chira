@@ -92,7 +92,7 @@ class TestPreflight:
 class TestCreate:
     def test_every_table_is_written_with_matching_row_counts(self, finished, snaproot):
         path = create_snapshot(finished, snaproot)
-        manifest = json.loads((path / "manifest.json").read_text())
+        manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
         assert manifest["tables"]["games"]["rows"] == 3
         assert manifest["tables"]["priced"]["rows"] == 2
         assert manifest["tables"]["misses"]["rows"] == 1
@@ -109,7 +109,7 @@ class TestCreate:
     def test_the_manifest_freezes_the_volume_definition(self, finished, snaproot):
         """PREREGISTRATION requires it: terminal volume is outcome-correlated."""
         manifest = json.loads((create_snapshot(finished, snaproot)
-                               / "manifest.json").read_text())
+                               / "manifest.json").read_text(encoding="utf-8"))
         assert "outcome-correlated" in manifest["volume_definition"]
 
     def test_files_and_directories_are_read_only(self, finished, snaproot):
@@ -160,6 +160,33 @@ class TestReadBack:
         got = con.execute("SELECT t, p FROM price_points WHERE game_id='g1' "
                           "AND side='home' ORDER BY t").fetchall()
         assert got == [(pt["t"], pt["p"]) for pt in series()["home"]]
+
+
+class TestPortablePaths:
+    """A snapshot is cut on one machine and read on another, possibly another OS."""
+
+    def test_a_quote_in_the_directory_path_does_not_break_the_sql(self, finished, tmp_path):
+        """Paths were interpolated raw into DuckDB string literals.
+
+        A single quote anywhere in the path (a Windows profile such as
+        C:\\Users\\O'Neil, or any directory on macOS) closed the literal early and
+        the COPY failed with a SQL syntax error.
+        """
+        root = tmp_path / "O'Neil" / "snapshots"
+        try:
+            con = open_snapshot(create_snapshot(finished, root))
+            assert con.execute("SELECT count(*) FROM games").fetchone()[0] == 3
+        finally:
+            if root.exists():
+                make_writable(root)
+
+    def test_manifest_keys_use_forward_slashes(self, finished, snaproot):
+        """The same key on every OS, or a Mac-cut snapshot fails to verify on Windows."""
+        manifest = json.loads((create_snapshot(finished, snaproot) / "manifest.json")
+                              .read_text(encoding="utf-8"))
+        keys = list(manifest["files"])
+        assert keys and all("\\" not in k for k in keys)
+        assert any("/" in k for k in keys)
 
 
 class TestVerify:

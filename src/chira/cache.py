@@ -79,7 +79,7 @@ class Cache:
     def get(self, url: str) -> Any | None:
         p = self.path(url)
         try:
-            entry = json.loads(p.read_text())
+            entry = json.loads(p.read_text(encoding="utf-8"))
         except FileNotFoundError:
             self.stats["miss"] += 1
             return None
@@ -118,7 +118,7 @@ class Cache:
             self.last_error = str(e)
             return
         try:
-            with os.fdopen(fd, "w") as fh:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 json.dump(entry, fh)
             os.replace(tmp, p)
         except OSError as e:

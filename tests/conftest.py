@@ -10,6 +10,12 @@ Two hazards the suite previously inherited silently:
    datetime whose `.timestamp()` is interpreted in the host zone. Measured: the
    same input produced epochs 7 hours apart under TZ=America/Los_Angeles vs UTC.
    That epoch is the pre-tipoff cutoff.
+
+   **On Windows this fixture does nothing**: Python there has no
+   `time.tzset`, so setting TZ does not change the process zone. That is safe
+   today because no code reads host-local time (`_parse_gst` rejects naive
+   timestamps outright), and it is why the one test that exercises TZ is
+   skipped on Windows rather than left to pass without testing anything.
 """
 
 from __future__ import annotations

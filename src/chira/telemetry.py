@@ -53,7 +53,7 @@ class Telemetry:
         if path is not None:
             p = Path(path)
             p.parent.mkdir(parents=True, exist_ok=True)
-            self._fh = p.open("a")
+            self._fh = p.open("a", encoding="utf-8")
             self.event("run_start", **self.manifest)
 
     def event(self, kind: str, **fields: Any) -> None:

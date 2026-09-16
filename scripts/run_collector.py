@@ -1,7 +1,7 @@
 """Run one forward-collector session, or a dry run of one.
 
-    .venv/bin/python scripts/run_collector.py --dry-run     # week-4 verification
-    .venv/bin/python scripts/run_collector.py               # a real session
+    uv run python scripts/run_collector.py --dry-run     # week-4 verification
+    uv run python scripts/run_collector.py               # a real session
 
 **Nothing here runs live until late October 2026.** The 2026-27 seasons are the
 collector's target and the week-4 deliverable is the code plus the pre-season

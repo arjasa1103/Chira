@@ -1,6 +1,6 @@
 """Run the census (or a limited slice of it) and the week-2 validation gate.
 
-    .venv/bin/python scripts/run_census.py --sport nba --season 2024-25 --limit 200
+    uv run python scripts/run_census.py --sport nba --season 2024-25 --limit 200
 
 Idempotent: re-running skips games already settled in the store, so this is
 also the resume command. `--limit` is the gate handle; run 200 games, read the
@@ -106,7 +106,7 @@ def main() -> int:
     print()
     print(format_report(result))
     out = pathlib.Path(f"data/gate-{args.sport}-{args.season}.json")
-    out.write_text(json.dumps(result, indent=2, sort_keys=True))
+    out.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
     print(f"\nwrote {out}")
     store.close()
     return 0 if result["passed"] else 1

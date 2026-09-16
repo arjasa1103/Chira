@@ -1,0 +1,11 @@
+# Keep LF line endings in the repository and in every working tree, Windows
+# included. Without this, a Windows checkout with core.autocrlf=true rewrites
+# every text file to CRLF, and a later commit from that machine shows every line
+# of every touched file as changed.
+* text=auto eol=lf
+
+# Never line-ending-convert or diff binary artifacts.
+*.png binary
+*.jpg binary
+*.parquet binary
+*.duckdb binary

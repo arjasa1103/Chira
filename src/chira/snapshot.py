@@ -34,7 +34,7 @@ import os
 import shutil
 import stat
 import time
-from pathlib import Path
+from pathlib import Path, PurePath
 
 import duckdb
 
@@ -95,6 +95,28 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _manifest_key(path: PurePath, root: PurePath) -> str:
+    """A file's key in the manifest: relative, with forward slashes on every OS.
+
+    `str(relative_path)` gives `games\\sport=nba\\...` on Windows and
+    `games/sport=nba/...` elsewhere, so a snapshot cut on one OS failed
+    `verify_snapshot` on the other with "file set does not match manifest".
+    Forward slashes also keep the existing macOS-cut snapshot valid unchanged.
+    """
+    return path.relative_to(root).as_posix()
+
+
+def _sql_path(path: PurePath) -> str:
+    """A path ready to sit inside a single-quoted DuckDB string literal.
+
+    Forward slashes, which DuckDB accepts on Windows too, and single quotes
+    doubled. Paths used to be interpolated raw, so any `'` in the path (a
+    Windows profile such as `C:\\Users\\O'Neil`, or any directory on macOS) closed
+    the literal early and the COPY died with a SQL syntax error.
+    """
+    return path.as_posix().replace("'", "''")
 
 
 def _sport_seasons(store: Store) -> list[tuple[str, str]]:
@@ -163,7 +185,8 @@ def create_snapshot(store: Store, root: str | Path, *, immutable: bool = True) -
             if partitioned:
                 target = tmp / name
                 store.db.execute(
-                    f"COPY ({query}) TO '{target}' (FORMAT parquet, COMPRESSION zstd, "
+                    f"COPY ({query}) TO '{_sql_path(target)}' "
+                    f"(FORMAT parquet, COMPRESSION zstd, "
                     f"PARTITION_BY (sport, season))")
                 parts = dict(store.db.execute(
                     f"SELECT sport || '/' || season, count(*) FROM {name} "
@@ -171,12 +194,13 @@ def create_snapshot(store: Store, root: str | Path, *, immutable: bool = True) -
             else:
                 target = tmp / f"{name}.parquet"
                 store.db.execute(
-                    f"COPY ({query}) TO '{target}' (FORMAT parquet, COMPRESSION zstd)")
+                    f"COPY ({query}) TO '{_sql_path(target)}' "
+                    f"(FORMAT parquet, COMPRESSION zstd)")
                 parts = {}
             rows = store.db.execute(f"SELECT count(*) FROM {name}").fetchone()[0]
             tables[name] = {"rows": rows, "partitions": parts}
 
-        files = {str(p.relative_to(tmp)): _sha256(p)
+        files = {_manifest_key(p, tmp): _sha256(p)
                  for p in sorted(tmp.rglob("*")) if p.is_file()}
         manifest = {
             "snapshot_format": SNAPSHOT_FORMAT,
@@ -194,7 +218,8 @@ def create_snapshot(store: Store, root: str | Path, *, immutable: bool = True) -
             "timestamp_convention": TIMESTAMP_CONVENTION,
             "files": files,
         }
-        (tmp / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
+        (tmp / "manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
         os.rename(tmp, dest)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -206,6 +231,15 @@ def create_snapshot(store: Store, root: str | Path, *, immutable: bool = True) -
 
 
 def make_read_only(path: Path) -> None:
+    """Files 0444, directories 0555.
+
+    **Weaker on Windows, and the snapshot stays trustworthy anyway.** Windows
+    honours the read-only attribute on files but ignores it on directories, so
+    there a new file can still be dropped into a snapshot directory. Existing
+    files cannot be edited on any OS, and `verify_snapshot` rejects any file the
+    manifest does not list, so an added file is caught at read time rather than
+    trusted.
+    """
     for p in sorted(path.rglob("*"), reverse=True):
         p.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH
                 | ((stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH) if p.is_dir() else 0))
@@ -225,9 +259,9 @@ def verify_snapshot(path: str | Path) -> dict:
     mpath = path / "manifest.json"
     if not mpath.is_file():
         raise SnapshotError(f"{path} has no manifest.json")
-    manifest = json.loads(mpath.read_text())
+    manifest = json.loads(mpath.read_text(encoding="utf-8"))
     listed = manifest.get("files") or {}
-    on_disk = {str(p.relative_to(path)) for p in path.rglob("*")
+    on_disk = {_manifest_key(p, path) for p in path.rglob("*")
                if p.is_file() and p.name != "manifest.json"}
     extra = sorted(on_disk - set(listed))
     missing = sorted(set(listed) - on_disk)
@@ -244,14 +278,16 @@ def open_snapshot(path: str | Path, *, verify: bool = True) -> duckdb.DuckDBPyCo
     """An in-memory DuckDB with one view per snapshot table. No network, no store."""
     path = Path(path)
     manifest = verify_snapshot(path) if verify else json.loads(
-        (path / "manifest.json").read_text())
+        (path / "manifest.json").read_text(encoding="utf-8"))
     con = duckdb.connect(":memory:")
     con.execute("SET TimeZone='UTC'")
     for name, _select, partitioned in _TABLES:
         if manifest["tables"].get(name, {}).get("rows", 0) == 0:
             continue
-        src = (f"read_parquet('{path / name}/**/*.parquet', hive_partitioning=true, "
+        src = (f"read_parquet('{_sql_path(path / name)}/**/*.parquet', "
+               f"hive_partitioning=true, "
                f"hive_types={{'sport': 'VARCHAR', 'season': 'VARCHAR'}})"
-               if partitioned else f"read_parquet('{path / name}.parquet')")
+               if partitioned
+               else f"read_parquet('{_sql_path(path / f'{name}.parquet')}')")
         con.execute(f"CREATE VIEW {name} AS SELECT * FROM {src}")
     return con

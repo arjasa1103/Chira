@@ -3,7 +3,7 @@
 Writes data/abbr_map_resolved.json. This is the map the census actually reads;
 data/abbr_map.json (week 1) is only a PRIOR into it.
 
-Run: .venv/bin/python scripts/resolve_abbrs.py
+Run: uv run python scripts/resolve_abbrs.py
 """
 import json
 import pathlib
@@ -19,7 +19,7 @@ from chira.resolve import invert_learned, resolve
 from chira.schedule import nba_games
 
 DATA = pathlib.Path("data")
-learned = json.loads((DATA / "abbr_map.json").read_text())
+learned = json.loads((DATA / "abbr_map.json").read_text(encoding="utf-8"))
 
 out = {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "seasons": {}}
 # Share the census cache. This script fetches the 64 NHL club-schedule payloads
@@ -53,6 +53,7 @@ for season in USABLE_SEASONS:
         if r["unresolved"]:
             print(f"  UNRESOLVED: {r['unresolved']}")
 
-(DATA / "abbr_map_resolved.json").write_text(json.dumps(out, indent=2, sort_keys=True))
+(DATA / "abbr_map_resolved.json").write_text(
+    json.dumps(out, indent=2, sort_keys=True), encoding="utf-8")
 print("\nwrote data/abbr_map_resolved.json")
 print("http stats:", dict(client.stats))

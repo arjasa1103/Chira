@@ -202,6 +202,9 @@ class TestTimestampParsing:
         """
         assert _parse_gst("2025-10-30 23:00:00") is None
 
+    @pytest.mark.skipif(not hasattr(time, "tzset"),
+                        reason="no time.tzset on Windows: TZ cannot change the "
+                               "process zone, so this would pass without testing")
     @pytest.mark.parametrize("tz", ["UTC", "America/Los_Angeles", "Asia/Tokyo"])
     def test_tipoff_epoch_is_host_timezone_independent(self, tz, monkeypatch):
         monkeypatch.setenv("TZ", tz)

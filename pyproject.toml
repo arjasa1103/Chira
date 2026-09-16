@@ -15,6 +15,11 @@ dependencies = [
     # stats.nba.com endpoint, and it is the source of the E1 ground-truth label.
     # Upper bound so a resolver refresh cannot cross a major version.
     "nba_api>=1.5,<2",
+    # Windows ships no system time-zone database, so zoneinfo needs this package
+    # for America/New_York, which slug dates and the collector's season gates
+    # depend on. pandas (via nba_api) happens to pull it in today; declared here
+    # so Windows support does not rest on someone else's dependency list.
+    "tzdata; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

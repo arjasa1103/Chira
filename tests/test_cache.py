@@ -49,7 +49,7 @@ class TestRoundTrip:
 
     def test_the_entry_records_what_it_was_keyed_by(self, cache):
         cache.put("https://x/1", [1])
-        entry = json.loads(cache.path("https://x/1").read_text())
+        entry = json.loads(cache.path("https://x/1").read_text(encoding="utf-8"))
         assert entry["url"] == "https://x/1"
         assert entry["abbr_version"] == "v1"
         assert entry["schema_version"] == cache.schema_version
@@ -104,14 +104,14 @@ class TestDamage:
     def test_a_truncated_entry_reads_as_a_miss_not_an_exception(self, cache):
         """A census killed mid-write must not be unresumable."""
         cache.put("https://x/1", [1])
-        cache.path("https://x/1").write_text("{not json")
+        cache.path("https://x/1").write_text("{not json", encoding="utf-8")
         assert cache.get("https://x/1") is None
         assert cache.stats["corrupt"] == 1
 
     def test_an_entry_whose_url_does_not_match_is_refused(self, cache):
         cache.put("https://x/1", [1])
         p = cache.path("https://x/1")
-        p.write_text(json.dumps({"url": "https://x/OTHER", "payload": [1]}))
+        p.write_text(json.dumps({"url": "https://x/OTHER", "payload": [1]}), encoding="utf-8")
         assert cache.get("https://x/1") is None
         assert cache.stats["collision"] == 1
 

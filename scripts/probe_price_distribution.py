@@ -58,7 +58,7 @@ def main() -> int:
             print(f"  {i+1}/{len(pool)} ... {dict(tally)}", flush=True)
     d = pathlib.Path("data")
     d.mkdir(exist_ok=True)
-    (d / "price_sample.json").write_text(json.dumps(rows, indent=2))
+    (d / "price_sample.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
     print(f"\n=== {len(rows)} games extracted ===")
     for k, v in sorted(tally.items()):
         print(f"  {k:34} {v}")

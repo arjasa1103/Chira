@@ -556,6 +556,8 @@ leakage can bias either direction and the gap does not decompose into leakage pl
 ## CI/CD and distribution
 
 - [x] GitHub Actions: tests and lint on push (`.github/workflows/tests.yml`, week 4).
+      Runs the suite on Ubuntu, Windows and macOS (added 2026-09-16, when Windows
+      support landed); lint runs once, on Linux.
       Installs the `store` extra but NOT `model`, so weeks 1-7 do not pay for a jax
       toolchain; the suite is offline by construction because `conftest.py` replaces
       `socket.socket`, so CI needs no token and cannot go red because a third-party API

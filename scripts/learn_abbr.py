@@ -17,7 +17,7 @@ def main() -> int:
         out[season] = learn(c, season)
     dest = pathlib.Path("data")
     dest.mkdir(exist_ok=True)
-    (dest / "abbr_map.json").write_text(json.dumps(out, indent=2, sort_keys=True))
+    (dest / "abbr_map.json").write_text(json.dumps(out, indent=2, sort_keys=True), encoding="utf-8")
 
     print("\n=== COVERAGE ===")
     for season, r in out.items():

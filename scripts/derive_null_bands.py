@@ -1,6 +1,6 @@
 """Re-derive the section-4 null bands from the REAL census price pools.
 
-    .venv/bin/python scripts/derive_null_bands.py
+    uv run python scripts/derive_null_bands.py
 
 PREREGISTRATION.md section 4 closes with an explicit obligation:
 
@@ -125,7 +125,7 @@ def main() -> int:
             for b in bad:
                 print(f"      {b}")
 
-    with open(args.out, "w") as fh:
+    with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(report, fh, indent=2, sort_keys=True)
     print(f"\nwrote {args.out}")
 

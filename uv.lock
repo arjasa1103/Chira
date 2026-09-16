@@ -62,10 +62,12 @@ name = "chira"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "duckdb" },
     { name = "nba-api" },
     { name = "numpy" },
     { name = "requests" },
     { name = "scipy" },
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
 
 [package.optional-dependencies]
@@ -74,7 +76,6 @@ model = [
     { name = "numpyro" },
 ]
 store = [
-    { name = "duckdb" },
     { name = "matplotlib" },
     { name = "pyarrow" },
 ]
@@ -88,7 +89,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "duckdb", marker = "extra == 'store'", specifier = ">=1.1" },
+    { name = "duckdb", specifier = ">=1.1" },
     { name = "jax", marker = "extra == 'model'", specifier = ">=0.4.30" },
     { name = "matplotlib", marker = "extra == 'store'", specifier = ">=3.9" },
     { name = "nba-api", specifier = ">=1.5,<2" },
@@ -97,6 +98,7 @@ requires-dist = [
     { name = "pyarrow", marker = "extra == 'store'", specifier = ">=17.0" },
     { name = "requests", specifier = ">=2.32" },
     { name = "scipy", specifier = ">=1.14" },
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
 provides-extras = ["store", "model"]
 

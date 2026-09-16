@@ -13,7 +13,15 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # All three OSes, because each has hazards the others hide: Windows has a
+    # cp1252 default encoding, backslash paths and no system tz database;
+    # macOS is where the project is developed. fail-fast off so one OS failing
+    # does not hide whether the others pass.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +40,9 @@ jobs:
       - name: Install
         run: uv sync --extra store --group dev
 
+      # Lint is OS-independent; once is enough.
       - name: Lint
+        if: runner.os == 'Linux'
         run: uv run ruff check src/ scripts/ tests/
 
       # The suite is offline by design: tests/conftest.py replaces socket.socket

@@ -1,6 +1,6 @@
 """Cut the two Phase 2 charts from the immutable snapshot.
 
-    .venv/bin/python scripts/make_charts.py
+    uv run python scripts/make_charts.py
 
 Reads only `data/snapshots/census-*` (verifying every checksum first), never the
 store and never the API. Writes PNGs plus the JSON behind them to docs/charts/,
@@ -42,7 +42,7 @@ def main() -> int:
     snap = args.snapshot or snaps[-1]
     con = open_frame(snap, verify=not args.no_verify)
     out = Path(args.out)
-    manifest = json.loads((Path(snap) / "manifest.json").read_text())
+    manifest = json.loads((Path(snap) / "manifest.json").read_text(encoding="utf-8"))
     print(f"snapshot: {snap}")
     print(f"store digest: {manifest['store_digest']}")
 
@@ -81,7 +81,8 @@ def main() -> int:
         "calibration_close": cal,
     }
     out.mkdir(parents=True, exist_ok=True)
-    (out / "chart-data.json").write_text(json.dumps(payload, indent=2, sort_keys=True))
+    (out / "chart-data.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     print(f"\nwrote {out}/chart1-coverage.png, {out}/chart2-calibration.png, "
           f"{out}/chart-data.json")
     return 0

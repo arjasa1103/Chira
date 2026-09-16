@@ -372,7 +372,7 @@ def load_abbr_map(path: str, season: str, sport: str) -> dict[str, str]:
     two seasons, which is 3% of the sample and enough to move the coverage
     chart that decides the primary sport.
     """
-    doc = json.loads(Path(path).read_text())
+    doc = json.loads(Path(path).read_text(encoding="utf-8"))
     entry = ((doc.get("seasons") or {}).get(season) or {}).get(sport)
     if not entry:
         raise KeyError(f"no resolved abbreviation map for {sport} {season} in {path}")

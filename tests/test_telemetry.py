@@ -64,7 +64,7 @@ class TestFileWriting:
 
     def test_the_directory_is_created_and_a_run_start_line_is_written(self, path):
         t = Telemetry(path, "r1", {"sport": "nba"})
-        lines = [json.loads(x) for x in path.read_text().splitlines()]
+        lines = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()]
         assert len(lines) == 1
         assert lines[0]["kind"] == "run_start" and lines[0]["sport"] == "nba"
         t.close()
@@ -73,14 +73,14 @@ class TestFileWriting:
         """Not on close: the interesting line is the one before the crash."""
         t = Telemetry(path, "r1", {})
         t.event("game", game_id="g1")
-        assert "g1" in path.read_text(), "line not visible before close"
+        assert "g1" in path.read_text(encoding="utf-8"), "line not visible before close"
         t.close()
 
     def test_each_line_carries_the_run_id_and_a_timestamp(self, path):
         t = Telemetry(path, "r1", {})
         t.event("game", game_id="g1")
         t.close()
-        for raw in path.read_text().splitlines():
+        for raw in path.read_text(encoding="utf-8").splitlines():
             row = json.loads(raw)
             assert row["run_id"] == "r1" and isinstance(row["ts"], float)
 
@@ -92,16 +92,16 @@ class TestFileWriting:
         t = Telemetry(path, "r1", {})
         t.event("game", thing=Weird())
         t.close()
-        assert "<weird>" in path.read_text()
+        assert "<weird>" in path.read_text(encoding="utf-8")
 
     def test_appending_does_not_truncate_an_earlier_run(self, path):
         Telemetry(path, "r1", {}).close()
         Telemetry(path, "r2", {}).close()
-        ids = {json.loads(x)["run_id"] for x in path.read_text().splitlines()}
+        ids = {json.loads(x)["run_id"] for x in path.read_text(encoding="utf-8").splitlines()}
         assert ids == {"r1", "r2"}
 
     def test_close_is_idempotent(self, path):
         t = Telemetry(path, "r1", {})
         t.close()
         t.close()  # must not raise on a closed handle
-        assert path.read_text().count('"run_end"') == 1
+        assert path.read_text(encoding="utf-8").count('"run_end"') == 1

@@ -89,7 +89,7 @@ The claim is about calibration, not profit. Nothing here places bets.
 | JSONL run telemetry and manifests | Built | `src/chira/telemetry.py` |
 | Snapshot writer, verifier and offline reader | Built | `src/chira/snapshot.py`, `scripts/make_snapshot.py` |
 | Snapshot analysis frame (home side, canonical order, the four looks) | Built | `src/chira/analysis.py` |
-| Test suite | 597 tests, offline, ruff-clean | `tests/` |
+| Test suite | 617 tests, offline, ruff-clean, run on Linux, Windows and macOS in CI | `tests/` |
 | Full census of all 5,084 games | **Done** (week 3): 4,661 priced, 423 misses, 145.6M raw price rows | `data/census.duckdb` (gitignored) |
 | Immutable Parquet snapshot | **Cut** (week 3): `census-20260913-224d6ad985e0`, 162 MB | `data/snapshots/` (gitignored) |
 | Coverage and calibration charts | **Built** (week 4) | `src/chira/charts.py`, `scripts/make_charts.py`, `docs/charts/` |
@@ -135,8 +135,10 @@ spread across the 2024-25 season, and see the validation gate pass on them. It t
 
 ### What you'll need
 
-- **macOS or Linux** with network access to `gamma-api.polymarket.com`,
-  `clob.polymarket.com`, `api-web.nhle.com` and `stats.nba.com`.
+- **macOS, Linux or Windows** with network access to `gamma-api.polymarket.com`,
+  `clob.polymarket.com`, `api-web.nhle.com` and `stats.nba.com`. The test suite runs on all
+  three in CI. On Windows, use PowerShell: every command in this README is a `uv run ...`
+  line that works unchanged, and the few that aren't give a Windows alternative.
 - **[uv](https://docs.astral.sh/uv/)** (tested with 0.9.28). uv installs Python for you.
 - **Python 3.12** exactly. `pyproject.toml` pins `>=3.12,<3.13` and `.python-version`
   says `3.12`.
@@ -170,7 +172,7 @@ You should see `0.1.0`.
 uv run pytest
 ```
 
-Expected: `597 passed`. The suite is offline. Any test that opens a socket fails, so this
+Expected: `617 passed`. The suite is offline. Any test that opens a socket fails, so this
 passes without a network connection.
 
 ### Step 3: Learn the week-1 abbreviation prior
@@ -267,8 +269,9 @@ Next: [run the full census](#how-to-run-a-full-census), or read
 
 ## How-to guides
 
-All commands run from the repository root. `uv run python` and `.venv/bin/python` are
-interchangeable here.
+All commands run from the repository root. They use `uv run python`, which works the same on
+macOS, Linux and Windows. If you prefer calling the virtualenv's interpreter directly, it is
+`.venv/bin/python` on macOS and Linux and `.venv\Scripts\python` on Windows.
 
 ### How to run a full census
 
@@ -278,10 +281,16 @@ This censuses every game for one sport-season and asserts the full reconciliatio
 **Prerequisites:** `data/abbr_map_resolved.json` exists with no unresolved teams, and the
 disk has room for the cache.
 
-1. Check free disk space. There is no cache size cap yet (TODOS P2):
+1. Check free disk space. There is no cache size cap yet (TODOS P2). On macOS or Linux:
 
    ```bash
    df -h .
+   ```
+
+   On Windows, in PowerShell (the `Free` column):
+
+   ```powershell
+   Get-PSDrive C
    ```
 
 2. Run one sport-season without `--limit`:
@@ -314,11 +323,24 @@ about 15 minutes.
 
 **Keep the machine awake and the lid open.** A sleeping laptop drops DNS. The census now waits
 out a lost network for up to 2 hours and continues the same game, but a closed lid freezes
-it. Run it under `caffeinate -i`:
+it.
+
+On macOS, run it under `caffeinate -i`:
 
 ```bash
 caffeinate -i uv run python scripts/run_census.py --sport nba --season 2024-25
 ```
+
+On Linux with systemd, under `systemd-inhibit`:
+
+```bash
+systemd-inhibit --what=sleep uv run python scripts/run_census.py --sport nba --season 2024-25
+```
+
+Windows has no command-line equivalent that needs no admin rights. Before a long run, set the
+machine to never sleep while plugged in (**Settings > System > Power**) and set closing the
+lid to **Do nothing** (**Control Panel > Power Options > Choose what closing the lid does**),
+or use the **Awake** tool from Microsoft PowerToys. Then run the command normally.
 
 **Verification:** each report shows `reconciliation` passing with `pending=0`, and no
 `partial_pass` field.
@@ -371,8 +393,7 @@ behind. Week 2 lost two slices to exactly this layering (see
 For a slice you intend to quote numbers from, use a fresh store and log:
 
 ```bash
-uv run python scripts/run_census.py --sport nhl --season 2024-25 --limit 200 \
-  --store data/slice-nhl-2024-25.duckdb --log data/logs/slice-nhl-2024-25.jsonl
+uv run python scripts/run_census.py --sport nhl --season 2024-25 --limit 200 --store data/slice-nhl-2024-25.duckdb --log data/logs/slice-nhl-2024-25.jsonl
 ```
 
 Keep the default `--cache .http-cache`: the cache is keyed by URL, so a fresh store still
@@ -445,6 +466,19 @@ runs.parquet
 
 Files are written read-only (`0444`) and directories `0555`. Cutting a second snapshot from
 an unchanged store fails, because the directory name is the store digest.
+
+On Windows the directory part is weaker: Windows honours the read-only flag on files but
+ignores it on directories, so a new file can still be dropped into a snapshot. That file is
+still caught, because verification rejects any file the manifest doesn't list.
+
+To delete a snapshot on purpose, make it writable first. `shutil.rmtree` fails on read-only
+files on Windows:
+
+```python
+from pathlib import Path
+from chira.snapshot import make_writable
+make_writable(Path("data/snapshots/census-20260913-224d6ad985e0"))
+```
 
 **Verification:** re-verify at any time. Silence means every file matches its checksum and no
 file was added or removed:

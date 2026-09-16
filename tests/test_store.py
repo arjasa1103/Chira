@@ -449,7 +449,7 @@ class TestMigrationToV3:
         from chira.store import SCHEMA
         path = tmp_path / "v2.duckdb"
         con = duckdb.connect(str(path))
-        v2_schema = (SCHEMA.read_text()
+        v2_schema = (SCHEMA.read_text(encoding="utf-8")
                      .replace("    p_home_t6h       DOUBLE,\n", "")
                      .replace("    p_home_t24h      DOUBLE,\n", ""))
         v2_schema = v2_schema[:v2_schema.index("CREATE TABLE IF NOT EXISTS price_points")] \
@@ -474,7 +474,7 @@ class TestMigrationToV4:
         from chira.store import SCHEMA
         path = tmp_path / "v3.duckdb"
         con = duckdb.connect(str(path))
-        con.execute(SCHEMA.read_text())
+        con.execute(SCHEMA.read_text(encoding="utf-8"))
         con.execute("ALTER TABLE games DROP COLUMN start_time_utc")
         for col in ("market_type", "market_question", "cutoff_source", "league_start_time",
                     "gamma_delta_min", "p_home_close_gamma"):

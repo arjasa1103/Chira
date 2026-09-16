@@ -143,7 +143,7 @@ class Store:
         existed = self.db.execute(
             "SELECT count(*) FROM duckdb_tables() WHERE table_name = 'games'"
         ).fetchone()[0] > 0
-        self.db.execute(SCHEMA.read_text())
+        self.db.execute(SCHEMA.read_text(encoding="utf-8"))
         current = self.db.execute(
             "SELECT v FROM meta WHERE k = 'schema_version'").fetchone()
         if current is not None:

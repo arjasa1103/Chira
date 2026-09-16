@@ -491,20 +491,20 @@ class TestAbbrMapLoading:
         """A partial map books every game of the missing team as `no_market`."""
         p = tmp_path / "m.json"
         p.write_text(json.dumps({"seasons": {"2024-25": {"nhl": {
-            "map": {"bos": "bos"}, "unresolved": ["vgk"]}}}}))
+            "map": {"bos": "bos"}, "unresolved": ["vgk"]}}}}), encoding="utf-8")
         with pytest.raises(ValueError, match="unresolved teams"):
             load_abbr_map(str(p), "2024-25", "nhl")
 
     def test_a_missing_sport_season_refuses_to_load(self, tmp_path):
         p = tmp_path / "m.json"
-        p.write_text(json.dumps({"seasons": {}}))
+        p.write_text(json.dumps({"seasons": {}}), encoding="utf-8")
         with pytest.raises(KeyError):
             load_abbr_map(str(p), "2024-25", "nhl")
 
     def test_a_resolved_map_loads(self, tmp_path):
         p = tmp_path / "m.json"
         p.write_text(json.dumps({"seasons": {"2024-25": {"nhl": {
-            "map": {"vgk": "las"}, "unresolved": []}}}}))
+            "map": {"vgk": "las"}, "unresolved": []}}}}), encoding="utf-8")
         assert load_abbr_map(str(p), "2024-25", "nhl") == {"vgk": "las"}
 
 

@@ -1,6 +1,6 @@
 """Cut the immutable census snapshot (T7) and verify it by reading it back.
 
-    .venv/bin/python scripts/make_snapshot.py
+    uv run python scripts/make_snapshot.py
 
 Refuses unless every sport-season in the store satisfies
 `scheduled == priced + misses` and every priced game carries its raw series.
