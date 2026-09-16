@@ -66,9 +66,20 @@ corrected here):
 **Collector, split across two slots** (the single week-4 slot was unexecutable: proving an
 availability status *change* requires regular-season injury reports, and the NBA season tips
 late October, after week 4 ends Oct 12):
-- **Week 4 (done 2026-09-16, with one item outstanding):** prices-only collector
-  (`src/chira/collector.py`), dead-man's switch (external monitor alerting on ABSENCE
-  of a success ping), keepalive against the 60-day Actions auto-disable, pre-season dry run.
+- **Week 4 (2026-09-16): three of the four items landed.**
+  - [x] **Prices-only collector** (`src/chira/collector.py`, `scripts/run_collector.py`).
+  - [x] **Dead-man's switch** — external monitor alerting on the ABSENCE of a success ping.
+        Built and provider-pluggable; **not armed** until the secret is set, see below.
+  - [x] **Pre-season dry run** (`--dry-run`, plus offline tests of every gate).
+  - [ ] **Keepalive against the 60-day Actions auto-disable — NOT built, and probably not
+        needed.** Recorded honestly rather than ticked: the 60-day clock only disables
+        workflows that are *enabled and scheduled*, this repo's cron is commented out, and
+        the repo takes commits weekly, so the inactivity window is never approached. A
+        keepalive would also duplicate the switch above, which already catches a disabled
+        workflow as silence — and a keepalive that is itself a scheduled workflow faces the
+        same auto-disable it exists to prevent. Revisit when the cron is enabled; tracked in
+        TODOS.md.
+
   The workflow is committed but **deliberately not enabled**, and the live polling path is
   code-complete but unexercised — the 2026-27 slate does not exist yet, so the week-4
   verification is the dry run plus offline tests of the gates. See notes/week4-charts.md.

@@ -79,12 +79,22 @@ an empty target list and captures zero rows by construction. The missing piece i
 function — resolve each upcoming game to its market's token ids — and it reuses the census's
 `schedule` / `slug_candidates` / `resolve.confirm` machinery rather than needing new code.
 
-**Two things that must happen before the season, in order:**
+**Three things that must happen before the season, in order:**
 
-1. **Pick a monitoring provider and set `CHIRA_HEARTBEAT_URL`.** Until then the dead-man's
-   switch is not armed, and an unarmed switch is the failure mode the switch exists for.
+1. **Create the Healthchecks.io check and set `CHIRA_HEARTBEAT_URL` as a repo secret.** The
+   provider is chosen (user decision, 2026-09-16) and the code defaults to it, so this is an
+   account and a secret, not a code change. Until it is set the dead-man's switch is not
+   armed, and an unarmed switch is the failure mode the switch exists for.
 2. **Run one real session against live pre-season games and read the rows.** A collector
    whose first live run is also its first unattended run is untested in production.
+3. **Decide the keepalive question when the cron is uncommented.** The week-4 slot listed a
+   keepalive against the 60-day Actions auto-disable and it was NOT built. Probably correct:
+   the clock only disables workflows that are enabled and scheduled, the cron is commented
+   out, and this repo takes commits weekly so the window is never approached. A keepalive
+   would also duplicate the dead-man's switch, which already catches a disabled workflow as
+   silence, and a keepalive that is itself a scheduled workflow faces the same auto-disable
+   it exists to prevent. If the repo ever goes quiet for weeks with the cron live, the
+   honest fix is an external scheduler, not a self-referential workflow.
 
 **Do not enable the workflow before both.** An enabled cron with no heartbeat is strictly
 worse than no cron: it burns quota and produces silence that nobody is watching for.
