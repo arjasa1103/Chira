@@ -1,0 +1,42 @@
+name: tests
+
+# Tests and lint on push (PLAN.md, CI/CD section). No secrets are referenced
+# here, so this workflow is safe to run on pull requests from forks.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # The `store` extra carries pyarrow and matplotlib, which the snapshot
+      # and chart tests import. `model` (jax/numpyro) is deliberately NOT
+      # installed: weeks 1-7 must not pay for a model stack they do not use.
+      - name: Install
+        run: uv sync --extra store --group dev
+
+      - name: Lint
+        run: uv run ruff check src/ scripts/ tests/
+
+      # The suite is offline by design: tests/conftest.py replaces socket.socket
+      # so any test that reaches for the network fails loudly instead of
+      # depending on a third-party API being up. Nothing here needs a token.
+      - name: Test
+        run: uv run pytest -q

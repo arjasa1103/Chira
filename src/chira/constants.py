@@ -86,14 +86,49 @@ HISTORY_PAD_SECONDS = 3600
 # pool (see PREREGISTRATION.md section 4). Every bound is rounded OUTWARD from
 # the simulated null p99 / 95% CI: rounding inward re-creates the false-fire
 # defect the simulation existed to remove.
+#
+# The week-1 derivation, from a 128-game NBA-only pool at an assumed n=5,084:
 #   null p99 ECE at n=5,084 = 0.0260  -> gate 0.03
 #   null p99 max-bin-dev    = 0.0713  -> gate 0.08
-#   null 95% CI slope       = [0.9305, 1.0703] -> gate [0.93, 1.08]
+#   null 95% CI slope       = [0.9305, 1.0703] -> gate [0.93, 1.08]  SUPERSEDED
 #   null 95% CI intercept   = [-0.0612, 0.0640] -> gate [-0.07, 0.07]
+#
+# PREREGISTRATION.md Amendment 2 (week 4): re-measured on the real census pool
+# at the OPERATIVE n, the slope band had to widen to [0.91, 1.10]. See the
+# CENSUS_NULL_* block below for the numbers that forced it.
 GATE_ECE_MAX = 0.03
 GATE_MAX_BIN_DEV = 0.08
-GATE_SLOPE_BAND = (0.93, 1.08)
+GATE_SLOPE_BAND = (0.91, 1.10)
 GATE_INTERCEPT_BAND = (-0.07, 0.07)
+
+# The null re-measured on the REAL census prices, which section 4's pool caveat
+# required once NHL prices existed (scripts/derive_null_bands.py, 1,500
+# replicates, seed 7). Committed as numbers rather than re-simulated in the
+# test suite for two reasons: `data/` is gitignored, so a test that read the
+# snapshot would pass here and fail on a clean clone; and the week-1 guard test
+# had been asserting against a FABRICATED uniform(0.1, 0.9) pool, which is less
+# concentrated than reality and is precisely why it never caught the breach.
+#
+# n is 4,661 (games actually PRICED), not the 5,084 scheduled that the week-1
+# table assumed. Fewer observations and a more concentrated pool both widen the
+# null, independently.
+CENSUS_NULL_POOLED_N = 4661
+CENSUS_NULL_ECE_P99 = 0.0272
+CENSUS_NULL_MAX_BIN_DEV_P99 = 0.0729
+CENSUS_NULL_SLOPE_CI = (0.9183, 1.0908)
+CENSUS_NULL_INTERCEPT_CI = (-0.0606, 0.0620)
+
+# Why the pooled null widened: NHL moneylines sit far closer to 0.50, where
+# Bernoulli variance is highest. Measured on the census, not assumed.
+CENSUS_POOL_SHARE_INSIDE_35_65 = {"nba": 0.4053, "nhl": 0.8264, "all": 0.6046}
+CENSUS_POOL_EXPECTED_VARIANCE = {"nba": 0.1971, "nhl": 0.2375, "all": 0.2162}
+
+# Per-n reference rows for per-stratum work, which section 4 forbids evaluating
+# against the pooled numbers above. (sport, n) -> ECE p99.
+CENSUS_NULL_ECE_P99_BY_N = {
+    ("nba", 1226): 0.0515, ("nba", 2455): 0.0355,
+    ("nhl", 896): 0.0655, ("nhl", 1310): 0.0553, ("nhl", 2206): 0.0416,
+}
 
 # Miss reason enum. Every scheduled game that is not `priced` carries exactly
 # one of these, and the store rejects anything else: an unconstrained reason

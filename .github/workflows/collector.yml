@@ -1,0 +1,101 @@
+name: collector
+
+# The forward prices-only collector (PLAN.md Phase 6).
+#
+# NOT ENABLED YET. The 2026-27 seasons are the target and the code no-ops
+# outside its configured season windows, so until late October 2026 every run
+# exits 0 having done nothing. Turning this on is a deliberate act: it needs the
+# CHIRA_HEARTBEAT_URL secret set first, or the dead-man's switch is not armed
+# and a collector that never starts will report nothing to nobody.
+#
+# SCHEDULING ARITHMETIC. The poll window is 16:00-02:30 ET, which is
+# 20:00-06:30 UTC under EDT and 21:00-07:30 UTC under EST: a union of
+# 20:00-07:30 UTC, about 11.5 hours. One Actions job is capped at 6 hours and a
+# session stops at 5h30 to leave room to report its own outcome, so TWO chained
+# sessions cover the window. The cron is pinned in UTC because that is all
+# GitHub offers; the real gate is computed in America/New_York inside
+# collector.py, so a DST shift moves the effective window and not the coverage.
+#
+# Actions cron is best-effort: commonly delayed 10+ minutes and dropped under
+# load. That is treated as measured, not assumed away -- every row carries its
+# own capture timestamp, and the external monitor is what notices a run that
+# never happened.
+# THE CRON IS COMMENTED OUT ON PURPOSE, and this is not belt-and-braces: a
+# `schedule:` trigger on the default branch is armed by GitHub the moment it
+# lands, with no further action. Leaving it live would start firing twice a day
+# immediately -- burning Actions minutes on a no-op, starting the 60-day
+# auto-disable clock, and, once late October arrives, running the LIVE polling
+# path for the first time unattended with no heartbeat configured.
+#
+# TO ENABLE, in this order:
+#   1. Pick a monitoring provider and set the CHIRA_HEARTBEAT_URL repo secret.
+#   2. Run one real session by hand (workflow_dispatch with dry_run=false) and
+#      read the captured rows.
+#   3. Only then uncomment the two crons below.
+on:
+  # schedule:
+  #   - cron: "0 20 * * *"   # session 1: ~16:00 ET
+  #   - cron: "45 1 * * *"   # session 2: ~20:45 ET, runs past midnight ET
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Decide everything, touch no network"
+        type: boolean
+        default: true
+
+# `schedule` and `workflow_dispatch` only: never a fork-triggerable trigger,
+# because this job reads a secret. A `pull_request` trigger here would expose
+# the heartbeat URL to any fork that opened a PR.
+permissions:
+  contents: read
+
+concurrency:
+  # Two chained sessions must never overlap at a boundary and double-poll. The
+  # dedup key would collapse the duplicates anyway, but overlapping runs waste
+  # the quota this schedule exists to protect.
+  group: collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350   # 5h50, just above the session's own 5h30 stop
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install
+        run: uv sync --group dev
+
+      - name: Report what a session would do
+        run: uv run python scripts/run_collector.py --dry-run
+
+      - name: Collect
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          # Absent in forks and in local runs, which `Heartbeat` reports rather
+          # than failing on.
+          CHIRA_HEARTBEAT_URL: ${{ secrets.CHIRA_HEARTBEAT_URL }}
+        # A zero-capture run inside an open window exits 1 and fails the job
+        # visibly (T14). Off-season it exits 0.
+        run: uv run python scripts/run_collector.py
+
+      # The quote store is NEVER committed to the tree (PLAN.md: "never commit a
+      # growing DuckDB file into the git tree"). It leaves as a build artifact.
+      - name: Upload quotes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-quotes-${{ github.run_id }}
+          path: |
+            data/collector/
+            data/logs/collector.jsonl
+          if-no-files-found: ignore
+          retention-days: 90

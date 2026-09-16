@@ -1,0 +1,1520 @@
+{
+  "bootstrap_reps": 2000,
+  "calibration_close": {
+    "nba/2024-25": {
+      "band_hi": [
+        0.23648648648648649,
+        0.38313015600751443,
+        0.5036509867531765,
+        0.5714285714285714,
+        0.7284080767514501,
+        0.7482529375386517,
+        0.8175675675675675,
+        0.9090909090909091
+      ],
+      "band_lo": [
+        0.11887205387205386,
+        0.23898901717825966,
+        0.341080866807611,
+        0.42045454545454547,
+        0.5723684210526315,
+        0.6024585921325052,
+        0.68262967308626,
+        0.8060561497326203
+      ],
+      "bootstrap": {
+        "brier": {
+          "hi": 0.20959211848555737,
+          "lo": 0.1891960963130594,
+          "p50": 0.19917134692839708
+        },
+        "cox_failures": 0,
+        "ece": {
+          "hi": 0.06019465012205044,
+          "lo": 0.023085862489829124,
+          "p50": 0.0393207892595606
+        },
+        "intercept": {
+          "hi": 0.08841561138171347,
+          "lo": -0.15843565548768293,
+          "p50": -0.03442298026264667
+        },
+        "reps": 2000,
+        "slope": {
+          "hi": 1.1296252390161738,
+          "lo": 0.8637021154765523,
+          "p50": 0.9912519577669874
+        }
+      },
+      "brier": 0.19919775447518306,
+      "cox_error": null,
+      "cox_intercept": -0.035117223417220525,
+      "cox_slope": 0.9895145335063364,
+      "curve": {
+        "mean_p": [
+          0.18152597402597404,
+          0.32266447368421053,
+          0.41362676056338027,
+          0.516987951807229,
+          0.6130065359477124,
+          0.6952758620689655,
+          0.7754575163398693,
+          0.8731737804878047
+        ],
+        "n": [
+          154,
+          152,
+          142,
+          166,
+          153,
+          145,
+          153,
+          164
+        ],
+        "obs_rate": [
+          0.17532467532467533,
+          0.3092105263157895,
+          0.4225352112676056,
+          0.4939759036144578,
+          0.6470588235294118,
+          0.6758620689655173,
+          0.7516339869281046,
+          0.8597560975609756
+        ],
+        "p_hi": [
+          0.27,
+          0.365,
+          0.46,
+          0.57,
+          0.655,
+          0.73,
+          0.82,
+          0.9655
+        ],
+        "p_lo": [
+          0.065,
+          0.275,
+          0.37,
+          0.465,
+          0.575,
+          0.66,
+          0.735,
+          0.825
+        ]
+      },
+      "ece_10bin": 0.027148494711147227,
+      "ece_10bin_within_gate": true,
+      "ece_chart_bins": 0.021411310008136668,
+      "home_win_rate": 0.5443449959316518,
+      "intercept_ci_inside_band": false,
+      "look_coverage": {
+        "p_close": {
+          "available": 1229,
+          "missing": 0
+        },
+        "p_t1h": {
+          "available": 1228,
+          "missing": 1
+        },
+        "p_t24h": {
+          "available": 1129,
+          "missing": 100
+        },
+        "p_t6h": {
+          "available": 1216,
+          "missing": 13
+        }
+      },
+      "mean_price": 0.5516724979658258,
+      "murphy": {
+        "brier_direct": 0.19919775447518306,
+        "brier_from_decomp": 0.20067168149599635,
+        "reliability": 0.0006947358147477724,
+        "resolution": 0.04805657565457323,
+        "uncertainty": 0.2480335213358218
+      },
+      "n": 1229,
+      "n_bins": 8,
+      "slope_ci_inside_band": false
+    },
+    "nba/2025-26": {
+      "band_hi": [
+        0.19737051625879987,
+        0.4453141412815126,
+        0.48215222277722275,
+        0.5821917808219178,
+        0.6728454415954416,
+        0.793939393939394,
+        0.8513513513513513,
+        0.9135802469135802
+      ],
+      "band_lo": [
+        0.08333333333333333,
+        0.28125,
+        0.323343995239335,
+        0.4276278123744476,
+        0.5185073627844712,
+        0.6515977484303962,
+        0.7191780821917808,
+        0.8106460532931121
+      ],
+      "bootstrap": {
+        "brier": {
+          "hi": 0.20395866101141924,
+          "lo": 0.18400077717169655,
+          "p50": 0.1941286989192496
+        },
+        "cox_failures": 1,
+        "ece": {
+          "hi": 0.05979462683523652,
+          "lo": 0.025197155383360523,
+          "p50": 0.04112234910277324
+        },
+        "intercept": {
+          "hi": 0.13841671357423677,
+          "lo": -0.11881549127158525,
+          "p50": 0.007583217916452493
+        },
+        "reps": 2000,
+        "slope": {
+          "hi": 1.1934105780027544,
+          "lo": 0.9138497441305794,
+          "p50": 1.0466938531539098
+        }
+      },
+      "brier": 0.19413161745513866,
+      "cox_error": null,
+      "cox_intercept": 0.007372091436795562,
+      "cox_slope": 1.0446961197341131,
+      "curve": {
+        "mean_p": [
+          0.17171710526315792,
+          0.31996376811594196,
+          0.4161038961038961,
+          0.508453947368421,
+          0.598627450980392,
+          0.6863522012578616,
+          0.7742258064516129,
+          0.8777668711656441
+        ],
+        "n": [
+          152,
+          138,
+          154,
+          152,
+          153,
+          159,
+          155,
+          163
+        ],
+        "obs_rate": [
+          0.13815789473684212,
+          0.36231884057971014,
+          0.4025974025974026,
+          0.506578947368421,
+          0.5947712418300654,
+          0.7232704402515723,
+          0.7870967741935484,
+          0.8650306748466258
+        ],
+        "p_hi": [
+          0.255,
+          0.37,
+          0.46,
+          0.56,
+          0.635,
+          0.73,
+          0.82,
+          0.9795
+        ],
+        "p_lo": [
+          0.045,
+          0.265,
+          0.375,
+          0.465,
+          0.565,
+          0.645,
+          0.735,
+          0.825
+        ]
+      },
+      "ece_10bin": 0.024070146818923374,
+      "ece_10bin_within_gate": true,
+      "ece_chart_bins": 0.020252854812398,
+      "home_win_rate": 0.5538336052202284,
+      "intercept_ci_inside_band": false,
+      "look_coverage": {
+        "p_close": {
+          "available": 1226,
+          "missing": 0
+        },
+        "p_t1h": {
+          "available": 1226,
+          "missing": 0
+        },
+        "p_t24h": {
+          "available": 1225,
+          "missing": 1
+        },
+        "p_t6h": {
+          "available": 1226,
+          "missing": 0
+        }
+      },
+      "mean_price": 0.5509151712887439,
+      "murphy": {
+        "brier_direct": 0.19413161745513866,
+        "brier_from_decomp": 0.1959681309130207,
+        "reliability": 0.000590187358318678,
+        "resolution": 0.05172399939429057,
+        "uncertainty": 0.2471019429489926
+      },
+      "n": 1226,
+      "n_bins": 8,
+      "slope_ci_inside_band": false
+    },
+    "nhl/2024-25": {
+      "band_hi": [
+        0.4817182055749128,
+        0.5555555555555556,
+        0.6354179495073892,
+        0.717108666061706,
+        0.8095238095238095
+      ],
+      "band_lo": [
+        0.32679411764705885,
+        0.4166666666666667,
+        0.49,
+        0.5652173913043478,
+        0.6898395721925134
+      ],
+      "bootstrap": {
+        "brier": {
+          "hi": 0.23816004115513392,
+          "lo": 0.22243604282924104,
+          "p50": 0.23049188058035716
+        },
+        "cox_failures": 0,
+        "ece": {
+          "hi": 0.07768777901785716,
+          "lo": 0.03203976004464289,
+          "p50": 0.053228236607142834
+        },
+        "intercept": {
+          "hi": 0.28808820297157833,
+          "lo": 0.004942802004719651,
+          "p50": 0.14646572893262993
+        },
+        "reps": 2000,
+        "slope": {
+          "hi": 1.3223668236868764,
+          "lo": 0.7542601998421483,
+          "p50": 1.0263481538468269
+        }
+      },
+      "brier": 0.23042974330357144,
+      "cox_error": null,
+      "cox_intercept": 0.14746565882463883,
+      "cox_slope": 1.0242912314609287,
+      "curve": {
+        "mean_p": [
+          0.3567924528301887,
+          0.4536315789473684,
+          0.545054054054054,
+          0.6113836477987422,
+          0.6983990147783251
+        ],
+        "n": [
+          159,
+          190,
+          185,
+          159,
+          203
+        ],
+        "obs_rate": [
+          0.4025157232704403,
+          0.4842105263157895,
+          0.5621621621621622,
+          0.6415094339622641,
+          0.7487684729064039
+        ],
+        "p_hi": [
+          0.41,
+          0.505,
+          0.58,
+          0.64,
+          0.825
+        ],
+        "p_lo": [
+          0.2,
+          0.415,
+          0.51,
+          0.585,
+          0.645
+        ]
+      },
+      "ece_10bin": 0.03488839285714283,
+      "ece_10bin_within_gate": false,
+      "ece_chart_bins": 0.034888392857142854,
+      "home_win_rate": 0.5736607142857143,
+      "intercept_ci_inside_band": false,
+      "look_coverage": {
+        "p_close": {
+          "available": 896,
+          "missing": 0
+        },
+        "p_t1h": {
+          "available": 896,
+          "missing": 0
+        },
+        "p_t24h": {
+          "available": 863,
+          "missing": 33
+        },
+        "p_t6h": {
+          "available": 888,
+          "missing": 8
+        }
+      },
+      "mean_price": 0.5387723214285715,
+      "murphy": {
+        "brier_direct": 0.23042974330357144,
+        "brier_from_decomp": 0.23129819046787709,
+        "reliability": 0.0014481292259687843,
+        "resolution": 0.014724037929010055,
+        "uncertainty": 0.24457409917091835
+      },
+      "n": 896,
+      "n_bins": 5,
+      "slope_ci_inside_band": false
+    },
+    "nhl/2025-26": {
+      "band_hi": [
+        0.5,
+        0.5614095169430425,
+        0.5388689931931322,
+        0.5691056910569106,
+        0.579242734724292,
+        0.6000280898876402,
+        0.6743035714285713,
+        0.7368505398110661
+      ],
+      "band_lo": [
+        0.3333333333333333,
+        0.40853658536585363,
+        0.39285714285714285,
+        0.3937007874015748,
+        0.42857142857142855,
+        0.4502850877192982,
+        0.5340813329928498,
+        0.6
+      ],
+      "bootstrap": {
+        "brier": {
+          "hi": 0.24955101109255726,
+          "lo": 0.23955164754293892,
+          "p50": 0.24467348520992366
+        },
+        "cox_failures": 0,
+        "ece": {
+          "hi": 0.06689136450381673,
+          "lo": 0.027241889312977125,
+          "p50": 0.04517270992366414
+        },
+        "intercept": {
+          "hi": 0.09748002279845912,
+          "lo": -0.13262355953529198,
+          "p50": -0.01822118343640789
+        },
+        "reps": 2000,
+        "slope": {
+          "hi": 1.0818398051798774,
+          "lo": 0.5130638341898925,
+          "p50": 0.7865543913717945
+        }
+      },
+      "brier": 0.2445865314885496,
+      "cox_error": null,
+      "cox_intercept": -0.018178743745333875,
+      "cox_slope": 0.7903354165314558,
+      "curve": {
+        "mean_p": [
+          0.3760071942446043,
+          0.441624203821656,
+          0.48121693121693115,
+          0.5171600000000002,
+          0.5454970760233918,
+          0.5750282485875706,
+          0.6119491525423729,
+          0.6807
+        ],
+        "n": [
+          139,
+          157,
+          189,
+          125,
+          171,
+          177,
+          177,
+          175
+        ],
+        "obs_rate": [
+          0.4172661870503597,
+          0.4840764331210191,
+          0.4656084656084656,
+          0.48,
+          0.5029239766081871,
+          0.5254237288135594,
+          0.6045197740112994,
+          0.6685714285714286
+        ],
+        "p_hi": [
+          0.42,
+          0.46,
+          0.5,
+          0.53,
+          0.56,
+          0.59,
+          0.63,
+          0.795
+        ],
+        "p_lo": [
+          0.255,
+          0.425,
+          0.465,
+          0.505,
+          0.535,
+          0.565,
+          0.595,
+          0.635
+        ]
+      },
+      "ece_10bin": 0.032093511450381695,
+      "ece_10bin_within_gate": false,
+      "ece_chart_bins": 0.027986641221374037,
+      "home_win_rate": 0.5229007633587787,
+      "intercept_ci_inside_band": false,
+      "look_coverage": {
+        "p_close": {
+          "available": 1310,
+          "missing": 0
+        },
+        "p_t1h": {
+          "available": 1310,
+          "missing": 0
+        },
+        "p_t24h": {
+          "available": 1310,
+          "missing": 0
+        },
+        "p_t6h": {
+          "available": 1310,
+          "missing": 0
+        }
+      },
+      "mean_price": 0.5341164122137405,
+      "murphy": {
+        "brier_direct": 0.2445865314885496,
+        "brier_from_decomp": 0.24534047577049065,
+        "reliability": 0.0013215854106508687,
+        "resolution": 0.005456664677745457,
+        "uncertainty": 0.24947555503758523
+      },
+      "n": 1310,
+      "n_bins": 8,
+      "slope_ci_inside_band": false
+    }
+  },
+  "census_git_hash": "1013d72",
+  "coverage": {
+    "nba/2024-25": {
+      "coverage": 0.9992,
+      "missed": 1,
+      "priced": 1229,
+      "scheduled": 1230,
+      "volume_missing": 8,
+      "weeks": [
+        {
+          "median_volume": 47894.064885,
+          "missed": 1,
+          "priced": 51,
+          "scheduled": 52,
+          "volume_missing": 0,
+          "week": 1,
+          "week_start": "2024-10-22"
+        },
+        {
+          "median_volume": 57266.7619275,
+          "missed": 0,
+          "priced": 56,
+          "scheduled": 56,
+          "volume_missing": 0,
+          "week": 2,
+          "week_start": "2024-10-29"
+        },
+        {
+          "median_volume": 98546.38677000001,
+          "missed": 0,
+          "priced": 48,
+          "scheduled": 48,
+          "volume_missing": 0,
+          "week": 3,
+          "week_start": "2024-11-06"
+        },
+        {
+          "median_volume": 166226.063909,
+          "missed": 0,
+          "priced": 55,
+          "scheduled": 55,
+          "volume_missing": 8,
+          "week": 4,
+          "week_start": "2024-11-12"
+        },
+        {
+          "median_volume": 214916.648989,
+          "missed": 0,
+          "priced": 48,
+          "scheduled": 48,
+          "volume_missing": 0,
+          "week": 5,
+          "week_start": "2024-11-19"
+        },
+        {
+          "median_volume": 208539.8776525,
+          "missed": 0,
+          "priced": 48,
+          "scheduled": 48,
+          "volume_missing": 0,
+          "week": 6,
+          "week_start": "2024-11-26"
+        },
+        {
+          "median_volume": 219442.8766925,
+          "missed": 0,
+          "priced": 52,
+          "scheduled": 52,
+          "volume_missing": 0,
+          "week": 7,
+          "week_start": "2024-12-03"
+        },
+        {
+          "median_volume": 383709.1345345,
+          "missed": 0,
+          "priced": 30,
+          "scheduled": 30,
+          "volume_missing": 0,
+          "week": 8,
+          "week_start": "2024-12-10"
+        },
+        {
+          "median_volume": 195396.746369,
+          "missed": 0,
+          "priced": 45,
+          "scheduled": 45,
+          "volume_missing": 0,
+          "week": 9,
+          "week_start": "2024-12-19"
+        },
+        {
+          "median_volume": 390968.227526,
+          "missed": 0,
+          "priced": 44,
+          "scheduled": 44,
+          "volume_missing": 0,
+          "week": 10,
+          "week_start": "2024-12-25"
+        },
+        {
+          "median_volume": 374929.414732,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 11,
+          "week_start": "2024-12-31"
+        },
+        {
+          "median_volume": 420136.58958649996,
+          "missed": 0,
+          "priced": 48,
+          "scheduled": 48,
+          "volume_missing": 0,
+          "week": 12,
+          "week_start": "2025-01-07"
+        },
+        {
+          "median_volume": 300714.612048,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 13,
+          "week_start": "2025-01-14"
+        },
+        {
+          "median_volume": 324207.1748115,
+          "missed": 0,
+          "priced": 52,
+          "scheduled": 52,
+          "volume_missing": 0,
+          "week": 14,
+          "week_start": "2025-01-21"
+        },
+        {
+          "median_volume": 414283.736947,
+          "missed": 0,
+          "priced": 51,
+          "scheduled": 51,
+          "volume_missing": 0,
+          "week": 15,
+          "week_start": "2025-01-28"
+        },
+        {
+          "median_volume": 372778.621332,
+          "missed": 0,
+          "priced": 55,
+          "scheduled": 55,
+          "volume_missing": 0,
+          "week": 16,
+          "week_start": "2025-02-04"
+        },
+        {
+          "median_volume": 406556.9567185,
+          "missed": 0,
+          "priced": 24,
+          "scheduled": 24,
+          "volume_missing": 0,
+          "week": 17,
+          "week_start": "2025-02-11"
+        },
+        {
+          "median_volume": 513412.3886005,
+          "missed": 0,
+          "priced": 42,
+          "scheduled": 42,
+          "volume_missing": 0,
+          "week": 18,
+          "week_start": "2025-02-19"
+        },
+        {
+          "median_volume": 362451.068863,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 19,
+          "week_start": "2025-02-25"
+        },
+        {
+          "median_volume": 383173.126858,
+          "missed": 0,
+          "priced": 59,
+          "scheduled": 59,
+          "volume_missing": 0,
+          "week": 20,
+          "week_start": "2025-03-04"
+        },
+        {
+          "median_volume": 477901.74390650005,
+          "missed": 0,
+          "priced": 54,
+          "scheduled": 54,
+          "volume_missing": 0,
+          "week": 21,
+          "week_start": "2025-03-11"
+        },
+        {
+          "median_volume": 369579.496578,
+          "missed": 0,
+          "priced": 51,
+          "scheduled": 51,
+          "volume_missing": 0,
+          "week": 22,
+          "week_start": "2025-03-18"
+        },
+        {
+          "median_volume": 375774.86388950003,
+          "missed": 0,
+          "priced": 52,
+          "scheduled": 52,
+          "volume_missing": 0,
+          "week": 23,
+          "week_start": "2025-03-25"
+        },
+        {
+          "median_volume": 314670.0848125,
+          "missed": 0,
+          "priced": 50,
+          "scheduled": 50,
+          "volume_missing": 0,
+          "week": 24,
+          "week_start": "2025-04-01"
+        },
+        {
+          "median_volume": 302506.339246,
+          "missed": 0,
+          "priced": 55,
+          "scheduled": 55,
+          "volume_missing": 0,
+          "week": 25,
+          "week_start": "2025-04-08"
+        }
+      ],
+      "worst_week": {
+        "priced": 51,
+        "scheduled": 52,
+        "week": 1,
+        "week_start": "2024-10-22"
+      }
+    },
+    "nba/2025-26": {
+      "coverage": 0.9967,
+      "missed": 4,
+      "priced": 1226,
+      "scheduled": 1230,
+      "volume_missing": 161,
+      "weeks": [
+        {
+          "median_volume": 1339364.232549,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 1,
+          "week_start": "2025-10-21"
+        },
+        {
+          "median_volume": 1039449.3564785,
+          "missed": 0,
+          "priced": 50,
+          "scheduled": 50,
+          "volume_missing": 0,
+          "week": 2,
+          "week_start": "2025-10-28"
+        },
+        {
+          "median_volume": 1205487.726655,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 3,
+          "week_start": "2025-11-04"
+        },
+        {
+          "median_volume": 1773494.261243,
+          "missed": 0,
+          "priced": 51,
+          "scheduled": 51,
+          "volume_missing": 0,
+          "week": 4,
+          "week_start": "2025-11-11"
+        },
+        {
+          "median_volume": 1683313.401784,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 5,
+          "week_start": "2025-11-18"
+        },
+        {
+          "median_volume": 1557619.4507255,
+          "missed": 0,
+          "priced": 48,
+          "scheduled": 48,
+          "volume_missing": 0,
+          "week": 6,
+          "week_start": "2025-11-25"
+        },
+        {
+          "median_volume": 1774927.469401,
+          "missed": 0,
+          "priced": 49,
+          "scheduled": 49,
+          "volume_missing": 0,
+          "week": 7,
+          "week_start": "2025-12-02"
+        },
+        {
+          "median_volume": 2064720.033169,
+          "missed": 0,
+          "priced": 30,
+          "scheduled": 30,
+          "volume_missing": 0,
+          "week": 8,
+          "week_start": "2025-12-09"
+        },
+        {
+          "median_volume": 1770976.496124,
+          "missed": 0,
+          "priced": 42,
+          "scheduled": 42,
+          "volume_missing": 0,
+          "week": 9,
+          "week_start": "2025-12-17"
+        },
+        {
+          "median_volume": 1816273.313685,
+          "missed": 0,
+          "priced": 54,
+          "scheduled": 54,
+          "volume_missing": 0,
+          "week": 10,
+          "week_start": "2025-12-23"
+        },
+        {
+          "median_volume": 1913793.600683,
+          "missed": 0,
+          "priced": 52,
+          "scheduled": 52,
+          "volume_missing": 0,
+          "week": 11,
+          "week_start": "2025-12-30"
+        },
+        {
+          "median_volume": 2278353.719758,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 12,
+          "week_start": "2026-01-06"
+        },
+        {
+          "median_volume": 2307503.54877,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 13,
+          "week_start": "2026-01-13"
+        },
+        {
+          "median_volume": 2362609.2064725,
+          "missed": 1,
+          "priced": 48,
+          "scheduled": 49,
+          "volume_missing": 0,
+          "week": 14,
+          "week_start": "2026-01-20"
+        },
+        {
+          "median_volume": 2559239.374125,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 15,
+          "week_start": "2026-01-27"
+        },
+        {
+          "median_volume": 2600234.378101,
+          "missed": 0,
+          "priced": 55,
+          "scheduled": 55,
+          "volume_missing": 0,
+          "week": 16,
+          "week_start": "2026-02-03"
+        },
+        {
+          "median_volume": 2753048.680615,
+          "missed": 0,
+          "priced": 21,
+          "scheduled": 21,
+          "volume_missing": 0,
+          "week": 17,
+          "week_start": "2026-02-10"
+        },
+        {
+          "median_volume": 2750839.75834,
+          "missed": 0,
+          "priced": 39,
+          "scheduled": 39,
+          "volume_missing": 0,
+          "week": 18,
+          "week_start": "2026-02-19"
+        },
+        {
+          "median_volume": 2660881.301228,
+          "missed": 1,
+          "priced": 51,
+          "scheduled": 52,
+          "volume_missing": 0,
+          "week": 19,
+          "week_start": "2026-02-24"
+        },
+        {
+          "median_volume": 2348912.56004,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 41,
+          "week": 20,
+          "week_start": "2026-03-03"
+        },
+        {
+          "median_volume": 3480739.6246609916,
+          "missed": 0,
+          "priced": 56,
+          "scheduled": 56,
+          "volume_missing": 49,
+          "week": 21,
+          "week_start": "2026-03-10"
+        },
+        {
+          "median_volume": null,
+          "missed": 1,
+          "priced": 55,
+          "scheduled": 56,
+          "volume_missing": 55,
+          "week": 22,
+          "week_start": "2026-03-17"
+        },
+        {
+          "median_volume": 2354853.3047144976,
+          "missed": 0,
+          "priced": 52,
+          "scheduled": 52,
+          "volume_missing": 16,
+          "week": 23,
+          "week_start": "2026-03-24"
+        },
+        {
+          "median_volume": 2300790.2037880193,
+          "missed": 1,
+          "priced": 49,
+          "scheduled": 50,
+          "volume_missing": 0,
+          "week": 24,
+          "week_start": "2026-03-31"
+        },
+        {
+          "median_volume": 1785013.9422819947,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 25,
+          "week_start": "2026-04-07"
+        }
+      ],
+      "worst_week": {
+        "priced": 48,
+        "scheduled": 49,
+        "week": 14,
+        "week_start": "2026-01-20"
+      }
+    },
+    "nhl/2024-25": {
+      "coverage": 0.6829,
+      "missed": 416,
+      "priced": 896,
+      "scheduled": 1312,
+      "volume_missing": 0,
+      "weeks": [
+        {
+          "median_volume": null,
+          "missed": 19,
+          "priced": 0,
+          "scheduled": 19,
+          "volume_missing": 0,
+          "week": 1,
+          "week_start": "2024-10-04"
+        },
+        {
+          "median_volume": null,
+          "missed": 51,
+          "priced": 0,
+          "scheduled": 51,
+          "volume_missing": 0,
+          "week": 2,
+          "week_start": "2024-10-11"
+        },
+        {
+          "median_volume": null,
+          "missed": 46,
+          "priced": 0,
+          "scheduled": 46,
+          "volume_missing": 0,
+          "week": 3,
+          "week_start": "2024-10-18"
+        },
+        {
+          "median_volume": null,
+          "missed": 50,
+          "priced": 0,
+          "scheduled": 50,
+          "volume_missing": 0,
+          "week": 4,
+          "week_start": "2024-10-25"
+        },
+        {
+          "median_volume": null,
+          "missed": 52,
+          "priced": 0,
+          "scheduled": 52,
+          "volume_missing": 0,
+          "week": 5,
+          "week_start": "2024-11-01"
+        },
+        {
+          "median_volume": null,
+          "missed": 47,
+          "priced": 0,
+          "scheduled": 47,
+          "volume_missing": 0,
+          "week": 6,
+          "week_start": "2024-11-08"
+        },
+        {
+          "median_volume": null,
+          "missed": 49,
+          "priced": 0,
+          "scheduled": 49,
+          "volume_missing": 0,
+          "week": 7,
+          "week_start": "2024-11-15"
+        },
+        {
+          "median_volume": null,
+          "missed": 46,
+          "priced": 0,
+          "scheduled": 46,
+          "volume_missing": 0,
+          "week": 8,
+          "week_start": "2024-11-22"
+        },
+        {
+          "median_volume": 7857.349375,
+          "missed": 44,
+          "priced": 13,
+          "scheduled": 57,
+          "volume_missing": 0,
+          "week": 9,
+          "week_start": "2024-11-29"
+        },
+        {
+          "median_volume": 23989.206302,
+          "missed": 0,
+          "priced": 54,
+          "scheduled": 54,
+          "volume_missing": 0,
+          "week": 10,
+          "week_start": "2024-12-06"
+        },
+        {
+          "median_volume": 42891.94144150001,
+          "missed": 0,
+          "priced": 48,
+          "scheduled": 48,
+          "volume_missing": 0,
+          "week": 11,
+          "week_start": "2024-12-13"
+        },
+        {
+          "median_volume": 36821.212318,
+          "missed": 8,
+          "priced": 29,
+          "scheduled": 37,
+          "volume_missing": 0,
+          "week": 12,
+          "week_start": "2024-12-20"
+        },
+        {
+          "median_volume": 33723.625059,
+          "missed": 0,
+          "priced": 57,
+          "scheduled": 57,
+          "volume_missing": 0,
+          "week": 13,
+          "week_start": "2024-12-27"
+        },
+        {
+          "median_volume": 44842.269126,
+          "missed": 0,
+          "priced": 49,
+          "scheduled": 49,
+          "volume_missing": 0,
+          "week": 14,
+          "week_start": "2025-01-03"
+        },
+        {
+          "median_volume": 35278.715184,
+          "missed": 0,
+          "priced": 56,
+          "scheduled": 56,
+          "volume_missing": 0,
+          "week": 15,
+          "week_start": "2025-01-10"
+        },
+        {
+          "median_volume": 56612.892825999996,
+          "missed": 4,
+          "priced": 48,
+          "scheduled": 52,
+          "volume_missing": 0,
+          "week": 16,
+          "week_start": "2025-01-17"
+        },
+        {
+          "median_volume": 40146.6695775,
+          "missed": 0,
+          "priced": 50,
+          "scheduled": 50,
+          "volume_missing": 0,
+          "week": 17,
+          "week_start": "2025-01-24"
+        },
+        {
+          "median_volume": 45217.378054,
+          "missed": 0,
+          "priced": 49,
+          "scheduled": 49,
+          "volume_missing": 0,
+          "week": 18,
+          "week_start": "2025-01-31"
+        },
+        {
+          "median_volume": 59684.575268,
+          "missed": 0,
+          "priced": 21,
+          "scheduled": 21,
+          "volume_missing": 0,
+          "week": 19,
+          "week_start": "2025-02-07"
+        },
+        {
+          "median_volume": 56752.344671,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 21,
+          "week_start": "2025-02-22"
+        },
+        {
+          "median_volume": 61226.5615435,
+          "missed": 0,
+          "priced": 52,
+          "scheduled": 52,
+          "volume_missing": 0,
+          "week": 22,
+          "week_start": "2025-02-28"
+        },
+        {
+          "median_volume": 73589.29367300001,
+          "missed": 0,
+          "priced": 52,
+          "scheduled": 52,
+          "volume_missing": 0,
+          "week": 23,
+          "week_start": "2025-03-07"
+        },
+        {
+          "median_volume": 83232.0215195,
+          "missed": 0,
+          "priced": 54,
+          "scheduled": 54,
+          "volume_missing": 0,
+          "week": 24,
+          "week_start": "2025-03-14"
+        },
+        {
+          "median_volume": 75842.310832,
+          "missed": 0,
+          "priced": 50,
+          "scheduled": 50,
+          "volume_missing": 0,
+          "week": 25,
+          "week_start": "2025-03-21"
+        },
+        {
+          "median_volume": 84776.940405,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 26,
+          "week_start": "2025-03-28"
+        },
+        {
+          "median_volume": 108934.4747885,
+          "missed": 0,
+          "priced": 54,
+          "scheduled": 54,
+          "volume_missing": 0,
+          "week": 27,
+          "week_start": "2025-04-04"
+        },
+        {
+          "median_volume": 124755.792212,
+          "missed": 0,
+          "priced": 54,
+          "scheduled": 54,
+          "volume_missing": 0,
+          "week": 28,
+          "week_start": "2025-04-11"
+        }
+      ],
+      "worst_week": {
+        "priced": 0,
+        "scheduled": 19,
+        "week": 1,
+        "week_start": "2024-10-04"
+      }
+    },
+    "nhl/2025-26": {
+      "coverage": 0.9985,
+      "missed": 2,
+      "priced": 1310,
+      "scheduled": 1312,
+      "volume_missing": 157,
+      "weeks": [
+        {
+          "median_volume": 258686.75966,
+          "missed": 1,
+          "priced": 47,
+          "scheduled": 48,
+          "volume_missing": 0,
+          "week": 1,
+          "week_start": "2025-10-07"
+        },
+        {
+          "median_volume": 392144.315918,
+          "missed": 0,
+          "priced": 49,
+          "scheduled": 49,
+          "volume_missing": 0,
+          "week": 2,
+          "week_start": "2025-10-14"
+        },
+        {
+          "median_volume": 426755.6972765,
+          "missed": 0,
+          "priced": 52,
+          "scheduled": 52,
+          "volume_missing": 0,
+          "week": 3,
+          "week_start": "2025-10-21"
+        },
+        {
+          "median_volume": 478928.158718,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 4,
+          "week_start": "2025-10-28"
+        },
+        {
+          "median_volume": 399960.205105,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 5,
+          "week_start": "2025-11-04"
+        },
+        {
+          "median_volume": 480612.269724,
+          "missed": 0,
+          "priced": 51,
+          "scheduled": 51,
+          "volume_missing": 0,
+          "week": 6,
+          "week_start": "2025-11-11"
+        },
+        {
+          "median_volume": 420638.802213,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 7,
+          "week_start": "2025-11-18"
+        },
+        {
+          "median_volume": 459612.440207,
+          "missed": 0,
+          "priced": 51,
+          "scheduled": 51,
+          "volume_missing": 0,
+          "week": 8,
+          "week_start": "2025-11-25"
+        },
+        {
+          "median_volume": 532103.810117,
+          "missed": 0,
+          "priced": 55,
+          "scheduled": 55,
+          "volume_missing": 0,
+          "week": 9,
+          "week_start": "2025-12-02"
+        },
+        {
+          "median_volume": 647153.504376,
+          "missed": 0,
+          "priced": 53,
+          "scheduled": 53,
+          "volume_missing": 0,
+          "week": 10,
+          "week_start": "2025-12-09"
+        },
+        {
+          "median_volume": 575068.932399,
+          "missed": 0,
+          "priced": 56,
+          "scheduled": 56,
+          "volume_missing": 0,
+          "week": 11,
+          "week_start": "2025-12-16"
+        },
+        {
+          "median_volume": 494039.10906499997,
+          "missed": 0,
+          "priced": 42,
+          "scheduled": 42,
+          "volume_missing": 0,
+          "week": 12,
+          "week_start": "2025-12-23"
+        },
+        {
+          "median_volume": 576352.3983199999,
+          "missed": 0,
+          "priced": 50,
+          "scheduled": 50,
+          "volume_missing": 0,
+          "week": 13,
+          "week_start": "2025-12-30"
+        },
+        {
+          "median_volume": 704428.939747,
+          "missed": 0,
+          "priced": 58,
+          "scheduled": 58,
+          "volume_missing": 0,
+          "week": 14,
+          "week_start": "2026-01-06"
+        },
+        {
+          "median_volume": 686348.400592,
+          "missed": 0,
+          "priced": 55,
+          "scheduled": 55,
+          "volume_missing": 0,
+          "week": 15,
+          "week_start": "2026-01-13"
+        },
+        {
+          "median_volume": 787771.040742,
+          "missed": 0,
+          "priced": 49,
+          "scheduled": 49,
+          "volume_missing": 0,
+          "week": 16,
+          "week_start": "2026-01-20"
+        },
+        {
+          "median_volume": 895566.6068705,
+          "missed": 0,
+          "priced": 56,
+          "scheduled": 56,
+          "volume_missing": 0,
+          "week": 17,
+          "week_start": "2026-01-27"
+        },
+        {
+          "median_volume": 1039084.0392759999,
+          "missed": 0,
+          "priced": 24,
+          "scheduled": 24,
+          "volume_missing": 0,
+          "week": 18,
+          "week_start": "2026-02-03"
+        },
+        {
+          "median_volume": 656275.022224,
+          "missed": 0,
+          "priced": 49,
+          "scheduled": 49,
+          "volume_missing": 0,
+          "week": 21,
+          "week_start": "2026-02-25"
+        },
+        {
+          "median_volume": 572378.3133815007,
+          "missed": 1,
+          "priced": 53,
+          "scheduled": 54,
+          "volume_missing": 41,
+          "week": 22,
+          "week_start": "2026-03-03"
+        },
+        {
+          "median_volume": 608653.964389999,
+          "missed": 0,
+          "priced": 56,
+          "scheduled": 56,
+          "volume_missing": 51,
+          "week": 23,
+          "week_start": "2026-03-10"
+        },
+        {
+          "median_volume": 974710.5262579976,
+          "missed": 0,
+          "priced": 52,
+          "scheduled": 52,
+          "volume_missing": 48,
+          "week": 24,
+          "week_start": "2026-03-17"
+        },
+        {
+          "median_volume": 914971.134707997,
+          "missed": 0,
+          "priced": 58,
+          "scheduled": 58,
+          "volume_missing": 17,
+          "week": 25,
+          "week_start": "2026-03-24"
+        },
+        {
+          "median_volume": 812903.993832001,
+          "missed": 0,
+          "priced": 55,
+          "scheduled": 55,
+          "volume_missing": 0,
+          "week": 26,
+          "week_start": "2026-03-31"
+        },
+        {
+          "median_volume": 762985.3690039993,
+          "missed": 0,
+          "priced": 59,
+          "scheduled": 59,
+          "volume_missing": 0,
+          "week": 27,
+          "week_start": "2026-04-07"
+        },
+        {
+          "median_volume": 996525.8283279947,
+          "missed": 0,
+          "priced": 21,
+          "scheduled": 21,
+          "volume_missing": 0,
+          "week": 28,
+          "week_start": "2026-04-14"
+        }
+      ],
+      "worst_week": {
+        "priced": 47,
+        "scheduled": 48,
+        "week": 1,
+        "week_start": "2025-10-07"
+      }
+    }
+  },
+  "snapshot": "data/snapshots/census-20260913-224d6ad985e0",
+  "store_digest": "224d6ad985e09d71f542388f8d14e908e4d94efe5f4b5b5b00c956a6a597ef52"
+}

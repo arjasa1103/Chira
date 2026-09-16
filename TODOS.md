@@ -3,6 +3,94 @@
 Deferred work, with enough context to pick up cold. Sourced from the /autoplan
 CEO review (2026-09-11). Items in PLAN.md's task list are NOT duplicated here.
 
+## P1 — The pre-registered 2x2 is not orthogonal (blocks week 5-6)
+
+**What:** Re-examine the section-8 strata design before building headline 2.
+
+**Why, measured in week 4 (chart 1):** median volume climbs steeply WITHIN each season —
+NBA 2024-25 goes ~$50k in week 1 to ~$400k by week 18, and every other sport-season shows
+the same shape. PREREGISTRATION.md section 8 cuts liquidity on **within-season** volume
+deciles precisely so that "low liquidity" does not just mean "2024-25". That defends against
+the BETWEEN-season confound and does nothing about the within-season one: a low volume decile
+is disproportionately an early-season game, so liquidity and season phase — the two axes of
+the pre-registered 2x2 — are correlated by construction.
+
+**Options, none chosen:** cut volume deciles *within season phase* rather than within season;
+or residualize volume on week-of-season and stratify on the residual; or keep the 2x2 and
+report the correlation as a stated limitation. The first two change a pre-registered
+definition and would need an amendment; the third is honest but weakens the primary test.
+
+**Do not skip:** the section-8 primary directional test is the slope difference BETWEEN
+strata, so a confound between the two axes lands directly on the headline.
+
+**Effort:** S to decide (human ~2h / CC ~20min), M if it needs an amendment. **Priority:** P1.
+
+## P2 — 318 priced games carry no volume, in one calendar block
+
+**What:** Establish why Gamma returned no volume field, and decide how headline 2 treats them.
+
+**Why, measured in week 4:** `volume IS NULL` on 318 priced games — 161 NBA and 157 NHL, all
+between **2026-03-04 and 2026-03-25**, plus 8 NBA games on 2024-11-12/13. Both sports breaking
+in the same three-week window points upstream rather than at one sport's code path, but that
+was inferred, not confirmed against the API.
+
+**Why it is not cosmetic:** that is 13% of the 2025-26 season, and it is a contiguous calendar
+block. Dropping those games from a liquidity stratum would delete a specific slice of the
+season and re-introduce the season-phase confound by the back door — see the P1 item above.
+Charts currently report `volume_missing` beside every median rather than dropping anything.
+
+**Note:** the volume definition is frozen in the snapshot manifest with a content hash, so
+re-fetching volume now would produce a value the pre-registration does not describe. Any fix
+is "record the gap", not "backfill it".
+
+**Effort:** S (human ~2h / CC ~15min). **Priority:** P2.
+
+## P2 — NHL's market is nearly uninformative, which threatens its role
+
+**What:** Re-check whether NHL can carry headline 2's per-stratum n.
+
+**Why, measured in week 4 (chart 2):** Murphy resolution is 0.0147 for NHL 2024-25 and
+**0.0055** for NHL 2025-26, against 0.0481 and 0.0517 for NBA. An NHL 2025-26 closing price
+improves on "always predict the home team" by 0.005 Brier. NHL closes also span only
+0.200-0.825 with 82.6% inside [0.35, 0.65], so the favourite/longshot tails where the
+literature reports bias are nearly empty.
+
+**The tension:** PLAN.md's deadline section makes NHL load-bearing for headline 2's
+per-stratum n and says it is NOT the right thing to cut. That reasoning was about n, and n is
+fine. It did not anticipate that the NHL market would carry almost no information — a market
+quoting near the base rate is perfectly calibrated and cannot be shown to be miscalibrated in
+an interesting way, whatever its n.
+
+**Do not resolve by dropping NHL** without re-reading that section; the co-headline depends
+on it. The likely honest outcome is reporting NHL as a contrast case (a thin, uninformative
+market) rather than as a second stratified sample.
+
+**Effort:** S to decide. **Priority:** P2, before week 5-6 strata.
+
+## P1 — The collector's live polling path has never run (before late Oct 2026)
+
+**What:** Wire `upcoming_targets` to real markets, and prove one session against live games.
+
+**Why:** week 4 built the collector and tested every decision it makes about polling — ET
+season and daily gates across DST, the midnight-spanning window, the dedup key, the
+zero-capture rule, the heartbeat, target selection. What it could NOT test is the poll
+itself: the 2026-27 slate does not exist yet, so `scripts/run_collector.py` currently polls
+an empty target list and captures zero rows by construction. The missing piece is one
+function — resolve each upcoming game to its market's token ids — and it reuses the census's
+`schedule` / `slug_candidates` / `resolve.confirm` machinery rather than needing new code.
+
+**Two things that must happen before the season, in order:**
+
+1. **Pick a monitoring provider and set `CHIRA_HEARTBEAT_URL`.** Until then the dead-man's
+   switch is not armed, and an unarmed switch is the failure mode the switch exists for.
+2. **Run one real session against live pre-season games and read the rows.** A collector
+   whose first live run is also its first unattended run is untested in production.
+
+**Do not enable the workflow before both.** An enabled cron with no heartbeat is strictly
+worse than no cron: it burns quota and produces silence that nobody is watching for.
+
+**Effort:** M (human ~4h / CC ~40min). **Priority:** P1, deadline-driven (late Oct 2026).
+
 ## P2 — Cache sizing (the week-3 census fit, barely)
 
 **What:** A size cap with oldest-first eviction on `Cache`, or trimming cached prices payloads.

@@ -144,7 +144,7 @@ null 95% CI of `[-0.0612, 0.0640]`, so a perfectly calibrated market failed by c
 |---|---|---|---|
 | ECE | p99 = 0.0260 | <= **0.03** | outward |
 | max per-bin deviation | p99 = 0.0713 | <= **0.08** | outward |
-| Cox slope 95% CI | [0.9305, 1.0703] | within **[0.93, 1.08]** | outward |
+| Cox slope 95% CI | [0.9305, 1.0703] | within **[0.93, 1.08]** — **superseded, see Amendment 2** | outward |
 | Cox intercept 95% CI | [-0.0612, 0.0640] | within **[-0.07, 0.07]** | outward |
 
 These live in `chira.constants` as `GATE_ECE_MAX`, `GATE_MAX_BIN_DEV`, `GATE_SLOPE_BAND`,
@@ -157,6 +157,54 @@ are markedly more concentrated (83% inside [0.35, 0.65] vs NBA's 41%; E[p(1-p)] 
 0.1970), and the pooled NBA+NHL null is slightly wider: ECE p99 0.0264 vs 0.0261. The
 adopted outward-rounded bounds cover both, but the pool must be re-measured once real NHL
 census prices exist, and the NHL-only band re-derived rather than inherited.
+
+### Amendment 2 (2026-09-16): the Cox slope band, re-derived from the real pool
+
+**Changed.** `GATE_SLOPE_BAND` widens from **[0.93, 1.08]** to **[0.91, 1.10]**. The other
+three adopted bounds are unchanged.
+
+**Why.** This discharges the pool caveat directly above, which required the null to be
+re-measured once real NHL prices existed. Re-simulated on the census's own closing prices
+(`scripts/derive_null_bands.py`, 1,500 replicates, outcomes drawn `y ~ Bernoulli(p)` so the
+market is perfectly calibrated by construction), the pooled null 95% CI for the Cox slope is
+**[0.9183, 1.0908]**, which escapes the adopted [0.93, 1.08] at both ends. Since section 4
+states the bound as an *equivalence* test — the CI must lie entirely inside the band — a
+perfectly calibrated market would have failed it. That is the exact false-fire defect this
+simulation exists to prevent, so the bound is re-rounded outward to [0.91, 1.10].
+
+Two independent causes, both of which the week-1 derivation could not have known:
+
+- **The real pooled pool is more concentrated than the NBA-only pool it was built from.**
+  Measured: E[p(1-p)] 0.2162 pooled (NBA 0.1971, NHL 0.2375) against the 0.1970 assumed, and
+  60.5% of pooled closes inside [0.35, 0.65] (NBA 40.5%, NHL 82.6%) against 41%. Mass near
+  0.50 is where Bernoulli variance is highest, so the null widens. The caveat's *predictions*
+  were accurate — it guessed NHL at 83% and 0.2395 — it simply had no census to bind them to.
+- **The operative n is 4,661, not 5,084.** The week-1 table assumed every scheduled game
+  would be priced; 423 are classified misses. Fewer observations widen the null again.
+
+**What did NOT change, and why each still holds outward:** ECE cap 0.03 against a re-measured
+p99 of 0.0272; max per-bin deviation 0.08 against 0.0729; Cox intercept [-0.07, 0.07] against
+a re-measured null CI of [-0.0606, 0.0620]. All three still sit outside the null they govern.
+
+**No reported result changes.** The four chart-2 slope CIs measured at the close are
+NBA 2024-25 [0.864, 1.130], NBA 2025-26 [0.914, 1.193], NHL 2024-25 [0.754, 1.322] and
+NHL 2025-26 [0.513, 1.082]. Every one falls outside both the old and the widened band, so
+the amendment flips no verdict and cannot be manufacturing a pass. Widening a bound after
+seeing data is the move this document exists to make visible, so: the re-derivation used
+**prices and n only**, never an outcome, and the breach is computable without looking at who
+won. The chart-2 statistics were computed in the same week-4 session, and none of them
+informed this change.
+
+**Where the numbers live.** `chira.constants.CENSUS_NULL_*`, with
+`tests/test_week1_facts.py::TestNoiseFloorIsRespected` asserting each adopted bound covers
+the re-measured null. That guard test previously simulated a `uniform(0.1, 0.9)` pool, which
+is *less* concentrated than the census and is why it never caught this. It now asserts
+against the measured census numbers.
+
+**Per-stratum reference, required by the rule below.** Per-season and per-sport n values run
+well above the pooled ECE cap and must never be judged against it — for example the null ECE
+p99 is 0.0515 at NBA n=1,226 and 0.0655 at NHL n=896, against 0.0272 pooled. The per-n rows
+are recorded in `CENSUS_NULL_ECE_P99_BY_N` and in notes/week4-charts.md.
 
 Stated as an **equivalence** test: the CI must lie *entirely within* the band, so an
 imprecise estimate fails. "CI contains 1.0" is accept-the-null testing and would let noisy

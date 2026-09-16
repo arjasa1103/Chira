@@ -64,6 +64,13 @@ LOGIT_CLAMP = 1e-6
 NR_MAX_ITER = 60
 NR_TOL = 1e-10
 NR_WEIGHT_FLOOR = 1e-9
+NR_MIN_STEP_SCALE = 1e-6
+
+
+def _nll(a: float, b: float, x: np.ndarray, y: np.ndarray) -> float:
+    """Negative log-likelihood. logaddexp keeps it finite at large |eta|."""
+    eta = a + b * x
+    return float(np.sum(np.logaddexp(0.0, eta) - y * eta))
 
 
 def cox_slope_intercept(p: np.ndarray, y: np.ndarray) -> tuple[float, float]:
@@ -74,11 +81,39 @@ def cox_slope_intercept(p: np.ndarray, y: np.ndarray) -> tuple[float, float]:
     scipy has no logistic fit (that lives in sklearn/statsmodels, neither a
     dependency), so the Newton-Raphson loop stays; only expit/logit come from
     scipy, and expit is overflow-safe where 1/(1+exp(-eta)) is not.
+
+    **Two numerical fixes, week 4.** Undamped Newton from a fixed (a=0, b=1)
+    start diverged on ORDINARY samples whose outcome carries no signal, which is
+    the true-slope-zero case and the easiest fit there is. Measured on six of
+    six seeds with y drawn independently of p (n=800, not separable, 729 distinct
+    prices): the start's nll is 868.6 against the MLE's 542.2, the first full
+    step overshoots so nll RISES to 1279, the fitted probabilities then saturate,
+    the weights pin to NR_WEIGHT_FLOOR, and the iterate runs away to |b| ~ 1e8
+    and oscillates until the loop gives up. It then blamed the data as
+    "degenerate", which was wrong: scipy puts that sample's MLE at a mundane
+    intercept -0.4001, slope +0.0515.
+
+    That regime is not hypothetical. PREREGISTRATION.md section 7 makes
+    `a + b*logit(p)` the NULL of the single primary test, and section 4 adopts
+    the Cox slope as a gate bound; a market carrying little information is
+    exactly where both are evaluated, and NHL 2025-26 already measures a Murphy
+    resolution of 0.0055.
+
+    1. **Start at the intercept-only MLE (slope 0), not the identity (slope 1).**
+       The no-information fit is the right place to begin a search for signal.
+    2. **Backtrack the Newton step while it makes the nll worse.** Newton's
+       quadratic convergence is only local; damping makes it global, and either
+       fix alone recovers the exact MLE (4 and 8 iterations respectively).
+
+    Convergence is judged on the UNDAMPED step, so a search that stalls by
+    shrinking `t` toward zero is reported as a failure instead of being mistaken
+    for a converged fit.
     """
     _check_nonempty(p, y)
     x = logit(np.clip(p, LOGIT_CLAMP, 1 - LOGIT_CLAMP))
     X = np.column_stack([np.ones_like(x), x])
-    b, a, converged = 1.0, 0.0, False
+    ybar = float(np.clip(np.mean(y), LOGIT_CLAMP, 1 - LOGIT_CLAMP))
+    a, b, converged = float(logit(ybar)), 0.0, False
     for _ in range(NR_MAX_ITER):
         mu = expit(a + b * x)
         w = np.clip(mu * (1 - mu), NR_WEIGHT_FLOOR, None)
@@ -86,14 +121,20 @@ def cox_slope_intercept(p: np.ndarray, y: np.ndarray) -> tuple[float, float]:
             step = np.linalg.solve(X.T @ (X * w[:, None]), X.T @ (y - mu))
         except np.linalg.LinAlgError as e:
             raise ValueError(f"cox fit is singular (degenerate sample): {e}") from e
-        a, b = a + step[0], b + step[1]
+        base = _nll(a, b, x, y)
+        t = 1.0
+        while t > NR_MIN_STEP_SCALE and _nll(a + t * step[0], b + t * step[1], x, y) > base:
+            t /= 2
+        a, b = a + t * step[0], b + t * step[1]
         if np.max(np.abs(step)) < NR_TOL:
             converged = True
             break
     if not converged:
         raise ValueError(
-            f"cox fit did not converge in {NR_MAX_ITER} iterations "
-            f"(last slope={b:.4g}); sample is degenerate, not calibrated"
+            f"cox fit did not converge in {NR_MAX_ITER} damped iterations "
+            f"(last slope={b:.4g}). The sample may be separable, or the "
+            f"estimator may have failed; either way this is not a calibration "
+            f"result and must not be reported as one"
         )
     return float(b), float(a)
 
@@ -101,6 +142,131 @@ def cox_slope_intercept(p: np.ndarray, y: np.ndarray) -> tuple[float, float]:
 def brier(p: np.ndarray, y: np.ndarray) -> float:
     _check_nonempty(p, y)
     return float(np.mean((p - y) ** 2))
+
+
+# PREREGISTRATION.md section 8: minimum 150 games per probability bin, merging
+# bins upward when short. Ten equal-count bins at ~85 games/bin gives SE ~0.054,
+# so the tail bins where the literature reports bias would hold a handful of
+# games each and the curve would be reporting noise as shape.
+MIN_BIN_GAMES = 150
+MAX_BINS = 10
+
+
+def n_bins_for(n: int, min_bin_n: int = MIN_BIN_GAMES, max_bins: int = MAX_BINS) -> int:
+    """Bin count honouring the pre-registered 150-game floor. At least 1.
+
+    This is the "merge upward when short" rule applied before binning rather
+    than after: choosing the count up front is the same partition you would
+    reach by merging adjacent short bins, without the path dependence of
+    which neighbour you merge into.
+    """
+    if n <= 0:
+        raise ValueError("n must be positive")
+    return max(1, min(max_bins, n // min_bin_n))
+
+
+def quantile_bin_edges(p: np.ndarray, n_bins: int) -> np.ndarray:
+    """Interior price cut points for ~equal-count bins, duplicates removed.
+
+    The chart needs bins defined by PRICE, not by index range, because the
+    bootstrap resamples games and index ranges would redefine the bins on every
+    replicate (the band would then mix sampling noise with bin drift).
+
+    Equal-count is APPROXIMATE here, and deliberately so: real moneylines pile
+    up on round values (0.50 especially, and 2,047 of 4,661 census closes are
+    carried forward), so a tied block cannot be split across an edge without
+    making membership depend on row order. Duplicate edges are collapsed, ties
+    land wholly in one bin, and the realized per-bin n is reported rather than
+    assumed equal. `equal_count_bins` keeps the index-range definition, because
+    the section-4 noise floor was simulated against it.
+    """
+    if n_bins < 1:
+        raise ValueError("n_bins must be >= 1")
+    qs = np.linspace(0, 1, n_bins + 1)[1:-1]
+    return np.unique(np.quantile(p, qs)) if len(qs) else np.array([])
+
+
+def binned_curve(p: np.ndarray, y: np.ndarray, edges: np.ndarray) -> dict:
+    """Reliability curve over fixed price edges. Empty bins are dropped."""
+    _check_nonempty(p, y)
+    idx = np.searchsorted(edges, p, side="right")
+    mp, obs, ns, lo, hi = [], [], [], [], []
+    for b in range(len(edges) + 1):
+        m = idx == b
+        if not m.any():
+            continue
+        mp.append(float(p[m].mean()))
+        obs.append(float(y[m].mean()))
+        ns.append(int(m.sum()))
+        lo.append(float(p[m].min()))
+        hi.append(float(p[m].max()))
+    return {"mean_p": np.array(mp), "obs_rate": np.array(obs), "n": np.array(ns),
+            "p_lo": np.array(lo), "p_hi": np.array(hi)}
+
+
+def bootstrap_curve(p: np.ndarray, y: np.ndarray, edges: np.ndarray, *,
+                    reps: int = 2000, seed: int = 0, alpha: float = 0.05) -> dict:
+    """Percentile bands for the reliability curve, resampling GAMES.
+
+    PREREGISTRATION.md section 8: resample games, never rows. Here one game is
+    one row, so the two coincide; the distinction becomes load-bearing the
+    moment a caller bootstraps several time-to-close looks at once, which is
+    why `bootstrap_looks` exists and shares this function's index draws.
+    """
+    _check_nonempty(p, y)
+    rng = np.random.default_rng(seed)
+    n_bins = len(edges) + 1
+    # NaN-filled so a bin a replicate never populates does not silently become
+    # a zero observed rate, which would drag the band toward 0.
+    draws = np.full((reps, n_bins), np.nan)
+    for i in range(reps):
+        take = rng.integers(0, len(p), len(p))
+        ps, ys = p[take], y[take]
+        idx = np.searchsorted(edges, ps, side="right")
+        for b in range(n_bins):
+            m = idx == b
+            if m.any():
+                draws[i, b] = ys[m].mean()
+    keep = ~np.all(np.isnan(draws), axis=0)
+    with np.errstate(invalid="ignore"):
+        lo = np.nanpercentile(draws[:, keep], 100 * alpha / 2, axis=0)
+        hi = np.nanpercentile(draws[:, keep], 100 * (1 - alpha / 2), axis=0)
+    return {"lo": lo, "hi": hi, "reps": reps}
+
+
+def bootstrap_scalars(p: np.ndarray, y: np.ndarray, *, reps: int = 2000,
+                      seed: int = 0, alpha: float = 0.05, n_bins: int = MAX_BINS) -> dict:
+    """Game-level bootstrap CIs for ECE, Brier and the Cox slope/intercept.
+
+    The Cox CI is the form PREREGISTRATION.md section 4 states as an
+    EQUIVALENCE test: the interval must lie entirely inside the adopted band,
+    so an imprecise estimate fails rather than passing for being vague.
+
+    A replicate whose Cox fit is degenerate is counted, not silently dropped:
+    a band computed from the subset of replicates that happened to converge is
+    a band conditioned on convergence.
+    """
+    _check_nonempty(p, y)
+    rng = np.random.default_rng(seed)
+    out = {"ece": [], "brier": [], "slope": [], "intercept": []}
+    failed = 0
+    for _ in range(reps):
+        take = rng.integers(0, len(p), len(p))
+        ps, ys = p[take], y[take]
+        out["ece"].append(ece(ps, ys, n_bins))
+        out["brier"].append(brier(ps, ys))
+        try:
+            b, a = cox_slope_intercept(ps, ys)
+        except ValueError:
+            failed += 1
+            continue
+        out["slope"].append(b)
+        out["intercept"].append(a)
+    bands = {k: {"lo": float(np.percentile(v, 100 * alpha / 2)),
+                 "hi": float(np.percentile(v, 100 * (1 - alpha / 2))),
+                 "p50": float(np.percentile(v, 50))}
+             for k, v in out.items() if v}
+    return {**bands, "reps": reps, "cox_failures": failed}
 
 
 def murphy(p: np.ndarray, y: np.ndarray, n_bins: int = 10) -> dict:

@@ -17,6 +17,12 @@ from chira.calibration import (
     simulate_null,
 )
 from chira.constants import (
+    CENSUS_NULL_ECE_P99,
+    CENSUS_NULL_ECE_P99_BY_N,
+    CENSUS_NULL_INTERCEPT_CI,
+    CENSUS_NULL_MAX_BIN_DEV_P99,
+    CENSUS_NULL_SLOPE_CI,
+    CENSUS_POOL_EXPECTED_VARIANCE,
     COMPLEMENTARITY_TOL,
     GATE_ECE_MAX,
     GATE_INTERCEPT_BAND,
@@ -142,40 +148,66 @@ class TestCalibrationMath:
 
 
 class TestNoiseFloorIsRespected:
-    """Every adopted gate must sit at or ABOVE the simulated null.
+    """Every adopted gate must sit at or ABOVE the null MEASURED ON THE CENSUS.
 
     Rounding a gate INWARD from the null re-creates the exact false-fire defect
-    the simulation existed to remove, so these assert against the real adopted
-    constants rather than against unrelated literals.
+    the simulation existed to remove.
+
+    These used to simulate a `uniform(0.1, 0.9)` pool at an assumed n=5,084.
+    That pool is LESS concentrated than real moneylines and the n was too high,
+    so the simulated null was too narrow and the class passed while the adopted
+    slope band sat inside the real null. Week 4 caught it with
+    `scripts/derive_null_bands.py` and PREREGISTRATION.md Amendment 2 widened
+    the band. The lesson is encoded here: assert against the pool the bounds
+    actually govern, not a convenient stand-in.
     """
 
-    @pytest.fixture(scope="class")
-    @classmethod
-    def null(cls):
-        rng = np.random.default_rng(5)
-        pool = rng.uniform(0.1, 0.9, 500)
-        return simulate_null(pool, n=5084, reps=400, seed=3)
-
-    def test_adopted_ece_gate_does_not_false_fire(self, null):
-        assert null["ece"]["p99"] <= GATE_ECE_MAX, (
-            f"adopted ECE gate {GATE_ECE_MAX} is below the null p99 "
-            f"{null['ece']['p99']:.4f} and would reject a correct pipeline"
+    def test_adopted_ece_gate_covers_the_census_null(self):
+        assert CENSUS_NULL_ECE_P99 <= GATE_ECE_MAX, (
+            f"adopted ECE gate {GATE_ECE_MAX} is below the census null p99 "
+            f"{CENSUS_NULL_ECE_P99} and would reject a correct pipeline"
         )
 
-    def test_adopted_max_bin_dev_gate_does_not_false_fire(self, null):
-        assert null["max_bin_dev"]["p99"] <= GATE_MAX_BIN_DEV
+    def test_adopted_max_bin_dev_gate_covers_the_census_null(self):
+        assert CENSUS_NULL_MAX_BIN_DEV_P99 <= GATE_MAX_BIN_DEV
 
-    def test_adopted_slope_band_contains_the_null_ci(self, null):
+    def test_adopted_slope_band_contains_the_census_null_ci(self):
         lo, hi = GATE_SLOPE_BAND
-        assert lo <= null["slope"]["lo2.5"] and null["slope"]["hi97.5"] <= hi
+        assert lo <= CENSUS_NULL_SLOPE_CI[0] and CENSUS_NULL_SLOPE_CI[1] <= hi
 
-    def test_adopted_intercept_band_contains_the_null_ci(self, null):
+    def test_adopted_intercept_band_contains_the_census_null_ci(self):
         lo, hi = GATE_INTERCEPT_BAND
-        assert lo <= null["intercept"]["lo2.5"] and null["intercept"]["hi97.5"] <= hi
+        assert lo <= CENSUS_NULL_INTERCEPT_CI[0] and CENSUS_NULL_INTERCEPT_CI[1] <= hi
 
-    def test_the_withdrawn_002_cap_would_have_false_fired(self, null):
-        """PREREGISTRATION.md withdrew a 0.02 ECE cap. This records why."""
-        assert null["ece"]["p95"] > 0.02
+    def test_the_withdrawn_093_108_slope_band_would_have_false_fired(self):
+        """Amendment 2's reason for existing, recorded so it cannot be undone."""
+        old_lo, old_hi = 0.93, 1.08
+        assert CENSUS_NULL_SLOPE_CI[0] < old_lo
+        assert CENSUS_NULL_SLOPE_CI[1] > old_hi
+
+    def test_per_stratum_n_is_never_judged_by_the_pooled_cap(self):
+        """Section 4 forbids it, and the margin is large enough to matter.
+
+        At NHL n=896 the null ECE p99 is 2.4x the pooled cap, so applying the
+        pooled number per stratum would fail a correct pipeline outright.
+        """
+        for (_sport, n), p99 in CENSUS_NULL_ECE_P99_BY_N.items():
+            assert p99 > CENSUS_NULL_ECE_P99, f"n={n} should be noisier than pooled"
+        assert CENSUS_NULL_ECE_P99_BY_N[("nhl", 896)] > 2 * GATE_ECE_MAX
+
+    def test_a_more_concentrated_pool_really_does_widen_the_null(self):
+        """The MECHANISM behind Amendment 2, not just its numbers.
+
+        NHL closes sit 82.6% inside [0.35, 0.65] against NBA's 40.5%, and mass
+        near 0.50 is where Bernoulli variance peaks. If this ever stops holding,
+        the reasoning in Amendment 2 is wrong and the bands need re-derivation.
+        """
+        assert (CENSUS_POOL_EXPECTED_VARIANCE["nhl"]
+                > CENSUS_POOL_EXPECTED_VARIANCE["all"]
+                > CENSUS_POOL_EXPECTED_VARIANCE["nba"])
+        spread = simulate_null(np.linspace(0.05, 0.95, 400), n=1200, reps=150, seed=3)
+        tight = simulate_null(np.linspace(0.40, 0.60, 400), n=1200, reps=150, seed=3)
+        assert tight["ece"]["p99"] > spread["ece"]["p99"]
 
 
 class TestDegenerateInput:

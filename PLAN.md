@@ -66,11 +66,20 @@ corrected here):
 **Collector, split across two slots** (the single week-4 slot was unexecutable: proving an
 availability status *change* requires regular-season injury reports, and the NBA season tips
 late October, after week 4 ends Oct 12):
-- **Week 4:** prices-only collector, dead-man's switch (external monitor alerting on ABSENCE
+- **Week 4 (done 2026-09-16, with one item outstanding):** prices-only collector
+  (`src/chira/collector.py`), dead-man's switch (external monitor alerting on ABSENCE
   of a success ping), keepalive against the 60-day Actions auto-disable, pre-season dry run.
+  The workflow is committed but **deliberately not enabled**, and the live polling path is
+  code-complete but unexercised — the 2026-27 slate does not exist yet, so the week-4
+  verification is the dry run plus offline tests of the gates. See notes/week4-charts.md.
 - **Week 7:** one timeboxed slot to prove an availability source against live games. If it
   cannot be proven in that slot, **collect prices only and drop availability entirely.**
-- Note the dead-man's switch needs a third-party monitoring account; pick one in week 4.
+- **OUTSTANDING, needs the user:** the dead-man's switch needs a third-party monitoring
+  account. The code is provider-agnostic — it GETs `$CHIRA_HEARTBEAT_URL` on success and
+  `<url>/fail` on failure, which is the contract Healthchecks.io, Better Stack, Cronitor and
+  an UptimeRobot heartbeat all share — so picking one is an account and a repo secret, not a
+  code change. **Until it is set, the switch is not armed** and a collector that never
+  starts reports nothing to nobody. Must be done before late October.
 
 ## Goal
 
@@ -326,12 +335,19 @@ Answers whether the project is viable, and in which sport.
       `["0.5","0.5"]`, unresolved, and UMA-disputed markets from scoring and count them on
       a reconciliation line.
 
-## Phase 2 — The two gate charts
+## Phase 2 — The two gate charts (done 2026-09-16, week 4)
 
-- [ ] **Chart 1: coverage by week of season**, stacked with/without market, per sport, plus
+Both charts are cut from the immutable snapshot (`docs/charts/`, with the JSON behind them
+in `chart-data.json`). Full write-up: notes/week4-charts.md.
+
+- [x] **Chart 1: coverage by week of season**, stacked with/without market, per sport, plus
       a median-volume panel. Decides whether the project proceeds and which sport is
-      primary.
-- [ ] **Chart 2: the market's own calibration curve.** Home side only, one observation per
+      primary. **Done.** The NHL 2024-25 gap is the whole coverage story in one panel:
+      weeks 1-8 have no markets at all (0/19 in week 1), and coverage starts at week 9.
+      Everything else runs 99.7-99.9%. New finding: **median volume climbs steeply WITHIN
+      every season** (NBA 2024-25 ~$50k in week 1 to ~$400k by week 18), which means volume
+      decile and season phase are correlated and the section-8 2x2 is not orthogonal.
+- [x] **Chart 2: the market's own calibration curve.** Home side only, one observation per
       game, equal-count or LOESS bins with bootstrap bands, Murphy decomposition of Brier
       into reliability, resolution and uncertainty.
       **This is a REPORTED RESULT, not a gate** (corrected by eng review). The earlier
@@ -341,7 +357,31 @@ Answers whether the project is viable, and in which sport.
       categories. Pipeline validity is established instead by tests that do not assume the
       market is calibrated: label agreement vs nba_api, complementarity, reconciliation,
       shuffled-join collapse, and the synthetic scorer.
-- [ ] **Write the one-paragraph answer: which sport is the better primary, and why.**
+      **Done.** No sport-season shows detectable miscalibration at the close: every ECE sits
+      well inside its own per-n noise floor (e.g. NBA 2025-26 ECE 0.0241 against a null p99
+      of 0.0515). The real signal is in the Murphy decomposition, not in reliability:
+      **resolution is 0.0517 for NBA 2025-26 against 0.0055 for NHL 2025-26**, so the NHL
+      market barely improves on the base rate (Brier 0.2446 vs uncertainty 0.2495).
+      The one marginal result is NHL 2024-25's Cox intercept, +0.1475 with CI
+      [+0.0049, +0.2881], which excludes zero but is exploratory under the section-7
+      family-wise policy and sits only just outside its null CI of [-0.1482, +0.1363].
+- [x] **Write the one-paragraph answer: which sport is the better primary, and why.**
+
+> **NBA is the primary sport.** It wins on all three axes that matter and loses on none.
+> **Coverage:** 99.9% and 99.7% across the two seasons against NHL's 68.3% and 99.8%, and
+> the NHL shortfall is not random attrition but a contiguous eight-week hole at the start of
+> 2024-25 that no re-probe can fill, so NHL's usable history is effectively 1.5 seasons to
+> NBA's 2. **Market informativeness:** NBA resolution is 0.0481 and 0.0517 against NHL's
+> 0.0147 and 0.0055; an NHL 2025-26 closing price improves on "always predict the home
+> team" by 0.005 Brier, which is close to no information at all. **Usable price range:** NBA
+> closes span 0.045-0.980 with only 40.5% inside [0.35, 0.65], while NHL spans 0.200-0.825
+> with 82.6% inside it, so NHL has almost no favourites or longshots — exactly the tail
+> where the literature puts the bias headline 2 is hunting, and exactly what a calibration
+> curve needs in order to have shape. **NHL is still retained**, per the deadline section
+> above: it is load-bearing for headline 2's per-stratum n and dropping it is not the right
+> cut. But its near-zero resolution is a new risk to that role, because a market carrying
+> almost no information cannot be shown to be miscalibrated in an interesting way, and that
+> risk should be re-checked before the week 5-6 strata are built.
 
 ## Phase 3 — Ingestion and feature store
 
@@ -420,6 +460,29 @@ Answers whether the project is viable, and in which sport.
 
 The only path to the availability hypothesis.
 
+**Status after week 4.** The scheduling, capture-timestamp, `/midpoint` + `/book`,
+external-store and cron-is-best-effort items below have LANDED in code
+(`src/chira/collector.py`, `scripts/run_collector.py`,
+`.github/workflows/collector.yml`, `tests/test_collector.py`), with two honest caveats:
+
+- **Nothing has polled a live market.** The 2026-27 slate does not exist yet, so the live
+  path is code-complete and unexercised. What is tested is every decision the collector
+  makes *about* polling — the ET season and daily gates across the DST shift, the
+  midnight-spanning window, the dedup key, the zero-capture rule, the heartbeat's
+  swallow-never-raise behaviour and target selection — which is the part a live test would
+  not have checked anyway. The remaining wiring is one function: resolve each upcoming game
+  to its market, which reuses the census's own schedule/slug/resolve machinery.
+- **The dead-man's switch is not armed** until a monitoring provider is chosen and
+  `CHIRA_HEARTBEAT_URL` is set as a repo secret. See the collector note in the deadline
+  section above.
+
+Scheduling arithmetic, since it is the item most easily got wrong: the poll window is
+16:00-02:30 ET, which is 20:00-06:30 UTC under EDT and 21:00-07:30 UTC under EST — a union
+of about 11.5 hours. One Actions job is capped at 6 hours and a session stops at 5h30 to
+leave room to report its own outcome, so **two** chained sessions cover the window. The cron
+is pinned in UTC because that is all GitHub offers; the gate is computed in
+`America/New_York` in code, so a DST shift moves the effective window and not the coverage.
+
 - [ ] **Scheduling, corrected by the eng review (the earlier 5-10 minute polling was
       unaffordable: ~130 runs/day x ~180 days exceeds the free Actions allowance and the
       collector dies from quota, not from the delay the plan models).** Use **one
@@ -471,10 +534,19 @@ leakage can bias either direction and the gap does not decompose into leakage pl
 
 ## CI/CD and distribution
 
-- [ ] GitHub Actions: tests and lint on push.
-- [ ] Separate scheduled workflow for the Phase 6 collector: one long job per day chained
+- [x] GitHub Actions: tests and lint on push (`.github/workflows/tests.yml`, week 4).
+      Installs the `store` extra but NOT `model`, so weeks 1-7 do not pay for a jax
+      toolchain; the suite is offline by construction because `conftest.py` replaces
+      `socket.socket`, so CI needs no token and cannot go red because a third-party API
+      blinked.
+- [x] Separate scheduled workflow for the Phase 6 collector: one long job per day chained
       2-3 times, UTC cron with in-code ET conversion. Credentials out of any fork-triggerable
       workflow; scope the store token append-only.
+      **Landed week 4 as `.github/workflows/collector.yml`, deliberately NOT enabled.**
+      Triggers are `schedule` and `workflow_dispatch` only — never `pull_request`, which
+      would expose the heartbeat secret to any fork that opened a PR. A `concurrency` group
+      stops the two chained sessions double-polling at their boundary, and the quote store
+      leaves as a build artifact rather than a commit.
 - [ ] Published writeup with charts on GitHub Pages. A repo alone is not a portfolio piece.
 
 ---
