@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from scipy.special import expit, logit
 
 from chira.calibration import cox_slope_intercept
 
@@ -82,7 +83,6 @@ class TestTheFixChangedNothingThatAlreadyWorked:
 
     def test_a_tilt_is_still_recovered_with_the_right_sign(self):
         """The fix must not flatten real signal toward the slope-0 start."""
-        from scipy.special import expit, logit
         rng = np.random.default_rng(5)
         p_true = rng.uniform(0.05, 0.95, 4000)
         y = (rng.random(4000) < p_true).astype(float)
@@ -90,6 +90,109 @@ class TestTheFixChangedNothingThatAlreadyWorked:
         slope, _ = cox_slope_intercept(over, y)
         assert slope == pytest.approx(1 / 1.3, abs=0.12)
         assert slope < 1.0
+
+
+def concentrated_pool(n=64):
+    """NHL-shaped prices: narrow, most mass near 0.5.
+
+    NHL closes span 0.200-0.825 with 82.6% inside [0.35, 0.65], and that shape is
+    what makes small-n fits hard: mass near 0.5 carries the most Bernoulli
+    variance, so a 225-game cell can land on an awkward likelihood surface.
+    """
+    return np.concatenate([np.linspace(0.20, 0.35, n // 8),
+                           np.linspace(0.35, 0.65, (3 * n) // 4),
+                           np.linspace(0.65, 0.825, n // 8)])
+
+
+def scipy_mle(p, y):
+    """Independent ground truth, by a different algorithm (BFGS, not Newton)."""
+    from scipy.optimize import minimize
+    from scipy.special import logit as _logit
+    x = _logit(np.clip(p, 1e-6, 1 - 1e-6))
+
+    def nll(th):
+        eta = th[0] + th[1] * x
+        return float(np.sum(np.logaddexp(0, eta) - y * eta))
+
+    r = minimize(nll, [0.0, 0.0], method="BFGS")
+    return float(r.x[1]), float(r.x[0])
+
+
+class TestSmallStrataCellsConverge:
+    """Week 5. Headline-2 cells are 221-312 games, which is where this broke.
+
+    The damped loop judged convergence on the undamped Newton STEP against
+    1e-10. At the optimum, floating-point noise makes a full step look like it
+    worsens the log-likelihood, so the line search shrank t to 1e-6, the
+    parameters stopped moving, and the step floored at 1.367e-10 -- just above
+    the tolerance. The fit then raised "did not converge" while sitting exactly
+    on the MLE (slope +2.11450 vs scipy's +2.114498, gradient 1.1e-9).
+
+    Measured rate: 1 replicate in 1,500 at NHL n=225. Enough to kill a whole
+    null derivation, because simulate_null had no failure handling.
+    """
+
+    @pytest.mark.parametrize("seed", range(40))
+    def test_a_cell_sized_concentrated_sample_fits(self, seed):
+        rng = np.random.default_rng(seed)
+        p = rng.choice(concentrated_pool(), size=225, replace=True)
+        y = (rng.random(225) < p).astype(float)
+        slope, _ = cox_slope_intercept(p, y)   # must not raise
+        assert np.isfinite(slope)
+
+    @pytest.mark.parametrize("seed", range(12))
+    def test_it_agrees_with_scipy_at_cell_size(self, seed):
+        """Agreement with a different algorithm, not just self-consistency."""
+        rng = np.random.default_rng(100 + seed)
+        p = rng.choice(concentrated_pool(), size=225, replace=True)
+        y = (rng.random(225) < p).astype(float)
+        got_slope, got_intercept = cox_slope_intercept(p, y)
+        want_slope, want_intercept = scipy_mle(p, y)
+        assert got_slope == pytest.approx(want_slope, abs=1e-3)
+        assert got_intercept == pytest.approx(want_intercept, abs=1e-3)
+
+    def test_a_steep_but_finite_mle_is_returned_not_refused(self):
+        """The failing replicate's MLE was ~2.11: steep, finite, perfectly valid."""
+        rng = np.random.default_rng(3)
+        p = rng.choice(concentrated_pool(), size=225, replace=True)
+        # outcomes generated with a steeper slope than the quoted price implies
+        steep = expit(2.2 * logit(np.clip(p, 1e-6, 1 - 1e-6)))
+        y = (rng.random(225) < steep).astype(float)
+        slope, _ = cox_slope_intercept(p, y)
+        assert slope > 1.4, "a steep relationship must come back steep"
+        assert slope == pytest.approx(scipy_mle(p, y)[0], abs=1e-3)
+
+
+class TestNullSimulationHandlesUnfittableReplicates:
+    """A null conditioned on convergence is a quietly wrong reference."""
+
+    def test_a_few_failures_are_counted_and_reported(self, monkeypatch):
+        import chira.calibration as cal
+        real = cal.cox_slope_intercept
+        calls = {"n": 0}
+
+        def flaky(p, y):
+            calls["n"] += 1
+            if calls["n"] % 500 == 0:      # 0.2%: under the threshold
+                raise ValueError("synthetic non-convergence")
+            return real(p, y)
+
+        monkeypatch.setattr(cal, "cox_slope_intercept", flaky)
+        null = cal.simulate_null(np.linspace(0.1, 0.9, 100), n=200, reps=500, seed=1)
+        assert null["cox_failures"] == 1
+        assert null["reps"] == 500
+        assert null["ece"]["p99"] > 0          # unfitted metrics still complete
+
+    def test_a_high_failure_rate_raises_instead_of_returning_a_biased_band(
+            self, monkeypatch):
+        import chira.calibration as cal
+
+        def always_fails(p, y):
+            raise ValueError("synthetic non-convergence")
+
+        monkeypatch.setattr(cal, "cox_slope_intercept", always_fails)
+        with pytest.raises(ValueError, match="conditioned on convergence"):
+            cal.simulate_null(np.linspace(0.1, 0.9, 100), n=200, reps=100, seed=1)
 
 
 class TestGenuineDegeneracyStillRaises:

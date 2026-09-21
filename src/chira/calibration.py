@@ -65,6 +65,11 @@ NR_MAX_ITER = 60
 NR_TOL = 1e-10
 NR_WEIGHT_FLOOR = 1e-9
 NR_MIN_STEP_SCALE = 1e-6
+NR_GRAD_TOL = 1e-6
+
+# Above this share of unfittable bootstrap replicates, a null's slope and
+# intercept bands are conditioned on convergence and must not be quoted.
+MAX_COX_FAILURE_RATE = 0.01
 
 
 def _nll(a: float, b: float, x: np.ndarray, y: np.ndarray) -> float:
@@ -105,20 +110,51 @@ def cox_slope_intercept(p: np.ndarray, y: np.ndarray) -> tuple[float, float]:
        quadratic convergence is only local; damping makes it global, and either
        fix alone recovers the exact MLE (4 and 8 iterations respectively).
 
-    Convergence is judged on the UNDAMPED step, so a search that stalls by
-    shrinking `t` toward zero is reported as a failure instead of being mistaken
-    for a converged fit.
+    3. **Convergence is judged on the GRADIENT, week 5.** The first version
+       tested the undamped Newton step against 1e-10, which mistook a converged
+       fit for a failure. Measured on an NHL bootstrap replicate at n=225: the
+       iterate sat exactly on the MLE (slope +2.11450 against scipy's +2.114498,
+       gradient 1.1e-9, nll unchanged to 6 decimals), but at the optimum
+       floating-point noise makes a full step look like it *worsens* the nll, so
+       the line search shrank `t` to 1e-6 and the parameters stopped moving with
+       the step stuck at 1.367e-10 — just above the tolerance. It then raised
+       "did not converge" on a correct answer, and because `simulate_null` had no
+       failure handling, that single replicate in 1,500 killed a whole
+       derivation. The gradient is the actual optimality condition, so it is what
+       is tested; it is checked BEFORE stepping, which also means a stalled line
+       search at a genuine optimum exits cleanly. Genuine separation still fails:
+       there the gradient stays large while the iterate runs away.
     """
     _check_nonempty(p, y)
     x = logit(np.clip(p, LOGIT_CLAMP, 1 - LOGIT_CLAMP))
+    # Identifiability, checked explicitly BEFORE any convergence test. The
+    # gradient criterion below is only meaningful once a slope is identified at
+    # all: at the intercept-only start the gradient is already ~0 whenever the
+    # design cannot support a slope, so testing it first would report
+    # "converged" and hand back slope 0.0 as though it were a measurement.
+    # Both cases used to surface as a singular solve, which was luck, not logic.
+    if float(np.ptp(x)) < NR_GRAD_TOL:
+        raise ValueError(
+            "cox fit is not identified: every price is the same, so no slope "
+            "exists to estimate (a constant-price sample once reported 165.04)")
+    if float(np.min(y)) == float(np.max(y)):
+        raise ValueError(
+            f"cox fit is not identified: every outcome is {float(np.min(y))}, so "
+            f"the intercept's MLE is at infinity and no finite fit exists")
     X = np.column_stack([np.ones_like(x), x])
     ybar = float(np.clip(np.mean(y), LOGIT_CLAMP, 1 - LOGIT_CLAMP))
     a, b, converged = float(logit(ybar)), 0.0, False
     for _ in range(NR_MAX_ITER):
         mu = expit(a + b * x)
+        grad = X.T @ (y - mu)
+        # The optimality condition itself. Each element is a sum of n terms each
+        # bounded by 1, so 1e-6 absolute is a strict test at every n here.
+        if np.max(np.abs(grad)) < NR_GRAD_TOL:
+            converged = True
+            break
         w = np.clip(mu * (1 - mu), NR_WEIGHT_FLOOR, None)
         try:
-            step = np.linalg.solve(X.T @ (X * w[:, None]), X.T @ (y - mu))
+            step = np.linalg.solve(X.T @ (X * w[:, None]), grad)
         except np.linalg.LinAlgError as e:
             raise ValueError(f"cox fit is singular (degenerate sample): {e}") from e
         base = _nll(a, b, x, y)
@@ -289,21 +325,52 @@ def simulate_null(price_pool: np.ndarray, n: int, reps: int = 4000,
     Prices are bootstrapped from the empirical pool so the simulated market has
     the real shape (NBA moneylines concentrate roughly in 0.2-0.9, which changes
     the bin occupancy and therefore the noise floor).
+
+    **A replicate whose Cox fit will not converge is counted, not fatal, and not
+    silently dropped.** This used to raise, so one unfittable draw in 1,500 ended
+    a whole derivation (measured: NHL pool, n=225, seed 7). But a null computed
+    only over the replicates that converged is a null conditioned on
+    convergence, which is a quietly wrong reference distribution. So failures
+    are counted, the metrics that do not need a fit still use every replicate,
+    and a failure rate above MAX_COX_FAILURE_RATE raises rather than returning a
+    biased band.
     """
     rng = np.random.default_rng(seed)
-    out = {k: np.empty(reps) for k in ("ece", "max_bin_dev", "slope", "intercept", "brier")}
+    unfitted = ("ece", "max_bin_dev", "brier")
+    out = {k: np.empty(reps) for k in unfitted}
+    fits = {"slope": [], "intercept": []}
+    failed = 0
     for i in range(reps):
         p = rng.choice(price_pool, size=n, replace=True)
         y = (rng.random(n) < p).astype(float)   # perfectly calibrated by construction
         out["ece"][i] = ece(p, y, n_bins)
         out["max_bin_dev"][i] = max_bin_dev(p, y, n_bins)
-        b, a = cox_slope_intercept(p, y)
-        out["slope"][i], out["intercept"][i] = b, a
         out["brier"][i] = brier(p, y)
-    return {k: {"mean": float(v.mean()),
+        try:
+            b, a = cox_slope_intercept(p, y)
+        except ValueError:
+            failed += 1
+            continue
+        fits["slope"].append(b)
+        fits["intercept"].append(a)
+    if failed > MAX_COX_FAILURE_RATE * reps:
+        raise ValueError(
+            f"{failed} of {reps} replicates at n={n} had no computable Cox fit "
+            f"({failed / reps:.1%}); the slope and intercept bands would be "
+            f"conditioned on convergence, so they are not returned. Investigate "
+            f"the estimator or the pool rather than quoting this null"
+        )
+
+    def band(v: np.ndarray) -> dict:
+        return {"mean": float(v.mean()),
                 "p50": float(np.percentile(v, 50)),
                 "p95": float(np.percentile(v, 95)),
                 "p99": float(np.percentile(v, 99)),
                 "lo2.5": float(np.percentile(v, 2.5)),
                 "hi97.5": float(np.percentile(v, 97.5))}
-            for k, v in out.items()}
+
+    result = {k: band(out[k]) for k in unfitted}
+    result.update({k: band(np.asarray(v)) for k, v in fits.items()})
+    result["cox_failures"] = failed
+    result["reps"] = reps
+    return result

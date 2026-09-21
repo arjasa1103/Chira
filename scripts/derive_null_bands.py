@@ -39,9 +39,15 @@ from chira.constants import (
 )
 
 # n values that a real analysis will actually run at, per pool.
+#
+# The small ones are headline-2's strata (PREREGISTRATION.md section 8 and
+# Amendment 3a): a 2x2 of liquidity x season phase splits each sport-season into
+# four cells of 221-312 games, and each stratum half is 448-615. Section 4
+# forbids judging those against the pooled cap, and the week-1 table stopped at
+# n=850, so nothing covered per-cell n until these rows existed.
 NS = {
-    "nba": (1226, 2455),
-    "nhl": (896, 1310, 2206),
+    "nba": (200, 300, 613, 1226, 2455),
+    "nhl": (200, 225, 300, 448, 615, 896, 1310, 2206),
     "all": (4661,),
 }
 

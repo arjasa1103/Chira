@@ -125,9 +125,39 @@ CENSUS_POOL_EXPECTED_VARIANCE = {"nba": 0.1971, "nhl": 0.2375, "all": 0.2162}
 
 # Per-n reference rows for per-stratum work, which section 4 forbids evaluating
 # against the pooled numbers above. (sport, n) -> ECE p99.
+#
+# The small rows were added in week 5 for headline 2: a 2x2 of liquidity x
+# season phase (PREREGISTRATION.md Amendment 3a) splits each sport-season into
+# cells of 221-312 games, with stratum halves of 448-615. Nothing covered that
+# range before -- the week-1 table stopped at n=850 -- so a per-cell ECE had no
+# legitimate reference. The numbers are stark: at NHL n=225 a PERFECTLY
+# calibrated market has a null ECE p99 of 0.1288, which is 4.3x the pooled cap
+# of 0.03 and 0.129 on a scale where the measured full-census ECE is 0.024.
+# Per-cell calibration is therefore nearly unfalsifiable at this n, and saying
+# so is part of the result rather than a caveat to bury.
 CENSUS_NULL_ECE_P99_BY_N = {
+    ("nba", 200): 0.1299, ("nba", 300): 0.0991, ("nba", 613): 0.0733,
     ("nba", 1226): 0.0515, ("nba", 2455): 0.0355,
-    ("nhl", 896): 0.0655, ("nhl", 1310): 0.0553, ("nhl", 2206): 0.0416,
+    ("nhl", 200): 0.1414, ("nhl", 225): 0.1288, ("nhl", 300): 0.1118,
+    ("nhl", 448): 0.0938,
+    ("nhl", 615): 0.0775, ("nhl", 896): 0.0655, ("nhl", 1310): 0.0553,
+    ("nhl", 2206): 0.0416,
+}
+
+# Same rows, for the Cox slope: (sport, n) -> null 95% CI of the slope under a
+# perfectly calibrated market. The primary directional test in section 8 is a
+# slope DIFFERENCE between strata, so these are what tell a real difference from
+# sampling noise. At NHL n=225 the null slope CI is [0.414, 1.694]: a stratum
+# slope can land anywhere in that range with no miscalibration at all.
+CENSUS_NULL_SLOPE_CI_BY_N = {
+    ("nba", 200): (0.696, 1.417), ("nba", 300): (0.760, 1.319),
+    ("nba", 613): (0.817, 1.220),
+    ("nba", 1226): (0.868, 1.154), ("nba", 2455): (0.902, 1.100),
+    ("nhl", 200): (0.382, 1.767), ("nhl", 225): (0.414, 1.694),
+    ("nhl", 300): (0.470, 1.605),
+    ("nhl", 448): (0.541, 1.464), ("nhl", 615): (0.626, 1.410),
+    ("nhl", 896): (0.687, 1.326), ("nhl", 1310): (0.740, 1.267),
+    ("nhl", 2206): (0.806, 1.207),
 }
 
 # Miss reason enum. Every scheduled game that is not `priced` carries exactly
