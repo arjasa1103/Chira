@@ -306,6 +306,102 @@ fits the schedule.**
   constraints above, wide overlapping bands are a plausible outcome and will be reported as
   such rather than mined for significance.
 
+### Amendment 3 (2026-09-20): the headline-2 strata, rebuilt
+
+Three changes to section 8, all adopted before any stratified statistic was computed, and
+all forced by measurements that did not exist when section 8 was written.
+
+**3a. Liquidity is cut WITHIN season phase, not within season.** Section 8 cuts volume
+deciles within season to stop "low liquidity" from meaning "2024-25". That defends against
+the between-season confound and does nothing about the within-season one. Measured on the
+census (`week_of_season` against terminal volume, games with volume present):
+
+| Sport-season | Spearman(volume, week) | Low-liquidity games that are early, as pre-registered |
+|---|---|---|
+| NBA 2024-25 | +0.521 | 0.686 |
+| NBA 2025-26 | +0.361 | 0.660 |
+| NHL 2024-25 | +0.532 | 0.719 |
+| NHL 2025-26 | +0.413 | 0.695 |
+
+0.500 would mean the two axes are independent. At 0.69 they are close to the same cut, and
+section 8's primary directional test is the slope difference BETWEEN strata, so the
+confound lands directly on the headline. Cutting volume inside each phase restores
+0.511 / 0.503 / 0.506 / 0.534 and evens the cells (221-312 per cell, against 126-419).
+The stratum now reads "low liquidity *relative to that point in the season*", which is the
+quantity section 8 intended.
+
+A residual-based alternative (regress log volume on week, stratify on the residual) was
+tested and works comparably (residual-vs-week correlation at most 0.07). It was not adopted:
+it buries a fitted model inside a pre-registered definition, for no measured gain.
+
+**3b. The primary directional test is NBA-only. NHL is reported as a contrast case.**
+PLAN.md made NHL load-bearing for per-stratum n, and n is fine (896 and 1,310 priced). What
+that reasoning could not anticipate is that the NHL market carries almost no information.
+Murphy resolution at the close, measured in week 4:
+
+| | NBA | NHL |
+|---|---|---|
+| 2024-25 | 0.04831 | 0.01520 |
+| 2025-26 | 0.05201 | 0.00571 |
+
+A market that quotes near the base rate is perfectly calibrated and uninformative, and it
+cannot be shown to be miscalibrated in an interesting way at any n. NHL closes also span
+0.200-0.825 with 82.6% inside [0.35, 0.65], so the favourite and longshot tails where the
+literature reports bias are nearly empty. NHL is therefore reported in full, as the contrast
+case that a calibrated market need not be a useful one, and is not the sample the primary
+test is computed on. This narrows the primary test; it does not drop data or hide a result.
+
+**3c. Where market-level volume is absent, event-level volume is used as a flagged proxy.**
+318 priced games carry no volume: 161 NBA and 157 NHL between 2026-03-04 and 2026-03-25,
+plus 8 NBA on 2024-11-12/13. Confirmed against the live API on 2026-09-19 rather than
+inferred: for games in that window the Gamma market object carries **no** volume field at
+all, while a 2025 market carries nine (`volume`, `volumeNum`, `volumeClob`, and the 1wk/1mo/1yr
+variants). In the affected window 161 of 170 NBA and 157 of 167 NHL priced games are hit, so
+it is an upstream gap in a calendar block, not a code path in one sport.
+
+The block is **late-season** (weeks 20-23 NBA, 22-25 NHL of 25 and 28), so dropping those
+games would silently delete late-season, disproportionately high-volume games and
+re-introduce by the back door exactly the season-phase confound 3a removes.
+
+Adopted: where the market carries no volume, use the **event-level** volume, recorded per
+game with a provenance flag (`volume_source`). In a 24-game sample, 15 had event-level
+volume and 9 had none. Games with neither stay out of the liquidity strata and are reported
+as a named, counted category with their dates.
+
+This is a definition change and is stated as one: event volume sums **every market type in
+the event** (moneyline, spread, first-half), so it is not the pre-registered per-market
+moneyline volume. It is therefore an upper bound on the quantity section 8 defines, it is
+used only where the real value does not exist, every affected game is flagged, and the
+primary test is re-run with all proxied games excluded as a mandatory sensitivity check. If
+the two disagree, the excluded-games version is the reported one.
+
+**When, and what had been seen.** Adopted before any stratified statistic, any bootstrap
+band, and any model fit. Full disclosure, because this is the one that matters: evaluating
+the three candidate designs on 2026-09-19 computed **Cox slope point estimates per liquidity
+level, on real outcomes**, for each candidate. Those numbers were visible when 3a was chosen:
+
+| Design | Low-liquidity slope | High-liquidity slope |
+|---|---|---|
+| As pre-registered | +1.136 to +1.447 | +0.411 to +0.901 |
+| Within-phase (adopted) | +1.079 to +1.399 | +0.535 to +0.904 |
+| Residualized | +1.162 to +1.403 | +0.413 to +0.917 |
+
+Two things follow, and both are stated rather than argued. First, the design was chosen on
+orthogonality and cell balance, which are computable without outcomes, and the contrast is
+near-identical under all three candidates, so the choice cannot have been selecting whichever
+design produced the largest difference. Second, the direction of the headline-2 result is
+therefore **already known to the author** before the pre-registered analysis runs, and that
+is a real, permanent loss of blindness which no argument undoes. What remains genuinely
+untested: every bootstrap band, the phase axis, the per-stratum bin structure, the sensitivity
+splits, and whether any difference survives its interval. Those are what the week 5-6
+analysis reports, and the point estimates above are published alongside them so a reader can
+see precisely what was known and when.
+
+**Unchanged by this amendment:** the 150-games-per-bin floor, the single-primary-test
+family-wise policy, game-level bootstrap resampling, terminal cumulative volume as the
+definition wherever it exists, and section 8's honest framing that this guarantees a
+measurement rather than a finding.
+
 ## 9. Risk tiers
 
 **Omitted from the first draft. Restored here before any model fit.** PLAN.md's Phase 0 named

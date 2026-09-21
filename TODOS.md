@@ -3,7 +3,19 @@
 Deferred work, with enough context to pick up cold. Sourced from the /autoplan
 CEO review (2026-09-11). Items in PLAN.md's task list are NOT duplicated here.
 
-## P1 — The pre-registered 2x2 is not orthogonal (blocks week 5-6)
+## RESOLVED 2026-09-20 — The pre-registered 2x2 is not orthogonal
+
+**Decision: cut volume levels WITHIN season phase.** Recorded as PREREGISTRATION.md
+Amendment 3a, with the measured confound (Spearman +0.36 to +0.53; 66-72% of low-liquidity
+games early) and the restored balance (0.503-0.534, cells 221-312). The residualized
+alternative was tested and rejected: comparable orthogonality, but it buries a fitted model
+in a pre-registered definition.
+
+**Implementation left for week 5:** the strata builder cuts volume inside each phase, and
+the per-cell n check uses the per-n null rows in `CENSUS_NULL_ECE_P99_BY_N`, never the
+pooled cap.
+
+**Original item, kept for the record:**
 
 **What:** Re-examine the section-8 strata design before building headline 2.
 
@@ -25,7 +37,28 @@ strata, so a confound between the two axes lands directly on the headline.
 
 **Effort:** S to decide (human ~2h / CC ~20min), M if it needs an amendment. **Priority:** P1.
 
-## P2 — 318 priced games carry no volume, in one calendar block
+## PARTLY RESOLVED 2026-09-20 — 318 priced games carry no volume
+
+**Cause confirmed** against the live API on 2026-09-19, no longer inferred: for games in the
+2026-03-04..25 window the Gamma market object carries no volume field at all, while a 2025
+market carries nine. 161 of 170 NBA and 157 of 167 NHL priced games in that window are hit,
+so it is upstream and calendar-shaped, not a sport's code path.
+
+**Decision: use event-level volume as a flagged proxy** where the market has none, per
+PREREGISTRATION.md Amendment 3c. Sampled 24 affected games: 15 have event-level volume, 9
+have nothing. Games with neither stay out of the liquidity strata as a counted, named
+category.
+
+**Implementation left for week 5, and it is not trivial:**
+1. Fetch event-level volume for the 318 games (~318 requests) and store it as a NEW column
+   (`volume_event`) plus `volume_source`, never overwriting `volume`. The frozen snapshot's
+   content hash covers the pre-registered definition and must keep covering it.
+2. That means a re-cut snapshot or a documented side table. Decide which before fetching;
+   a second snapshot needs disk headroom this machine does not currently have (3.9 GB free).
+3. Event volume sums every market type in the event, so it is an upper bound. The mandatory
+   sensitivity re-run with all proxied games excluded is part of the analysis, not optional.
+
+**Original item, kept for the record:**
 
 **What:** Establish why Gamma returned no volume field, and decide how headline 2 treats them.
 
@@ -45,7 +78,18 @@ is "record the gap", not "backfill it".
 
 **Effort:** S (human ~2h / CC ~15min). **Priority:** P2.
 
-## P2 — NHL's market is nearly uninformative, which threatens its role
+## RESOLVED 2026-09-20 — NHL's market is nearly uninformative
+
+**Decision: NHL is a contrast case, not the primary sample.** The headline-2 primary
+directional test is computed on NBA; NHL is reported in full as the case where a market is
+perfectly calibrated and carries almost no information (resolution 0.0152 and 0.0057 against
+NBA's 0.0483 and 0.0520). Recorded as PREREGISTRATION.md Amendment 3b. Nothing is dropped
+and PLAN.md's per-stratum-n reasoning is answered directly: n was never the problem.
+
+**Implementation left for week 5:** NHL strata are still built and reported; only which
+sample carries the primary test changes.
+
+**Original item, kept for the record:**
 
 **What:** Re-check whether NHL can carry headline 2's per-stratum n.
 

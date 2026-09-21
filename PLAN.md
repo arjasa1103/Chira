@@ -27,6 +27,13 @@ it is NOT the right thing to cut if week 3 runs long. The collector still runs f
 late October so the 2027 option stays open, but its results are a follow-up post and are
 not part of what ships this semester.
 
+**Amended 2026-09-20 (PREREGISTRATION.md Amendment 3b).** The per-stratum-n argument held;
+n was never the problem. What it could not anticipate is that the NHL market carries almost
+no information (Murphy resolution 0.0152 and 0.0057, against NBA's 0.0483 and 0.0520), and a
+market quoting near the base rate cannot be shown to be miscalibrated in an interesting way
+at any n. NHL is therefore the **contrast case**, and the headline-2 primary directional test
+runs on NBA. NHL is still collected, analysed and published in full, so nothing is cut.
+
 ### Eleven-week schedule
 
 **STAGE THE DELIVERABLE, NOT THE WORK.** The original schedule put the entire artifact in
@@ -295,19 +302,22 @@ contradict each other.
       from the week-1 probe, exponential backoff with RFC 9110 `Retry-After` parsing,
       circuit breaker, and schema validation before anything is cached. Resumability is
       in the store, not the client: `census.run_census` skips games already settled.
-- [ ] **ORDERING (corrected by eng review):** the Phase 4 modeling decision and the
+- [x] **ORDERING (corrected by eng review, honoured in week 1):** the Phase 4 modeling decision and the
       noise-floor simulation are strict PREDECESSORS of the pre-registration.
       `PREREGISTRATION.md` is the **LAST** artifact of Phase 0, not the first. A
       pre-registration committed before the decisions that determine its contents, then
       amended, is worth nothing — and the git hash makes the amendment permanent.
-- [ ] Rate-limit calibration probe (10 min): ramp until the first 429, record reset
+- [x] Rate-limit calibration probe (done week 1; no 429 at any rate tested, see
+      notes/week1-rate-limit.md): ramp until the first 429, record reset
       behaviour. A blind fixed delay is the difference between a 4-hour and a 3-day census.
-- [ ] `PREREGISTRATION.md` committed LAST. Contents fixed in the design doc: sealed holdout,
+- [x] `PREREGISTRATION.md` committed LAST (week 1, commit `9f3c195`; amended three times
+      since, each with its own hash). Contents fixed in the design doc: sealed holdout,
       Brier primary with log loss clipped to [0.01, 0.99], one designated primary test,
       home-side-only calibration convention, Clark-West with date-block bootstrap, the
       numeric integrity gate, risk tiers at [0.02,0.05)/[0.05,0.10)/>=0.10, dev-side
       rolling-origin protocol, two closing-price constructions.
-- [ ] **Open item, blocks the gate:** re-derive the integrity thresholds against the
+- [x] **Done week 1, re-derived against the real pool in week 4 (Amendment 2):** the
+      integrity thresholds were re-derived against the
       estimator's noise floor by simulation. See Reviewer Concerns in the design doc. The
       currently written ECE and per-bin tilt caps sit at or below sampling noise and would
       fail a working pipeline.
@@ -403,6 +413,10 @@ in `chart-data.json`). Full write-up: notes/week4-charts.md.
 > cut. But its near-zero resolution is a new risk to that role, because a market carrying
 > almost no information cannot be shown to be miscalibrated in an interesting way, and that
 > risk should be re-checked before the week 5-6 strata are built.
+>
+> **Re-checked and settled 2026-09-20 (Amendment 3b): NHL is the contrast case.** The
+> primary directional test runs on NBA; NHL is reported in full as the case where a market
+> is perfectly calibrated and nearly uninformative.
 
 ## Phase 3 — Ingestion and feature store
 
