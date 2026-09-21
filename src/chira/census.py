@@ -88,7 +88,16 @@ def tipoff_is_plausible(gst: str | None, et_date: str) -> tuple[bool, str]:
 
 
 def _volume(market: dict) -> float | None:
-    for key in ("volumeNum", "volume"):
+    """Terminal cumulative volume, trying every field Gamma actually uses.
+
+    `volumeClob` was added in week 5. Without it, 8 NBA games on 2024-11-12/13
+    recorded NULL volume even though their moneyline market carried
+    volumeClob=113k-433k: those markets have no volumeNum and no volume at all.
+    Measured on 7 normal games where both exist, volumeClob equals the stored
+    volume exactly (ratio 1.000), so it is the same quantity under another name,
+    and it is tried LAST so no existing row can change.
+    """
+    for key in ("volumeNum", "volume", "volumeClob"):
         v = market.get(key)
         if isinstance(v, (int, float)):
             return float(v)

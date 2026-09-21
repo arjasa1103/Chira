@@ -52,6 +52,13 @@ and is already shippable. This keeps Approach B and cuts nothing; it converts
 | 3 (Sep 29-Oct 5) | Full census both sports (~15,300 requests), immutable snapshot release | `scheduled == priced + misses` balances |
 | 4 (Oct 6-12) | Charts 1 and 2, synthetic scorer. **Prices-only collector** + dead-man's switch + dry run | Coverage chart decides primary sport |
 | 5-6 (Oct 13-26) | Headline-2 analysis (T9), the 7 designated P1 tests, **then WRITE, PUBLISH AND FREEZE the artifact v1**: headline 2 + dataset release + prior-art section + GitHub Pages | **An artifact exists and is public** |
+
+**Week 5 status (2026-09-21).** T9 is done and the primary test returns a positive,
+robust result (see T9 below and notes/week5-headline2.md). Of the 7 designated P1 tests, 6
+are covered; **the leakage canary is not, and cannot be yet** -- it guards the feature
+store's point-in-time `as_of` machinery, which is Phase 3 in week 7, so it is scheduled
+there rather than counted as done. Week 6 remains: the writeup, the dataset release (still
+gated on the Polymarket ToS question, E18), the prior-art section, and GitHub Pages.
 | 7 (Oct 27-Nov 2) | Feature store with `ASOF JOIN`. One timeboxed slot to prove the availability source against live regular-season games | Availability: proven or dropped |
 | 8-9 (Nov 3-16) | Model, **full dress rehearsal on dev producing every table and figure**, then sealed holdout opened ONCE | Holdout opened once, never reopened |
 | 10-11 (Nov 17-30) | Add headline 1 as artifact v2. Remaining tests "if time" | v2 published |
@@ -1246,7 +1253,7 @@ The design doc's architecture description now conflicts with this review on two 
   - Surfaced by: Section 8 / Reviewer Concerns — thresholds sit at or below the estimator noise floor and will false-fire
   - Files: scoring/integrity.py, PREREGISTRATION.md
   - Verify: simulated perfectly-calibrated market passes the hard gate; ECE/slope/tilt report against simulated noise bands
-- [ ] **T9 (P1, human: ~12-20h / CC: ~1-2h)** — scoring/charts — Headline-2 stratified calibration: within-season volume deciles, season phase, and time-to-close
+- [x] **T9 (P1, human: ~12-20h / CC: ~1-2h)** — scoring/charts — Headline-2 stratified calibration: within-season volume deciles, season phase, and time-to-close
   - Surfaced by: 0C-bis Approach C + literature (arXiv 2602.19520: bias concentrated in specific categories)
   - Files: scoring/calibration.py, charts/calibration.py
   - Verify: pre-registered 2x2 (2 liquidity x 2 season-phase); minimum ~150 games per
@@ -1255,6 +1262,17 @@ The design doc's architecture description now conflicts with this review on two 
     bootstrap resamples GAMES not rows (time-to-close is a repeated measure, four looks at
     one sample); volume definition frozen in the snapshot with a content hash
   - Note: earlier estimate of ~4h was 3-5x low, and the promotion from P2 to P1 is applied here
+  - **DONE 2026-09-21** (`src/chira/strata.py`, `scripts/run_headline2.py`,
+    `docs/charts/chart3-headline2.png`, `docs/charts/headline2.json`,
+    notes/week5-headline2.md). Primary test: the NBA Cox slope is **+1.398 in low-liquidity
+    games against +0.586 in high-liquidity games, a difference of +0.812 with 95% CI
+    [+0.618, +1.033]**, one-sided p = 0.0000 on n=1,148/1,146, zero failed replicates. Both
+    seasons independently exclude zero, as do all four time-to-close looks and both
+    staleness subsets, and low exceeds high in **all 8** sport-season x phase pairs
+    including NHL. The obvious artifact was tested and rejected: caliper-matching on
+    |logit p| equalises the price spread (sd 0.595 vs 0.593) and returns +0.804
+    [+0.559, +1.057]. Per-cell claims are deliberately not made -- at NHL n=225 the null
+    ECE p99 is 0.1288, so single cells are close to unfalsifiable.
 - [ ] **T10 (P2, human: ~2h / CC: ~10min)** — scoring — Hostile-QA synthetic-market test of the scorer
   - Surfaced by: Section 6 — the instrument is never validated before it judges the market
   - Files: tests/test_scorer_synthetic.py

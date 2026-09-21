@@ -37,7 +37,25 @@ strata, so a confound between the two axes lands directly on the headline.
 
 **Effort:** S to decide (human ~2h / CC ~20min), M if it needs an amendment. **Priority:** P1.
 
-## PARTLY RESOLVED 2026-09-20 — 318 priced games carry no volume
+## RESOLVED 2026-09-21 — 318 priced games carry no volume
+
+**Amendment 3c's proxy was WITHDRAWN on measurement (Amendment 4).** Event-level volume is
+present on only ~36% of the affected games and reads $350-$11,169 against season medians of
+$604k and $2.03M, so it is neither the same quantity nor an upper bound. The 318 games are
+excluded from the liquidity axis as a named, counted category and never proxied; they stay
+in the phase axis and in every unstratified number.
+
+**8 of the 326 were never missing volume:** their moneyline market carries `volumeClob`,
+which `census._volume` did not try. Measured equal to the stored volume (ratio 1.000) on 7
+normal games, so it recovers the pre-registered quantity. `_volume` now tries it last, and
+the recovered values live in `data/volume_patch/` with a checksum manifest naming the base
+snapshot digest -- the frozen snapshot is untouched. All 326 resolved from the week-3 cache,
+so they are census-time values.
+
+**Nothing left to do here.** The remaining cost is stated in Amendment 4: NBA 2025-26's late
+cells hold 212 games against 321 early.
+
+**Original item, kept for the record:**
 
 **Cause confirmed** against the live API on 2026-09-19, no longer inferred: for games in the
 2026-03-04..25 window the Gamma market object carries no volume field at all, while a 2025

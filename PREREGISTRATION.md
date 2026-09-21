@@ -402,6 +402,86 @@ family-wise policy, game-level bootstrap resampling, terminal cumulative volume 
 definition wherever it exists, and section 8's honest framing that this guarantees a
 measurement rather than a finding.
 
+### Amendment 4 (2026-09-21): 3c's volume proxy is withdrawn, and the strata definitions are pinned
+
+**4a. The event-level volume proxy adopted by Amendment 3c is WITHDRAWN on measurement.**
+3c adopted event volume where a market carries none, reasoning that it sums every market
+type in the event and is therefore an upper bound on the pre-registered per-market quantity.
+Measured on 2026-09-21, it is not an upper bound and not the same order of magnitude:
+
+- it is present on only about 36% of the affected games (5 of 14 sampled across the block), and
+- where present it reads **$350 to $11,169**, against season medians of $604k (NHL 2025-26)
+  and $2.03M (NBA 2025-26).
+
+Using it would have placed late-season games in the low-liquidity stratum because of what
+the field means rather than how the market traded — the confound 3a exists to remove, with
+the sign reversed. The 318 games are therefore **excluded from the liquidity axis as a named,
+counted category with their dates, and are never proxied**, which is 3c's own fallback for
+games with neither value. They remain in the season-phase axis and in every unstratified
+number. 3c's mandatory "re-run with proxied games excluded" is satisfied trivially: there are
+no proxied games.
+
+**The cost is stated, not hidden.** The liquidity axis loses 318 games, all late-season
+2025-26 (weeks 20-23 NBA, 22-25 NHL), so NBA 2025-26's late cells hold 212 games against 321
+early. 3c was right that dropping late-season games is a real loss; it was wrong that the
+proxy was the cheaper error.
+
+**Not an amendment, recorded for completeness.** 8 of the 326 games with no stored volume
+were never missing it: their moneyline market carries `volumeClob` while `volumeNum` and
+`volume` are absent, and `census._volume` tried only the latter two. On 7 normal games where
+both exist, `volumeClob` equals the stored volume exactly (ratio 1.000), so reading it
+recovers the pre-registered quantity rather than substituting a different one. All 326 games
+resolved from the week-3 HTTP cache, so the values are census-time values, as section 1
+requires. Stored in `data/volume_patch/` with its own checksum manifest naming the base
+snapshot digest; the frozen snapshot and its published digest are untouched.
+
+**4b. The strata definitions are pinned.** Section 8 requires "2 liquidity levels x 2 season
+phases" and never defines either cut. Both are **equal-count median splits inside each
+sport-season**, with ties going to the early and low side (week-of-season is a small integer,
+so a whole week sits on the median and an undefined tie rule would move ~50 games per run):
+
+- **phase:** early if `week_of_season <= median(week_of_season)` for that sport-season;
+- **liquidity:** low if `volume <= median(volume)` **within that phase** (Amendment 3a),
+  among games whose volume exists.
+
+This is not a new choice. It reproduces Amendment 3a's published table exactly — the
+pre-registered early share 0.686 / 0.660 / 0.719 / 0.695, the within-phase 0.511 / 0.503 /
+0.506 / 0.534, and cells of 221-312 — so it is the definition 3a already used, written down.
+One difference is recorded rather than smoothed: the Spearman correlations recompute 0.005
+lower in the third decimal (+0.519 / +0.360 / +0.537 / +0.409 against 3a's +0.521 / +0.361 /
++0.532 / +0.413).
+
+**4c. The primary test is pooled across the two NBA seasons**, with the per-season results
+reported beside it. Pooling does not mix regimes, because each game's liquidity label is
+already relative to its own season and phase. Section 1's requirement that every headline
+number also appear per season is met by the per-season intervals, which are secondary under
+section 7 along with everything else.
+
+**4d. Per-cell inference is weak, and the numbers to judge it by now exist.** Section 4
+requires per-stratum work to use the null row at its own n, and the week-1 table stopped at
+n=850 while the cells are 212-333. Rows at n=200, 225, 300, 448, 613 and 615 were simulated
+from the census pools and committed as `CENSUS_NULL_ECE_P99_BY_N` and
+`CENSUS_NULL_SLOPE_CI_BY_N`. They are stark: at NHL n=225 a perfectly calibrated market has
+a null ECE p99 of **0.1288** and a null slope 95% band of **[0.414, 1.694]**. Any single
+cell's calibration is therefore close to unfalsifiable, and the reported result is the pooled
+contrast with its interval, never a per-cell claim.
+
+**4e. The price-range checks are POST-HOC, and that is disclosed.** The primary test was
+computed first. Only then was it noticed that volume being outcome-correlated (section 8's
+own caveat: close games attract volume) predicts a narrower price range in the
+high-liquidity stratum, which attenuates a Cox slope and could produce the entire contrast
+as an artifact. Measured: sd of logit price 0.949 high against 1.207 low. Three checks were
+then added — two band restrictions and a 1:1 caliper match on |logit p| — and they are
+exploratory robustness, not pre-registered analysis. Their results are in
+notes/week5-headline2.md; the matched contrast is +0.804 [+0.559, +1.057] against the
+unmatched +0.812, and the narrowest band does not exclude zero at n=362/581.
+
+**Unchanged by this amendment:** the 2x2 itself, the 150-games-per-bin floor, the
+single-primary-test family-wise policy, game-level bootstrap resampling, terminal cumulative
+volume as the definition wherever it exists, NBA as the primary sample with NHL as the
+contrast case (3b), and section 8's framing that this guarantees a measurement rather than a
+finding.
+
 ## 9. Risk tiers
 
 **Omitted from the first draft. Restored here before any model fit.** PLAN.md's Phase 0 named

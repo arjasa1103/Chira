@@ -1,0 +1,712 @@
+{
+  "bootstrap_reps": 2000,
+  "cells": [
+    {
+      "brier": 0.18197318037974683,
+      "cox_error": null,
+      "cox_intercept": 0.07202186075755239,
+      "cox_slope": 1.2692140240087018,
+      "ece_10bin": 0.050965189873417735,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5917721518987342,
+      "liquidity": "low",
+      "look": "p_close",
+      "mean_price": 0.5676424050632911,
+      "n": 316,
+      "n_bins": 2,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.0991,
+        "reference_n": 300,
+        "slope_ci": [
+          0.76,
+          1.319
+        ]
+      },
+      "phase": "early",
+      "resolution": 0.0633546177463289,
+      "season": "2024-25",
+      "slope_inside_own_null": true,
+      "sport": "nba"
+    },
+    {
+      "brier": 0.22702873015873015,
+      "cox_error": null,
+      "cox_intercept": -0.14556830805481022,
+      "cox_slope": 0.7255286813377956,
+      "ece_10bin": 0.06657142857142857,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5015873015873016,
+      "liquidity": "high",
+      "look": "p_close",
+      "mean_price": 0.5437460317460316,
+      "n": 315,
+      "n_bins": 2,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.0991,
+        "reference_n": 300,
+        "slope_ci": [
+          0.76,
+          1.319
+        ]
+      },
+      "phase": "early",
+      "resolution": 0.031071469208950007,
+      "season": "2024-25",
+      "slope_inside_own_null": false,
+      "sport": "nba"
+    },
+    {
+      "brier": 0.14770498411371238,
+      "cox_error": null,
+      "cox_intercept": 0.011415725555174287,
+      "cox_slope": 1.4940660518485236,
+      "ece_10bin": 0.08289130434782611,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.568561872909699,
+      "liquidity": "low",
+      "look": "p_close",
+      "mean_price": 0.5543327759197324,
+      "n": 299,
+      "n_bins": 1,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.1299,
+        "reference_n": 200,
+        "slope_ci": [
+          0.696,
+          1.417
+        ]
+      },
+      "phase": "late",
+      "resolution": 0.10751047167437637,
+      "season": "2024-25",
+      "slope_inside_own_null": false,
+      "sport": "nba"
+    },
+    {
+      "brier": 0.23957416387959868,
+      "cox_error": null,
+      "cox_intercept": -0.049874407570823336,
+      "cox_slope": 0.5626404149800245,
+      "ece_10bin": 0.08172240802675584,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5150501672240803,
+      "liquidity": "high",
+      "look": "p_close",
+      "mean_price": 0.540484949832776,
+      "n": 299,
+      "n_bins": 1,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.1299,
+        "reference_n": 200,
+        "slope_ci": [
+          0.696,
+          1.417
+        ]
+      },
+      "phase": "late",
+      "resolution": 0.019588584920300328,
+      "season": "2024-25",
+      "slope_inside_own_null": false,
+      "sport": "nba"
+    },
+    {
+      "brier": 0.17292235202492212,
+      "cox_error": null,
+      "cox_intercept": 0.050438135471699806,
+      "cox_slope": 1.2756434033135096,
+      "ece_10bin": 0.0503271028037383,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5887850467289719,
+      "liquidity": "low",
+      "look": "p_close",
+      "mean_price": 0.5688629283489096,
+      "n": 321,
+      "n_bins": 2,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.0991,
+        "reference_n": 300,
+        "slope_ci": [
+          0.76,
+          1.319
+        ]
+      },
+      "phase": "early",
+      "resolution": 0.07194587591347133,
+      "season": "2025-26",
+      "slope_inside_own_null": true,
+      "sport": "nba"
+    },
+    {
+      "brier": 0.258915,
+      "cox_error": null,
+      "cox_intercept": 0.10018848660647545,
+      "cox_slope": 0.30333674580818615,
+      "ece_10bin": 0.10706249999999999,
+      "ece_inside_own_null": false,
+      "home_win_rate": 0.534375,
+      "liquidity": "high",
+      "look": "p_close",
+      "mean_price": 0.5272812499999999,
+      "n": 320,
+      "n_bins": 2,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.0991,
+        "reference_n": 300,
+        "slope_ci": [
+          0.76,
+          1.319
+        ]
+      },
+      "phase": "early",
+      "resolution": 0.009072265625000003,
+      "season": "2025-26",
+      "slope_inside_own_null": false,
+      "sport": "nba"
+    },
+    {
+      "brier": 0.13290862146226415,
+      "cox_error": null,
+      "cox_intercept": -0.6273590112263824,
+      "cox_slope": 1.7691380638572296,
+      "ece_10bin": 0.0962240566037736,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5235849056603774,
+      "liquidity": "low",
+      "look": "p_close",
+      "mean_price": 0.5730778301886793,
+      "n": 212,
+      "n_bins": 1,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.1299,
+        "reference_n": 200,
+        "slope_ci": [
+          0.696,
+          1.417
+        ]
+      },
+      "phase": "late",
+      "resolution": 0.1300183662901712,
+      "season": "2025-26",
+      "slope_inside_own_null": false,
+      "sport": "nba"
+    },
+    {
+      "brier": 0.22063124999999997,
+      "cox_error": null,
+      "cox_intercept": 0.006198700818236334,
+      "cox_slope": 0.8262370840071289,
+      "ece_10bin": 0.06728773584905656,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5235849056603774,
+      "liquidity": "high",
+      "look": "p_close",
+      "mean_price": 0.5256367924528302,
+      "n": 212,
+      "n_bins": 1,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.1299,
+        "reference_n": 200,
+        "slope_ci": [
+          0.696,
+          1.417
+        ]
+      },
+      "phase": "late",
+      "resolution": 0.0356276940693103,
+      "season": "2025-26",
+      "slope_inside_own_null": true,
+      "sport": "nba"
+    },
+    {
+      "brier": 0.2313667400881057,
+      "cox_error": null,
+      "cox_intercept": -0.025681710694779026,
+      "cox_slope": 1.0588119829380978,
+      "ece_10bin": 0.06392070484581497,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5374449339207048,
+      "liquidity": "low",
+      "look": "p_close",
+      "mean_price": 0.5412334801762114,
+      "n": 227,
+      "n_bins": 1,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.1288,
+        "reference_n": 225,
+        "slope_ci": [
+          0.414,
+          1.694
+        ]
+      },
+      "phase": "early",
+      "resolution": 0.023423319628833275,
+      "season": "2024-25",
+      "slope_inside_own_null": true,
+      "sport": "nhl"
+    },
+    {
+      "brier": 0.24134502212389383,
+      "cox_error": null,
+      "cox_intercept": 0.20556827676640207,
+      "cox_slope": 0.7212996320287643,
+      "ece_10bin": 0.07617256637168142,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5663716814159292,
+      "liquidity": "high",
+      "look": "p_close",
+      "mean_price": 0.5228097345132743,
+      "n": 226,
+      "n_bins": 1,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.1288,
+        "reference_n": 225,
+        "slope_ci": [
+          0.414,
+          1.694
+        ]
+      },
+      "phase": "early",
+      "resolution": 0.016957911592335312,
+      "season": "2024-25",
+      "slope_inside_own_null": true,
+      "sport": "nhl"
+    },
+    {
+      "brier": 0.21584932432432433,
+      "cox_error": null,
+      "cox_intercept": 0.2655255561125623,
+      "cox_slope": 1.3892105310954508,
+      "ece_10bin": 0.08112612612612612,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.6261261261261262,
+      "liquidity": "low",
+      "look": "p_close",
+      "mean_price": 0.5523873873873874,
+      "n": 222,
+      "n_bins": 1,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.1414,
+        "reference_n": 200,
+        "slope_ci": [
+          0.382,
+          1.767
+        ]
+      },
+      "phase": "late",
+      "resolution": 0.025879046443088746,
+      "season": "2024-25",
+      "slope_inside_own_null": true,
+      "sport": "nhl"
+    },
+    {
+      "brier": 0.23295147058823526,
+      "cox_error": null,
+      "cox_intercept": 0.12211690963827564,
+      "cox_slope": 0.9470955751762881,
+      "ece_10bin": 0.0594343891402715,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5656108597285068,
+      "liquidity": "high",
+      "look": "p_close",
+      "mean_price": 0.5388914027149321,
+      "n": 221,
+      "n_bins": 1,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.1414,
+        "reference_n": 200,
+        "slope_ci": [
+          0.382,
+          1.767
+        ]
+      },
+      "phase": "late",
+      "resolution": 0.019012690449197376,
+      "season": "2024-25",
+      "slope_inside_own_null": true,
+      "sport": "nhl"
+    },
+    {
+      "brier": 0.24249737237237234,
+      "cox_error": null,
+      "cox_intercept": -0.04993334702867396,
+      "cox_slope": 0.9074384241664057,
+      "ece_10bin": 0.07902402402402404,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5225225225225225,
+      "liquidity": "low",
+      "look": "p_close",
+      "mean_price": 0.5379129129129129,
+      "n": 333,
+      "n_bins": 2,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.1118,
+        "reference_n": 300,
+        "slope_ci": [
+          0.47,
+          1.605
+        ]
+      },
+      "phase": "early",
+      "resolution": 0.015151442814399889,
+      "season": "2025-26",
+      "slope_inside_own_null": true,
+      "sport": "nhl"
+    },
+    {
+      "brier": 0.2548490210843373,
+      "cox_error": null,
+      "cox_intercept": -0.001999528197680304,
+      "cox_slope": 0.22874936527228565,
+      "ece_10bin": 0.08805722891566262,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5060240963855421,
+      "liquidity": "high",
+      "look": "p_close",
+      "mean_price": 0.5274849397590361,
+      "n": 332,
+      "n_bins": 2,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.1118,
+        "reference_n": 300,
+        "slope_ci": [
+          0.47,
+          1.605
+        ]
+      },
+      "phase": "early",
+      "resolution": 0.005021374073059198,
+      "season": "2025-26",
+      "slope_inside_own_null": false,
+      "sport": "nhl"
+    },
+    {
+      "brier": 0.23162161885245902,
+      "cox_error": null,
+      "cox_intercept": -0.005088121375363061,
+      "cox_slope": 1.3773345052464967,
+      "ece_10bin": 0.06649590163934428,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5532786885245902,
+      "liquidity": "low",
+      "look": "p_close",
+      "mean_price": 0.5409631147540984,
+      "n": 244,
+      "n_bins": 1,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.1288,
+        "reference_n": 225,
+        "slope_ci": [
+          0.414,
+          1.694
+        ]
+      },
+      "phase": "late",
+      "resolution": 0.02193597151303413,
+      "season": "2025-26",
+      "slope_inside_own_null": true,
+      "sport": "nhl"
+    },
+    {
+      "brier": 0.2425877049180328,
+      "cox_error": null,
+      "cox_intercept": 0.03396796099001771,
+      "cox_slope": 0.8461438860709081,
+      "ece_10bin": 0.08729508196721313,
+      "ece_inside_own_null": true,
+      "home_win_rate": 0.5409836065573771,
+      "liquidity": "high",
+      "look": "p_close",
+      "mean_price": 0.53827868852459,
+      "n": 244,
+      "n_bins": 1,
+      "null": {
+        "below_table": false,
+        "ece_p99": 0.1288,
+        "reference_n": 225,
+        "slope_ci": [
+          0.414,
+          1.694
+        ]
+      },
+      "phase": "late",
+      "resolution": 0.01703619098808564,
+      "season": "2025-26",
+      "slope_inside_own_null": true,
+      "sport": "nhl"
+    }
+  ],
+  "cuts": {
+    "nba/2024-25": {
+      "n": 1229,
+      "n_volume_absent": 0,
+      "volume_median_early": 216662.208511,
+      "volume_median_late": 383192.7726365,
+      "week_median": 13.0
+    },
+    "nba/2025-26": {
+      "n": 1226,
+      "n_volume_absent": 161,
+      "volume_median_early": 1765496.624381,
+      "volume_median_late": 2478575.2389335,
+      "week_median": 13.0
+    },
+    "nhl/2024-25": {
+      "n": 896,
+      "n_volume_absent": 0,
+      "volume_median_early": 38375.89387,
+      "volume_median_late": 80082.234368,
+      "week_median": 18.0
+    },
+    "nhl/2025-26": {
+      "n": 1310,
+      "n_volume_absent": 157,
+      "volume_median_early": 469215.092217,
+      "volume_median_late": 791662.7306015012,
+      "week_median": 13.0
+    }
+  },
+  "primary_test": {
+    "look": "p_close",
+    "null_reference_high": {
+      "below_table": false,
+      "ece_p99": 0.0733,
+      "reference_n": 613,
+      "slope_ci": [
+        0.817,
+        1.22
+      ]
+    },
+    "null_reference_low": {
+      "below_table": false,
+      "ece_p99": 0.0733,
+      "reference_n": 613,
+      "slope_ci": [
+        0.817,
+        1.22
+      ]
+    },
+    "per_season": {
+      "2024-25": {
+        "ci_hi": 1.0360359191862023,
+        "ci_lo": 0.46414479667283837,
+        "cox_failures": 0,
+        "difference": 0.7410131616968051,
+        "excludes_zero": true,
+        "n_high": 614,
+        "n_low": 615,
+        "p_one_sided": 0.0,
+        "reps": 2000,
+        "slope_high": 0.6413434233498626,
+        "slope_low": 1.3823565850466677
+      },
+      "2025-26": {
+        "ci_hi": 1.2407810413676412,
+        "ci_lo": 0.6168819000094307,
+        "cox_failures": 0,
+        "difference": 0.9109325893451303,
+        "excludes_zero": true,
+        "n_high": 532,
+        "n_low": 533,
+        "p_one_sided": 0.0,
+        "reps": 2000,
+        "slope_high": 0.5139719425485796,
+        "slope_low": 1.42490453189371
+      }
+    },
+    "pooled": {
+      "ci_hi": 1.0325209964499942,
+      "ci_lo": 0.6177758755228516,
+      "cox_failures": 0,
+      "difference": 0.8115128187806959,
+      "excludes_zero": true,
+      "n_high": 1146,
+      "n_low": 1148,
+      "p_one_sided": 0.0,
+      "reps": 2000,
+      "slope_high": 0.5862685642282579,
+      "slope_low": 1.3977813830089538
+    },
+    "primary": true,
+    "sport": "nba"
+  },
+  "sensitivity": {
+    "by_look": {
+      "p_close": {
+        "ci_hi": 1.0326041319671797,
+        "ci_lo": 0.6121006030527275,
+        "cox_failures": 0,
+        "difference": 0.8115128187806959,
+        "excludes_zero": true,
+        "n_high": 1146,
+        "n_low": 1148,
+        "p_one_sided": 0.0,
+        "reps": 500,
+        "slope_high": 0.5862685642282579,
+        "slope_low": 1.3977813830089538
+      },
+      "p_t1h": {
+        "ci_hi": 1.0142773156432423,
+        "ci_lo": 0.6204457218795908,
+        "cox_failures": 0,
+        "difference": 0.8256342813033878,
+        "excludes_zero": true,
+        "n_high": 1146,
+        "n_low": 1147,
+        "p_one_sided": 0.0,
+        "reps": 500,
+        "slope_high": 0.5782723221086191,
+        "slope_low": 1.403906603412007
+      },
+      "p_t24h": {
+        "ci_hi": 1.0834610839696914,
+        "ci_lo": 0.6384739427647691,
+        "cox_failures": 0,
+        "difference": 0.8527936762136715,
+        "excludes_zero": true,
+        "n_high": 1100,
+        "n_low": 1093,
+        "p_one_sided": 0.0,
+        "reps": 500,
+        "slope_high": 0.5343584742542459,
+        "slope_low": 1.3871521504679174
+      },
+      "p_t6h": {
+        "ci_hi": 1.0427589283195247,
+        "ci_lo": 0.6334172667553628,
+        "cox_failures": 0,
+        "difference": 0.833900972833879,
+        "excludes_zero": true,
+        "n_high": 1143,
+        "n_low": 1138,
+        "p_one_sided": 0.0,
+        "reps": 500,
+        "slope_high": 0.550860612636661,
+        "slope_low": 1.38476158547054
+      }
+    },
+    "by_staleness": {
+      "fresh": {
+        "ci_hi": 1.0545094986256864,
+        "ci_lo": 0.5106780868407218,
+        "cox_failures": 0,
+        "difference": 0.7698857929606144,
+        "excludes_zero": true,
+        "n_high": 711,
+        "n_low": 663,
+        "p_one_sided": 0.0,
+        "reps": 500,
+        "slope_high": 0.6745964527450086,
+        "slope_low": 1.444482245705623
+      },
+      "stale": {
+        "ci_hi": 1.1948395407799497,
+        "ci_lo": 0.5821984523731125,
+        "cox_failures": 0,
+        "difference": 0.8655230744810061,
+        "excludes_zero": true,
+        "n_high": 435,
+        "n_low": 485,
+        "p_one_sided": 0.0,
+        "reps": 500,
+        "slope_high": 0.4783378166585022,
+        "slope_low": 1.3438608911395082
+      }
+    },
+    "price_range": {
+      "bands": {
+        "0.2-0.8": {
+          "ci_hi": 0.9527265228801228,
+          "ci_lo": 0.35849472350586775,
+          "cox_failures": 0,
+          "difference": 0.6588205842449979,
+          "excludes_zero": true,
+          "n_high": 959,
+          "n_low": 811,
+          "p_one_sided": 0.0,
+          "reps": 500,
+          "slope_high": 0.6408084656196582,
+          "slope_low": 1.299629049864656
+        },
+        "0.35-0.65": {
+          "ci_hi": 1.3289613103032747,
+          "ci_lo": -0.19016061887704372,
+          "cox_failures": 0,
+          "difference": 0.5124052553211284,
+          "excludes_zero": false,
+          "n_high": 581,
+          "n_low": 362,
+          "p_one_sided": 0.092,
+          "reps": 500,
+          "slope_high": 0.8430676573667139,
+          "slope_low": 1.3554729126878422
+        }
+      },
+      "caliper_matched": {
+        "caliper": 0.1,
+        "ci_hi": 1.056758697827117,
+        "ci_lo": 0.5590925551767192,
+        "cox_failures": 0,
+        "difference": 0.804021569854931,
+        "excludes_zero": true,
+        "n_high": 917,
+        "n_low": 917,
+        "p_one_sided": 0.0,
+        "pairs": 917,
+        "reps": 500,
+        "sd_logit_high": 0.5927429618988569,
+        "sd_logit_low": 0.5953573584757493,
+        "slope_high": 0.5798911326762349,
+        "slope_low": 1.383912702531166
+      },
+      "dispersion": {
+        "high": {
+          "mean_abs_dist_from_half": 0.1680715532286213,
+          "n": 1146,
+          "sd_logit_price": 0.949073180783367,
+          "share_inside_0.35_0.65": 0.5069808027923212
+        },
+        "low": {
+          "mean_abs_dist_from_half": 0.22075435540069685,
+          "n": 1148,
+          "sd_logit_price": 1.2066422726758559,
+          "share_inside_0.35_0.65": 0.3153310104529617
+        }
+      }
+    },
+    "volume_absent": {
+      "by_sport_season": {
+        "nba/2024-25": 0,
+        "nba/2025-26": 161,
+        "nhl/2024-25": 0,
+        "nhl/2025-26": 157
+      },
+      "n": 318,
+      "note": "excluded from the liquidity axis, never proxied (Amendment 4); still present in the phase axis and in every unstratified number",
+      "weeks": [
+        20,
+        21,
+        22,
+        23,
+        24,
+        25
+      ]
+    }
+  },
+  "snapshot": "data/snapshots/census-20260913-224d6ad985e0",
+  "store_digest": "224d6ad985e09d71f542388f8d14e908e4d94efe5f4b5b5b00c956a6a597ef52"
+}

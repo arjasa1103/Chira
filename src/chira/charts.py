@@ -221,3 +221,71 @@ def chart_calibration(con, out: str | Path, *, look_name: str = "p_close",
     fig.savefig(out, dpi=150)
     plt.close(fig)
     return stats
+
+
+def chart_strata(f: dict, out: str | Path, *, sport: str = "nba",
+                 look_name: str = "p_close", reps: int = 2000,
+                 seed: int = 0) -> dict:
+    """Chart 3: headline 2. Calibration by liquidity, and every cell's slope.
+
+    Left panel is the pre-registered contrast: two calibration curves, low and
+    high liquidity, for the sport the primary test runs on. Right panel is every
+    cell's Cox slope against the null band AT THAT CELL'S OWN n, which is the
+    only honest way to read a per-cell slope: at NHL n=225 a perfectly
+    calibrated market's slope can sit anywhere in [0.414, 1.694].
+    """
+    from .strata import LEVELS, cell_table, null_reference, primary_test
+
+    fig, (ax, axf) = plt.subplots(1, 2, figsize=(12.5, 5.6),
+                                  gridspec_kw={"width_ratios": [1, 1.25]})
+    colors = {"low": "#c8553d", "high": "#2f6f9f"}
+    stats = {}
+    ax.plot([0, 1], [0, 1], color="0.6", lw=1, ls="--", label="perfect calibration")
+    for lv in LEVELS:
+        m = (f["sport"] == sport) & (f["liquidity"] == lv) & ~np.isnan(f[look_name])
+        p, y = f[look_name][m], f["y"][m]
+        s = calibration_stats(p, y, reps=reps, seed=seed)
+        stats[lv] = s
+        mp = np.array(s["curve"]["mean_p"])
+        ax.fill_between(mp, s["band_lo"], s["band_hi"], color=colors[lv], alpha=0.18)
+        ax.plot(mp, np.array(s["curve"]["obs_rate"]), color=colors[lv], marker="o",
+                ms=4, lw=1.4,
+                label=f"{lv} liquidity (n={s['n']}, slope {s['cox_slope']:.2f})")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect("equal")
+    ax.set_xlabel("market closing price (home)")
+    ax.set_ylabel("observed home win rate")
+    ax.legend(loc="upper left", fontsize=8)
+    ax.set_title(f"{LABEL.get(sport, sport)}: calibration by liquidity", fontsize=10)
+
+    cells = cell_table(f, look_name)
+    ys = np.arange(len(cells))
+    for i, r in enumerate(cells):
+        lo, hi = r["null"]["slope_ci"]
+        # the null band first, so a slope inside it is visibly unremarkable
+        axf.plot([lo, hi], [i, i], color="0.75", lw=6, solid_capstyle="butt",
+                 zorder=1)
+        if r["cox_slope"] is not None:
+            axf.plot(r["cox_slope"], i, "o", ms=6, zorder=2,
+                     color=colors.get(r["liquidity"], "0.3"))
+    axf.axvline(1.0, color="0.4", lw=1, ls="--")
+    axf.set_yticks(ys)
+    axf.set_yticklabels([f"{r['sport']} {r['season']} {r['phase']}/{r['liquidity']}"
+                         for r in cells], fontsize=7)
+    axf.set_xlabel("Cox slope (grey = null 95% band at that cell's own n)")
+    axf.set_title("every cell, against its own noise floor", fontsize=10)
+    axf.invert_yaxis()
+
+    prim = primary_test(f, sport=sport, look_name=look_name, reps=reps, seed=seed)
+    pooled = prim["pooled"]
+    fig.suptitle(
+        f"Chart 3 — headline 2: slope difference (low - high liquidity) "
+        f"{pooled['difference']:+.3f}  95% CI "
+        f"[{pooled['ci_lo']:+.3f}, {pooled['ci_hi']:+.3f}]", y=0.99)
+    fig.tight_layout()
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    return {"by_liquidity": stats, "primary": prim,
+            "null_at_primary_n": null_reference(sport, pooled["n_low"])}

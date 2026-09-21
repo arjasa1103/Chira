@@ -24,12 +24,18 @@ from pathlib import Path
 
 import numpy as np
 
-from .snapshot import open_snapshot
+from .snapshot import _sql_path, open_snapshot
 
 # The four looks at one sample (PREREGISTRATION.md section 8). They are a
 # repeated measure, not four independent observations, which is why a bootstrap
 # over more than one of them must resample GAMES and reuse the draw.
 LOOKS = ("p_close", "p_t1h", "p_t6h", "p_t24h")
+
+# The week-5 side table (scripts/fetch_volume_patch.py). It carries volume for
+# games the census recorded as NULL, plus an explicit "no volume exists" marker,
+# and it lives beside the snapshot rather than inside it so the frozen store
+# digest quoted in README.md and notes/week3-census.md stays valid.
+VOLUME_PATCH = "data/volume_patch/volume_patch.parquet"
 
 _FRAME_SQL = """
 SELECT
@@ -40,7 +46,16 @@ SELECT
     p.p_home_t24h        AS p_t24h,
     p.p_home_close_gamma AS p_close_gamma,
     CASE WHEN g.winner = 'home' THEN 1.0 ELSE 0.0 END AS y,
-    p.volume, p.stale_flat_run, p.cutoff_source, p.gamma_delta_min,
+    -- Volume, with the patch folded in. 'market' is the census's own value,
+    -- 'volumeClob' is a value the census missed (identical quantity, measured),
+    -- and 'absent' means Gamma has no per-market volume at all -- those games
+    -- are excluded from the liquidity axis by PREREGISTRATION.md Amendment 4
+    -- and are never proxied.
+    COALESCE(p.volume, vp.volume_recovered) AS volume,
+    CASE WHEN p.volume IS NOT NULL THEN 'market'
+         WHEN vp.volume_recovered IS NOT NULL THEN vp.volume_source
+         ELSE 'absent' END AS volume_source,
+    p.stale_flat_run, p.cutoff_source, p.gamma_delta_min,
     p.secs_before_tip, p.convention, p.market_type,
     -- Integer division, NOT CAST(x/7 AS INTEGER): the cast rounds to nearest,
     -- which would pull the back half of every week into the next one.
@@ -49,6 +64,8 @@ FROM priced p
 JOIN games g USING (sport, season, game_id)
 JOIN (SELECT sport, season, min(et_date) AS season_start
       FROM games GROUP BY sport, season) s USING (sport, season)
+LEFT JOIN volume_patch vp
+       ON vp.sport = p.sport AND vp.season = p.season AND vp.game_id = p.game_id
 {where}
 ORDER BY p.sport, p.season, p.game_id
 """
@@ -65,9 +82,34 @@ def _scope(sport: str | None, season: str | None) -> tuple[str, list]:
     return ("WHERE " + " AND ".join(clauses) if clauses else ""), args
 
 
-def open_frame(snapshot: str | Path, *, verify: bool = True):
+def attach_volume_patch(con, path: str | Path = VOLUME_PATCH) -> int:
+    """Expose the volume side table as a view. Returns the row count.
+
+    Always creates the view, empty when the file is absent, so the frame's SQL
+    has one shape and a missing patch degrades to "the census's own volume"
+    rather than to a query that will not parse.
+    """
+    p = Path(path)
+    if p.is_file():
+        con.execute("CREATE OR REPLACE VIEW volume_patch AS "
+                    f"SELECT * FROM read_parquet('{_sql_path(p)}')")
+        return int(con.execute("SELECT count(*) FROM volume_patch").fetchone()[0])
+    con.execute("""
+        CREATE OR REPLACE VIEW volume_patch AS
+        SELECT NULL::VARCHAR AS sport, NULL::VARCHAR AS season,
+               NULL::VARCHAR AS game_id, NULL::DOUBLE AS volume_recovered,
+               NULL::VARCHAR AS volume_source
+        WHERE FALSE
+    """)
+    return 0
+
+
+def open_frame(snapshot: str | Path, *, verify: bool = True,
+               patch: str | Path | None = VOLUME_PATCH):
     """Open the snapshot read-only. Checksums are verified unless told not to."""
-    return open_snapshot(snapshot, verify=verify)
+    con = open_snapshot(snapshot, verify=verify)
+    attach_volume_patch(con, patch if patch is not None else "")
+    return con
 
 
 def frame(con, sport: str | None = None, season: str | None = None) -> dict:
@@ -77,6 +119,16 @@ def frame(con, sport: str | None = None, season: str | None = None) -> dict:
     dependency, and the callers need numpy anyway.
     """
     where, args = _scope(sport, season)
+    # The frame joins the volume side table, so make sure it exists. A caller
+    # that built a connection itself (every test here, and any notebook) would
+    # otherwise get "Table with name volume_patch does not exist"; an empty view
+    # is the right default, meaning "the census's own volume, no patch".
+    present = con.execute(
+        "SELECT count(*) FROM duckdb_views() WHERE view_name = 'volume_patch' "
+        "UNION ALL SELECT count(*) FROM duckdb_tables() "
+        "WHERE table_name = 'volume_patch'").fetchall()
+    if not any(row[0] for row in present):
+        attach_volume_patch(con, "")
     cur = con.execute(_FRAME_SQL.format(where=where), args)
     cols = [d[0] for d in cur.description]
     rows = cur.fetchall()
