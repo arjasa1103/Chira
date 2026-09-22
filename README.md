@@ -69,6 +69,7 @@ The claim is about calibration, not profit. Nothing here places bets.
 - [Troubleshooting](#troubleshooting)
 - [Project documents](#project-documents)
 - [Data and terms of use](#data-and-terms-of-use)
+- [License](#license)
 
 ---
 
@@ -1308,16 +1309,38 @@ label-agreement failure costs 600 requests instead of 16,000.
 Chira reads public, unauthenticated endpoints: Polymarket Gamma and CLOB, the NHL web API,
 and `stats.nba.com` via the community-maintained `nba_api` client.
 
-**Whether Polymarket's terms allow redistributing its price data hasn't been verified**
-(see [notes/week1-tos-check.md](notes/week1-tos-check.md)). Until it is:
+**Polymarket's Terms of Use were read in week 5 and the question is settled: this project
+publishes no dataset.** Full reading and reasoning in
+[notes/week1-tos-check.md](notes/week1-tos-check.md); it is not legal advice. In short:
 
-- keep `data/` and `.http-cache/` out of version control (the `.gitignore` already does),
-- share the collector code and derived aggregates, not raw price series,
-- let others regenerate the census themselves with the commands in this README.
+- The terms define "Data" as market information "whether in **raw, derived, aggregated, or
+  anonymized** form", so "we only publish aggregates" is not the safe harbour it looks like.
+- They prohibit redistributing Data *to capital-markets entities or market data
+  distributors*, and a public release cannot choose its recipients.
+- They separately prohibit "data mining tools, robots, crawlers, or similar data gathering
+  and extraction tools". Whether that reaches a rate-limited client against the documented
+  public API depends on defined terms we have not read, and we record that as open rather
+  than as settled in our favour.
 
-The charts committed under `docs/charts/` are derived aggregates in exactly that sense:
-curves, bin counts, Murphy decompositions and the statistics behind them. No raw price series
-is committed, and `chart-data.json` carries the store digest and census git hash, so any
-figure can be traced back to the census it was cut from.
+So:
 
-No license file has been added to the repository yet.
+- `data/` and `.http-cache/` stay out of version control (the `.gitignore` already does),
+- **no dataset release**, of raw series or aggregates,
+- the collector code and this README are the reproduction path: regenerate the census from
+  the public API yourself.
+
+The charts committed under `docs/charts/` are the **figures of the writeup** — calibration
+curves, bin counts, Murphy decompositions, per-stratum slopes — published as research
+results, the way a paper's tables are, and not offered as a dataset. No raw price series is
+committed, and `chart-data.json` carries the store digest and census git hash, so any figure
+can be traced back to the census it was cut from.
+
+---
+
+## License
+
+- **Code: MIT.** See [LICENSE](LICENSE).
+- **Writeup, notes and figures: CC BY 4.0.** See [LICENSE-docs.md](LICENSE-docs.md).
+
+Neither licence grants any rights over Polymarket's market data, or over NBA and NHL
+schedule and result data. This project does not redistribute either.

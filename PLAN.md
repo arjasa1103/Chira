@@ -58,7 +58,14 @@ robust result (see T9 below and notes/week5-headline2.md). Of the 7 designated P
 are covered; **the leakage canary is not, and cannot be yet** -- it guards the feature
 store's point-in-time `as_of` machinery, which is Phase 3 in week 7, so it is scheduled
 there rather than counted as done. Week 6 remains: the writeup, the dataset release (still
-gated on the Polymarket ToS question, E18), the prior-art section, and GitHub Pages.
+**rescoped, see below**), the prior-art section, and GitHub Pages.
+
+**E18 resolved 2026-09-22.** The user read the Terms of Use. "Data" is defined to include
+derived and aggregated forms, which kills week 1's "publish aggregates only" mitigation, and
+redistribution is prohibited to capital-markets entities, which a public release cannot
+exclude. **Decision: no dataset release.** T11/E1 become the collector code plus a
+reproduction path, which still meets the week-6 gate. Licences added: MIT for code, CC BY
+4.0 for the writeup. Full reading: notes/week1-tos-check.md.
 | 7 (Oct 27-Nov 2) | Feature store with `ASOF JOIN`. One timeboxed slot to prove the availability source against live regular-season games | Availability: proven or dropped |
 | 8-9 (Nov 3-16) | Model, **full dress rehearsal on dev producing every table and figure**, then sealed holdout opened ONCE | Holdout opened once, never reopened |
 | 10-11 (Nov 17-30) | Add headline 1 as artifact v2. Remaining tests "if time" | v2 published |
@@ -258,7 +265,7 @@ Prep that landed before the ~13,700-request pull (commit 625fc83):
   names the directory by store digest, checksums every file, is read-only on disk,
   partitions by sport/season, writes timestamps as UTC text, and freezes the volume
   definition. It is the LOCAL immutable input for weeks 4+, gitignored under `data/`
-  pending E18; it is not the public dataset release (T11).
+  under `data/` (E18 resolved: there is no public dataset release, see T11).
 - **Fresh store.** The week-2 slices were moved to `data/census-week2-slices.duckdb`
   so every row in the week-3 store carries a week-3 `run_id`. Their payloads are all
   cached, so the 800 previously-attempted games cost almost nothing to redo.
@@ -1277,7 +1284,7 @@ The design doc's architecture description now conflicts with this review on two 
   - Surfaced by: Section 6 — the instrument is never validated before it judges the market
   - Files: tests/test_scorer_synthetic.py
   - Verify: perfectly-calibrated synthetic → near-zero miscalibration; deliberately tilted → caught, correct sign
-- [ ] **T11 (P2, human: ~4h / CC: ~20min)** — docs — Publish the census as a documented dataset release
+- [x] **T11 (P2, human: ~4h / CC: ~20min)** — docs — ~~Publish the census as a documented dataset release~~ **RESCOPED 2026-09-22 (E18): no dataset release.** Ship the collector code and a reproduction path instead; the census is regenerated from the public API by whoever wants it. The terms define Data to include aggregated forms, so an aggregate-only release was not the safe middle it appeared to be
   - Surfaced by: Subagent CEO finding 5 — highest-value output treated as plumbing
   - Files: docs/dataset.md, .github/workflows/release.yml
   - Verify: release asset with checksum, manifest, schema, and license
@@ -1731,7 +1738,12 @@ Corrected here.
 - [ ] **E17 (P2, human: ~2h / CC: ~15min)** — scoring — Report market Brier on dev and holdout side by side; pre-register per-regime bands instead of one
   - Surfaced by: Eng Section 1 R11 (conf 8/10): model developed on the thin ~500k season and scored on the sharp ~1.9M one, so the pass band is applied where the benchmark is hardest
   - Files: PREREGISTRATION.md, scoring/report.py
-- [ ] **E18 (P1 — DO IT IN WEEK 1, it is a 20-minute check that can void a week-10 deliverable, human: ~20min / CC: n/a)** — docs — Check Polymarket terms of service on redistributing price history before publishing the dataset
+- [x] **E18 (P1 — DO IT IN WEEK 1, it is a 20-minute check that can void a week-10 deliverable, human: ~20min / CC: n/a)** — docs — Check Polymarket terms of service on redistributing price history before publishing the dataset
+  - **RESOLVED 2026-09-22**, week 5 rather than week 1, because the ToS page renders
+    client-side and a fetch returns only the SPA shell: it genuinely needed a human with a
+    browser. The promotion to P1 was right — it did void a deliverable (T11's dataset
+    release), and it did so before any work was spent building one. See
+    notes/week1-tos-check.md
   - Surfaced by: Eng Step 0 Distribution check: neither document states whether redistribution is permitted, and the dataset is proposed as the project most valuable output
   - Files: docs/dataset.md
 - [ ] **E19 (P3, human: ~2h / CC: ~15min)** — ingest — Enumerate neutral-site, international, play-in and NBA Cup games up front and route them to an explicit reason enum

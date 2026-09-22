@@ -254,7 +254,24 @@ week-2 review; the third one will not be.
 
 **Effort:** S (human ~2h / CC ~15min). **Priority:** P2.
 
-## P2 — Dataset-release items (feed T11)
+## RESOLVED 2026-09-22 — Dataset-release items (fed T11)
+
+**There is no dataset release** (E18; PLAN.md T11 rescoped). The Terms of Use define "Data"
+to include derived and aggregated forms, so the planned aggregate-only release was not a
+safe middle ground, and redistribution is prohibited to capital-markets entities, which a
+public release cannot exclude. The three items below were all release-shaping work; they are
+closed, not deferred.
+
+Two are worth keeping in mind anyway, because they are about correctness rather than
+publication:
+
+- **TIMESTAMPTZ renders in the reader's session zone.** Already handled for the snapshot:
+  `snapshot.py` writes timestamps as UTC text and the manifest states the convention.
+- **`data/` is a blanket gitignore** and swallows `abbr_map_resolved.json` (a census INPUT)
+  and the gate reports. Still true, still only a reproducibility annoyance rather than a
+  release question: a fresh clone rebuilds the map with `learn_abbr.py` + `resolve_abbrs.py`.
+
+**Original item, kept for the record:**
 
 - **TIMESTAMPTZ renders in the reader's session zone.** `store.py` pins UTC per
   connection, which protects `digest()`, but that pin is a property of the
