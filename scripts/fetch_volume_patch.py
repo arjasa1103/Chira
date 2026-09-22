@@ -46,7 +46,7 @@ import duckdb
 sys.path.insert(0, "src")
 from chira.analysis import open_frame
 from chira.cache import Cache
-from chira.census import load_abbr_map, map_fingerprint
+from chira.census import VOLUME_KEYS, load_abbr_map, map_fingerprint
 from chira.constants import GAMMA
 from chira.http import Client, validate_events
 from chira.telemetry import git_hash
@@ -54,9 +54,10 @@ from chira.telemetry import git_hash
 ABBR = "data/abbr_map_resolved.json"
 PATCH_FORMAT = 1
 
-# Tried in order. `volumeClob` is the field the census missed; the other two are
-# the pre-registered names, kept first so an ordinary game is unaffected.
-VOLUME_KEYS = ("volumeNum", "volume", "volumeClob")
+# Tried in order, and imported from census so this script and the census can
+# never disagree about which fields count as volume. `volumeClob` is the field
+# the census missed; the pre-registered names stay first so an ordinary game is
+# unaffected.
 
 
 def _num(value: object) -> float | None:

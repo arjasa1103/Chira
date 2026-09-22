@@ -174,6 +174,21 @@ class TestNullReference:
         assert ref["below_table"] is True
         assert ref["reference_n"] == 200
 
+    def test_every_tabulated_row_resolves_in_both_tables(self):
+        """null_reference picks its n from the ECE table and indexes the SLOPE
+        table with it, so a row in one and not the other is a KeyError raised
+        mid-analysis on whichever cell lands on it."""
+        from chira.constants import (
+            CENSUS_NULL_ECE_P99_BY_N,
+            CENSUS_NULL_SLOPE_CI_BY_N,
+        )
+
+        assert set(CENSUS_NULL_ECE_P99_BY_N) == set(CENSUS_NULL_SLOPE_CI_BY_N)
+        for sport, n in CENSUS_NULL_ECE_P99_BY_N:
+            ref = null_reference(sport, n)
+            assert ref["reference_n"] == n
+            assert ref["slope_ci"][0] < ref["slope_ci"][1]
+
     def test_the_small_n_null_is_wide_enough_to_matter(self):
         """At n=225 the null ECE p99 is 4x the pooled cap. That IS the finding."""
         assert null_reference("nhl", 225)["ece_p99"] > 0.12

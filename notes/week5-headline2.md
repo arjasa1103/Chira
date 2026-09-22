@@ -4,14 +4,22 @@ Run against the frozen snapshot `census-20260913-224d6ad985e0` plus the week-5 v
 table. Everything here is reproducible with:
 
 ```bash
-uv run python scripts/run_headline2.py
+uv run python scripts/run_headline2.py --reps 2000
 ```
 
 which writes `docs/charts/headline2.json` and `docs/charts/chart3-headline2.png`.
 
+**`--reps 2000` is part of the command, not decoration.** The flag defaults to 4000, and
+every interval below was cut at 2,000, so the bare command reproduces the same point
+estimates against different CI digits (the primary CI closes at +1.0399 instead of +1.0325).
+The seed is fixed, so with the flag the numbers reproduce exactly.
+
 **The result, in one line.** In NBA games, the Cox calibration slope is **+1.398 in
 low-liquidity games and +0.586 in high-liquidity games; the difference is +0.812 with a 95%
-game-bootstrap CI of [+0.618, +1.033]**, one-sided p = 0.0000, on n = 1,148 / 1,146. Thin
+game-bootstrap CI of [+0.618, +1.033]**, on n = 1,148 / 1,146. No replicate reproduced the
+opposite sign, so the achieved significance level is **< 0.0005**, the floor at 2,000
+replicates rather than a measured zero (it is a bootstrap ASL, computed under the observed
+distribution, not a null-hypothesis p-value). Thin
 markets are *underconfident* (prices sit too near 0.50 for what follows) and liquid markets
 are *overconfident* (prices too extreme). This is the pre-registered primary test and it is
 not a null.

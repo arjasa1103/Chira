@@ -70,8 +70,12 @@ def main() -> int:
     print(f"  slope high liquidity {pooled['slope_high']:+.4f}  (n={pooled['n_high']})")
     print(f"  difference (low - high) {pooled['difference']:+.4f}  "
           f"95% CI [{pooled['ci_lo']:+.4f}, {pooled['ci_hi']:+.4f}]")
+    # Printed as a bound, never as a bare number: zero crossings means
+    # "< 1/reps", not "= 0". See strata.slope_difference.
+    asl, floor = pooled["bootstrap_asl"], pooled["bootstrap_asl_floor"]
+    asl_text = f"< {floor:.5f}" if asl == 0.0 else f"= {asl:.4f}"
     print(f"  excludes zero: {pooled['excludes_zero']}   "
-          f"one-sided p = {pooled['p_one_sided']:.4f}   "
+          f"bootstrap ASL {asl_text} ({pooled['reps']} replicates)   "
           f"failed replicates {pooled['cox_failures']}/{pooled['reps']}")
     print("  per season (secondary):")
     for season, r in prim["per_season"].items():

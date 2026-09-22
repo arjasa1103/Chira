@@ -66,6 +66,10 @@ NR_TOL = 1e-10
 NR_WEIGHT_FLOOR = 1e-9
 NR_MIN_STEP_SCALE = 1e-6
 NR_GRAD_TOL = 1e-6
+# Identifiability, NOT a gradient. Same magnitude, different unit: this one is
+# the spread of logit(p) across the sample, and reusing the gradient tolerance
+# for it meant one edit to either meaning silently moved the other.
+NR_PRICE_RANGE_TOL = 1e-6
 
 # Above this share of unfittable bootstrap replicates, a null's slope and
 # intercept bands are conditioned on convergence and must not be quoted.
@@ -133,7 +137,7 @@ def cox_slope_intercept(p: np.ndarray, y: np.ndarray) -> tuple[float, float]:
     # design cannot support a slope, so testing it first would report
     # "converged" and hand back slope 0.0 as though it were a measurement.
     # Both cases used to surface as a singular solve, which was luck, not logic.
-    if float(np.ptp(x)) < NR_GRAD_TOL:
+    if float(np.ptp(x)) < NR_PRICE_RANGE_TOL:
         raise ValueError(
             "cox fit is not identified: every price is the same, so no slope "
             "exists to estimate (a constant-price sample once reported 165.04)")

@@ -230,10 +230,17 @@ def slope_difference(p_low: np.ndarray, y_low: np.ndarray,
         "difference": float(observed),
         "ci_lo": float(np.percentile(d, 100 * alpha / 2)),
         "ci_hi": float(np.percentile(d, 100 * (1 - alpha / 2))),
-        # Directional, as section 8 specifies: the share of replicates that do
-        # not reproduce the observed sign. Reported beside the interval, never
-        # instead of it.
-        "p_one_sided": float(np.mean(d <= 0) if observed > 0 else np.mean(d >= 0)),
+        # The share of replicates that do not reproduce the observed sign.
+        #
+        # NOT a p-value, and no longer named like one. It is computed under the
+        # OBSERVED distribution, not under the null, so it is an achieved
+        # significance level: the bootstrap analogue, not the thing itself.
+        # It is also floored at 1/reps -- zero crossings can only ever mean
+        # "< 1/reps", never 0 -- so the floor travels with it and a reader
+        # cannot mistake 0.0 for exactly zero. Reported beside the interval,
+        # never instead of it.
+        "bootstrap_asl": float(np.mean(d <= 0) if observed > 0 else np.mean(d >= 0)),
+        "bootstrap_asl_floor": 1.0 / reps,
         "excludes_zero": bool(np.percentile(d, 100 * alpha / 2) > 0
                               or np.percentile(d, 100 * (1 - alpha / 2)) < 0),
         "n_low": len(p_low), "n_high": len(p_high),

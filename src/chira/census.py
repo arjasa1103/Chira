@@ -87,6 +87,13 @@ def tipoff_is_plausible(gst: str | None, et_date: str) -> tuple[bool, str]:
     return True, ""
 
 
+# The volume fields Gamma actually uses, in priority order. Exported because
+# scripts/fetch_volume_patch.py recovers the same quantity and had its own copy
+# of this tuple; two lists of field names that must agree is how the next
+# Gamma field gets added to one reader and not the other.
+VOLUME_KEYS = ("volumeNum", "volume", "volumeClob")
+
+
 def _volume(market: dict) -> float | None:
     """Terminal cumulative volume, trying every field Gamma actually uses.
 
@@ -97,7 +104,7 @@ def _volume(market: dict) -> float | None:
     volume exactly (ratio 1.000), so it is the same quantity under another name,
     and it is tried LAST so no existing row can change.
     """
-    for key in ("volumeNum", "volume", "volumeClob"):
+    for key in VOLUME_KEYS:
         v = market.get(key)
         if isinstance(v, (int, float)):
             return float(v)

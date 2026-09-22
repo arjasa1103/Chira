@@ -160,6 +160,17 @@ CENSUS_NULL_SLOPE_CI_BY_N = {
     ("nhl", 2206): (0.806, 1.207),
 }
 
+# The two tables MUST carry the same rows. `strata.null_reference` chooses a
+# reference n from the ECE table and then indexes the slope table with it, so a
+# row added to one and not the other is a KeyError raised mid-analysis, on
+# whichever cell happens to land on the orphan row. Same guard shape as
+# abbr.SEASON_SPANS against constants.USABLE_SEASONS, and for the same reason:
+# two tables that must agree, kept in different places.
+assert set(CENSUS_NULL_ECE_P99_BY_N) == set(CENSUS_NULL_SLOPE_CI_BY_N), (
+    "null reference tables disagree: "
+    f"{sorted(set(CENSUS_NULL_ECE_P99_BY_N) ^ set(CENSUS_NULL_SLOPE_CI_BY_N))}"
+)
+
 # Miss reason enum. Every scheduled game that is not `priced` carries exactly
 # one of these, and the store rejects anything else: an unconstrained reason
 # string is how "no market exists" and "we never tried the right slug" end up
