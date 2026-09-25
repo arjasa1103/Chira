@@ -127,7 +127,7 @@ which reserves confirmatory status for the single primary test above.
 | At the close (primary) | +0.812 | [+0.618, +1.033] | yes |
 | T−1h | +0.826 | [+0.620, +1.014] | yes |
 | T−6h | +0.834 | [+0.633, +1.043] | yes |
-| T−24h | +0.853 | [+0.639, +1.084] | yes |
+| T−24h | +0.853 | [+0.638, +1.083] | yes |
 | 2024-25 only | +0.741 | [+0.464, +1.036] | yes |
 | 2025-26 only | +0.911 | [+0.617, +1.241] | yes |
 | stale closes only (n=485/435) | +0.866 | [+0.582, +1.195] | yes |
@@ -147,7 +147,7 @@ difference.
 
 | Check | difference | 95% CI | excludes zero |
 |---|---|---|---|
-| restricted to p ∈ [0.20, 0.80] | +0.659 | [+0.359, +0.953] | yes |
+| restricted to p ∈ [0.20, 0.80] | +0.659 | [+0.358, +0.953] | yes |
 | restricted to p ∈ [0.35, 0.65] | +0.512 | [−0.190, +1.329] | **no** |
 | caliper-matched on \|logit p\|, 917 pairs | +0.804 | [+0.559, +1.057] | yes |
 

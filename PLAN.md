@@ -632,9 +632,10 @@ leakage can bias either direction and the gap does not decompose into leakage pl
       leaves as a build artifact rather than a commit.
 - [x] Published writeup with charts on GitHub Pages. A repo alone is not a portfolio piece.
       **Done 2026-09-25:** `docs/index.md` plus `docs/_config.yml` (Jekyll, primer theme,
-      `designs/` excluded from the site). **One manual step remains for the user:** enable
-      Pages in repository settings, source = `main` branch, folder = `/docs`. Until that
-      switch is flipped the artifact is public in the repo but not served as a site.
+      `designs/` excluded from the site). **Live at https://arjasa1103.github.io/Chira/**,
+      serving from `main` / `/docs`, HTTPS enforced. Verified: the writeup, `prior-art`,
+      all three charts and `headline2.json` return 200, and `designs/` returns 404 as the
+      config intends.
 
 ---
 

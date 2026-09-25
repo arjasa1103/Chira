@@ -129,6 +129,52 @@ market) rather than as a second stratified sample.
 
 **Effort:** S to decide. **Priority:** P2, before week 5-6 strata.
 
+## P1 — Two prior-art citations are unverified (before artifact v2)
+
+**What:** A human opens the two sources T12 could not, and either records their claims in
+`docs/prior-art.md` or drops the citation.
+
+1. **Reichenbach and Walther, "Accuracy, Skill, and Bias on Polymarket" (SSRN 5910522).**
+   `papers.ssrn.com` returned HTTP 403 (Cloudflare, automated access) on 2026-09-25. The
+   block was respected, so nothing cites it. **This is the one that could move the
+   contribution claim:** it is accuracy, skill and bias on Polymarket specifically, and if
+   it already reports a liquidity-conditioned calibration result on Polymarket sports
+   markets, then artifact v1's "what this project adds" is overstated and needs rewording.
+2. **Wilkens (2026), "Can simple models predict football and beat the odds?"** No arXiv
+   match for title or author (searched 2026-09-25). Likely relevant to headline 1 rather
+   than headline 2, so not load-bearing for v1.
+
+**Why it is P1 despite being a docs task:** artifact v1 is public and makes a positioning
+claim against work nobody has read. Five minutes in a browser settles item 1.
+
+**Effort:** S (human ~20min / CC: cannot, both are blocked to automated access).
+**Priority:** P1, before v2.
+
+## P2 — Wheatcroft (2019) ranks the log score above Brier; section 3 makes Brier primary
+
+**What:** Decide whether headline 1's scoring stays Brier-primary now that the cited paper
+has actually been read.
+
+**Why:** PLAN.md cited "Wheatcroft 2022" for "recommends Brier/log-loss over RPS". The real
+paper (arXiv:1908.08980, 2019) argues against the RPS *and* finds the ignorance (log) score
+beats both RPS and Brier. PREREGISTRATION section 3 makes Brier primary for boundedness: an
+unclipped log loss is unbounded, so one mis-joined label at an extreme price could decide a
+headline, which is a live hazard when labels come from a third party.
+
+**Current position, already published:** the pre-registered choice stands, both scores are
+reported for every result, and `docs/prior-art.md` states plainly that this paper would rank
+them the other way. That is honest and needs no change for v1.
+
+**What is actually open:** headline 1 (weeks 8-11) compares model against market, where the
+scoring rule choice has more bite than it does for a calibration slope. Re-read section 3's
+boundedness argument against clipped log loss before that comparison is designed, and either
+confirm Brier-primary or amend with the reason.
+
+**Do NOT:** change the primary metric to match a citation. Section 3's argument is about a
+specific failure mode in this pipeline, not about which rule is better in general.
+
+**Effort:** S to decide. **Priority:** P2, before week 8.
+
 ## P1 — The collector's live polling path has never run (before late Oct 2026)
 
 **What:** Wire `upcoming_targets` to real markets, and prove one session against live games.

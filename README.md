@@ -13,9 +13,10 @@ Chira asks two questions:
 
 The claim is about calibration, not profit. Nothing here places bets.
 
-> **Project status: week 6 of 11 (September 2026). Artifact v1 is published:
-> [docs/index.md](docs/index.md).** The first of the two headline results is done and
-> frozen.
+> **Project status: week 6 of 11 (September 2026). Artifact v1 is published and live at
+> [arjasa1103.github.io/Chira](https://arjasa1103.github.io/Chira/)**
+> (source: [docs/index.md](docs/index.md)). The first of the two headline results is done
+> and frozen.
 >
 > **The result: thin Polymarket sports markets are underconfident, liquid ones are
 > overconfident.** In NBA moneylines the Cox calibration slope is **+1.398 in low-liquidity
