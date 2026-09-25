@@ -60,6 +60,16 @@ store's point-in-time `as_of` machinery, which is Phase 3 in week 7, so it is sc
 there rather than counted as done. Week 6 remains: the writeup, the dataset release (still
 **rescoped, see below**), the prior-art section, and GitHub Pages.
 
+**Decision 2026-09-25: artifact v1 publishes on 6 of 7 P1 tests.** The week 5-6 gate row
+above reads "the 7 designated P1 tests, then publish"; that is amended here rather than
+quietly passed. The seventh, the leakage canary, guards `as_of` machinery that does not
+exist until Phase 3 in week 7, so holding v1 for it would invert the staging logic this
+schedule is built on: v1 exists precisely so a week 7-11 slip cannot delete the artifact.
+The canary is scheduled in week 7 alongside the code it guards, and **artifact v1 states
+the 6-of-7 position in its own limitations section** rather than leaving a reader to infer
+that the test plan was complete. Heartbeat secret set the same day, so the collector's
+dead-man's switch is armed ahead of its late-October window.
+
 **E18 resolved 2026-09-22.** The user read the Terms of Use. "Data" is defined to include
 derived and aggregated forms, which kills week 1's "publish aggregates only" mitigation, and
 redistribution is prohibited to capital-markets entities, which a public release cannot
