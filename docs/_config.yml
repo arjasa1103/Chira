@@ -1,0 +1,15 @@
+title: Chira
+description: >-
+  Where a real-money prediction market is miscalibrated. NBA and NHL moneylines
+  on Polymarket, 4,661 games, pre-registered.
+theme: jekyll-theme-primer
+
+# The design document is internal planning, not part of the published artifact.
+# It stays in the repository, it just does not get a page on the site.
+exclude:
+  - designs/
+
+# Charts and their backing JSON are served as files so every figure in the
+# writeup can be traced to the numbers behind it.
+include:
+  - charts/

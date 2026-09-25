@@ -24,6 +24,7 @@ from chira.charts import chart_strata
 from chira.strata import (
     assign_strata,
     cell_table,
+    cluster_sensitivity,
     primary_test,
     sensitivity,
 )
@@ -119,6 +120,17 @@ def main() -> int:
     print(f"  volume absent: {va['n']} games excluded from the liquidity axis "
           f"{va['by_sport_season']}, weeks {va['weeks'][:4]}...{va['weeks'][-2:]}")
 
+    clust = cluster_sensitivity(f, reps=min(args.reps, 2000))
+    g, c = clust["game_bootstrap"], clust["date_clustered_bootstrap"]
+    print("\n=== CLUSTERED BOOTSTRAP (exploratory; prompted by Le 2026) ===")
+    print(f"  game bootstrap (pre-registered) CI [{g['ci_lo']:+.4f}, {g['ci_hi']:+.4f}]  "
+          f"width {clust['ci_widths']['game']:.4f}")
+    print(f"  date-clustered ({c['clusters']} ET dates)   CI "
+          f"[{c['ci_lo']:+.4f}, {c['ci_hi']:+.4f}]  "
+          f"width {clust['ci_widths']['date_clustered']:.4f}")
+    print(f"  wider: {clust['wider']}; both exclude zero: "
+          f"{g['excludes_zero'] and c['excludes_zero']}")
+
     chart = Path(args.out).parent / "chart3-headline2.png"
     chart_strata(f, chart, reps=min(args.reps, 2000))
     print(f"\nwrote {chart}")
@@ -132,6 +144,7 @@ def main() -> int:
         "cells": cells,
         "primary_test": prim,
         "sensitivity": sens,
+        "clustered": clust,
         "bootstrap_reps": args.reps,
     }, indent=2, sort_keys=True, default=str), encoding="utf-8")
     print(f"\nwrote {out}")

@@ -18,6 +18,8 @@ from chira.strata import (
     caliper_match,
     cell_stats,
     cell_table,
+    cluster_sensitivity,
+    clustered_slope_difference,
     null_reference,
     primary_test,
     range_sensitivity,
@@ -381,3 +383,97 @@ class TestSensitivityAndPrimary:
         assign_strata(f)
         out = primary_test(f, reps=100)
         assert out["pooled"]["n_low"] + out["pooled"]["n_high"] == 400
+
+
+class TestClusteredBootstrap:
+    """Game outcomes are not independent; a night's slate shares a lot.
+
+    Prompted by Le (2026, arXiv:2602.19520), which reports that under
+    event-clustered standard errors roughly half of raw calibration-slope
+    variation is estimation noise. Section 8 pre-registers a GAME bootstrap, so
+    this is exploratory, but an interval that ignores clustering can be
+    optimistically narrow and the writeup should quote the wider one.
+    """
+
+    @staticmethod
+    def _sample(games_per_date, dates, *, date_correlated, seed=0):
+        """Two strata spread over `dates`, optionally clustered.
+
+        `date_correlated` varies the SLOPE GAP itself by date, which is what a
+        clustered interval has to price in. A shock shared equally by both
+        strata on a night does NOT need clustering: the estimand is a
+        within-date difference, so a common shift largely cancels. That is a
+        measured property, not a guess -- the first version of this test
+        applied a common shock and the clustered interval came back NARROWER
+        (0.492 against 0.558), which is the same reason the census's clustered
+        interval barely moved.
+        """
+        rng = np.random.default_rng(seed)
+        from scipy.special import expit, logit
+        n = games_per_date * dates
+        p = rng.uniform(0.1, 0.9, n)
+        cluster = np.array([f"2025-01-{1 + i // games_per_date:02d}" for i in range(n)],
+                           dtype=object)
+        level = np.array(["low" if i % 2 else "high" for i in range(n)], dtype=object)
+        # low stratum genuinely steeper, so there is a real difference to find
+        gap = np.full(n, 0.5)
+        if date_correlated:
+            per_date = {d: rng.normal(0.5, 1.2) for d in np.unique(cluster)}
+            gap = np.array([per_date[d] for d in cluster])
+        slope = np.where(level == "low", 1.0 + gap, 1.0)
+        y = (rng.random(n) < expit(slope * logit(p))).astype(float)
+        return p, y, level, cluster
+
+    def test_it_recovers_a_real_difference(self):
+        p, y, level, cluster = self._sample(6, 120, date_correlated=False, seed=1)
+        r = clustered_slope_difference(p, y, level, cluster, reps=300, seed=1)
+        assert r["difference"] > 0
+        assert r["clusters"] == 120
+
+    def test_a_date_varying_gap_widens_the_interval_versus_a_game_bootstrap(self):
+        """When the gap itself varies by date, clustering must cost width."""
+        p, y, level, cluster = self._sample(12, 80, date_correlated=True, seed=2)
+        game = slope_difference(p[level == "low"], y[level == "low"],
+                                p[level == "high"], y[level == "high"],
+                                reps=300, seed=2)
+        clust = clustered_slope_difference(p, y, level, cluster, reps=300, seed=2)
+        game_w = game["ci_hi"] - game["ci_lo"]
+        clust_w = clust["ci_hi"] - clust["ci_lo"]
+        assert clust_w > game_w, (
+            f"clustered width {clust_w:.3f} should exceed game width {game_w:.3f} "
+            f"when outcomes share a date-level shock")
+
+    def test_without_shocks_the_two_agree_closely(self):
+        """A control: no within-date correlation, no width penalty to speak of."""
+        p, y, level, cluster = self._sample(1, 600, date_correlated=False, seed=3)
+        game = slope_difference(p[level == "low"], y[level == "low"],
+                                p[level == "high"], y[level == "high"],
+                                reps=300, seed=3)
+        clust = clustered_slope_difference(p, y, level, cluster, reps=300, seed=3)
+        game_w = game["ci_hi"] - game["ci_lo"]
+        clust_w = clust["ci_hi"] - clust["ci_lo"]
+        assert abs(clust_w - game_w) < 0.5 * game_w
+
+    def test_whole_dates_are_drawn_not_individual_games(self):
+        """With one date only, every replicate is that date's full slate."""
+        p, y, level, cluster = self._sample(40, 1, date_correlated=False, seed=4)
+        r = clustered_slope_difference(p, y, level, cluster, reps=50, seed=4)
+        assert r["clusters"] == 1
+        # a single cluster can only ever be redrawn whole, so there is no spread
+        assert r["ci_lo"] == pytest.approx(r["ci_hi"], abs=1e-9)
+
+    def test_an_unfittable_stratum_reports_rather_than_invents(self):
+        p, y, level, cluster = self._sample(4, 60, date_correlated=False, seed=5)
+        p = np.where(level == "low", 0.6, p)      # constant price in one stratum
+        r = clustered_slope_difference(p, y, level, cluster, reps=50, seed=5)
+        assert r["difference"] is None and "not identified" in r["error"]
+
+    def test_the_reported_pair_names_which_interval_is_wider(self):
+        f = make_frame(n=900, seed=6)
+        f["et_date"] = np.array([f"2025-01-{1 + i % 25:02d}" for i in range(900)],
+                                dtype=object)
+        assign_strata(f)
+        out = cluster_sensitivity(f, reps=200)
+        assert set(out["ci_widths"]) == {"game", "date_clustered"}
+        assert out["wider"] in ("game", "date_clustered")
+        assert "Le (2026)" in out["note"]

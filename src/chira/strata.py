@@ -420,3 +420,89 @@ def sensitivity(f: dict, *, sport: str = PRIMARY_SPORT, reps: int = 2000,
                 "still present in the phase axis and in every unstratified number",
     }
     return out
+
+
+def clustered_slope_difference(p: np.ndarray, y: np.ndarray, level: np.ndarray,
+                               cluster: np.ndarray, *, reps: int = 2000,
+                               seed: int = 0, alpha: float = 0.05) -> dict:
+    """Slope difference with a CLUSTER bootstrap: resample dates, not games.
+
+    **Why this exists.** Le (2026, arXiv:2602.19520) decomposes the same
+    estimand across 353M trades and reports that, under conservative
+    event-clustered standard errors, roughly half of the raw slope variation is
+    estimation noise. Our pre-registered bootstrap resamples games
+    independently, and game outcomes are not independent: a night's slate shares
+    officiating, rest, travel and (for a sport-season) the same market maker, so
+    an independent-game interval can be optimistically narrow.
+
+    Whole ET dates are drawn with replacement and every game on a drawn date is
+    taken, across BOTH strata at once. Drawing per stratum would destroy exactly
+    the within-date correlation this is here to respect.
+
+    Exploratory, not the pre-registered interval (section 8 specifies games).
+    The writeup reports both and treats the wider as the honest one.
+    """
+    dates = np.unique(cluster)
+    slope_low, _, err_low = _fit(p[level == "low"], y[level == "low"])
+    slope_high, _, err_high = _fit(p[level == "high"], y[level == "high"])
+    if slope_low is None or slope_high is None:
+        return {"difference": None, "error": err_low or err_high,
+                "clusters": len(dates)}
+    rng = np.random.default_rng(seed)
+    by_date = {d: np.flatnonzero(cluster == d) for d in dates}
+    diffs, failed = [], 0
+    for _ in range(reps):
+        drawn = rng.choice(dates, size=len(dates), replace=True)
+        idx = np.concatenate([by_date[d] for d in drawn])
+        lv = level[idx]
+        lo, _, _ = _fit(p[idx][lv == "low"], y[idx][lv == "low"])
+        hi, _, _ = _fit(p[idx][lv == "high"], y[idx][lv == "high"])
+        if lo is None or hi is None:
+            failed += 1
+            continue
+        diffs.append(lo - hi)
+    if failed > MAX_COX_FAILURE_RATE * reps:
+        raise ValueError(
+            f"{failed} of {reps} clustered replicates had no computable fit "
+            f"({failed / reps:.1%}); interval withheld rather than conditioned "
+            f"on convergence")
+    d = np.asarray(diffs)
+    observed = slope_low - slope_high
+    return {
+        "slope_low": slope_low, "slope_high": slope_high,
+        "difference": float(observed),
+        "ci_lo": float(np.percentile(d, 100 * alpha / 2)),
+        "ci_hi": float(np.percentile(d, 100 * (1 - alpha / 2))),
+        "bootstrap_asl": float(np.mean(d <= 0) if observed > 0 else np.mean(d >= 0)),
+        "bootstrap_asl_floor": 1.0 / reps,
+        "excludes_zero": bool(np.percentile(d, 100 * alpha / 2) > 0
+                              or np.percentile(d, 100 * (1 - alpha / 2)) < 0),
+        "clusters": len(dates),
+        "n_low": int((level == "low").sum()),
+        "n_high": int((level == "high").sum()),
+        "reps": reps, "cox_failures": failed,
+    }
+
+
+def cluster_sensitivity(f: dict, *, sport: str = PRIMARY_SPORT,
+                        look_name: str = "p_close", reps: int = 2000,
+                        seed: int = 0) -> dict:
+    """The pre-registered game bootstrap beside a date-clustered one."""
+    m = ((f["sport"] == sport) & ~np.isnan(f[look_name])
+         & np.isin(f["liquidity"], LEVELS))
+    p, y = f[look_name][m], f["y"][m]
+    level = f["liquidity"][m]
+    cluster = np.array([str(d) for d in f["et_date"][m]], dtype=object)
+    pre = slope_difference(p[level == "low"], y[level == "low"],
+                           p[level == "high"], y[level == "high"],
+                           reps=reps, seed=seed)
+    clustered = clustered_slope_difference(p, y, level, cluster, reps=reps, seed=seed)
+    widths = {"game": pre["ci_hi"] - pre["ci_lo"],
+              "date_clustered": clustered["ci_hi"] - clustered["ci_lo"]}
+    return {"game_bootstrap": pre, "date_clustered_bootstrap": clustered,
+            "ci_widths": widths,
+            "wider": max(widths, key=widths.get),
+            "note": "section 8 pre-registers the game bootstrap; the clustered one "
+                    "is exploratory, prompted by Le (2026) arXiv:2602.19520 finding "
+                    "that event-clustered errors absorb roughly half of raw slope "
+                    "variation. The writeup quotes the wider interval."}

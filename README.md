@@ -13,18 +13,28 @@ Chira asks two questions:
 
 The claim is about calibration, not profit. Nothing here places bets.
 
-> **Project status: week 4 of 11 (September 2026).** The census, the immutable snapshot and
-> both gate charts are done. All 5,084 games in the two usable seasons are settled (4,661
-> priced, 423 classified misses) and the validation gate passes on all four sport-seasons.
-> The market's own calibration has now been measured for the first time: **no sport-season
-> shows detectable miscalibration at the close**, and **NBA is the primary sport** on
-> coverage, market informativeness and usable price range. The feature store and the model
-> are not built yet.
+> **Project status: week 6 of 11 (September 2026). Artifact v1 is published:
+> [docs/index.md](docs/index.md).** The first of the two headline results is done and
+> frozen.
 >
-> Week 4 also found two defects in week-1 machinery, one of which changed a pre-registered
-> bound (PREREGISTRATION.md Amendment 2). See [What exists today](#what-exists-today) before
-> reading further, [notes/week4-charts.md](notes/week4-charts.md) for the charts and what
-> they found, [notes/week3-census.md](notes/week3-census.md) for the census, and
+> **The result: thin Polymarket sports markets are underconfident, liquid ones are
+> overconfident.** In NBA moneylines the Cox calibration slope is **+1.398 in low-liquidity
+> games against +0.586 in high-liquidity games, a difference of +0.812 with a 95% CI of
+> [+0.602, +1.037]** (date-clustered, the wider of the two schemes computed). It holds in
+> both seasons separately, at all four time-to-close looks, in stale and fresh subsets,
+> under a caliper match that equalises the price range, and in all 8 sport-season x phase
+> pairs. Unstratified the market looks well calibrated, because the two strata cancel.
+>
+> The census, the immutable snapshot and all three charts are done: 5,084 games settled
+> (4,661 priced, 423 classified misses), the validation gate passing on all four
+> sport-seasons. **The feature store and the model (headline 1) are not built yet**, and
+> nothing here claims a betting edge.
+>
+> Start with [the writeup](docs/index.md) and its
+> [prior art](docs/prior-art.md). Then [What exists today](#what-exists-today),
+> [notes/week5-headline2.md](notes/week5-headline2.md) for how the result was built,
+> [notes/week4-charts.md](notes/week4-charts.md) and
+> [notes/week3-census.md](notes/week3-census.md) for the charts and the census, and
 > [PLAN.md](PLAN.md) for the schedule.
 
 ---
@@ -90,7 +100,10 @@ The claim is about calibration, not profit. Nothing here places bets.
 | JSONL run telemetry and manifests | Built | `src/chira/telemetry.py` |
 | Snapshot writer, verifier and offline reader | Built | `src/chira/snapshot.py`, `scripts/make_snapshot.py` |
 | Snapshot analysis frame (home side, canonical order, the four looks) | Built | `src/chira/analysis.py` |
-| Test suite | 617 tests, offline, ruff-clean, run on Linux, Windows and macOS in CI | `tests/` |
+| Headline-2 strata, primary test and robustness | **Built** (week 5) | `src/chira/strata.py`, `scripts/run_headline2.py` |
+| Published artifact v1: writeup, charts, prior art | **Built** (week 6) | `docs/index.md`, `docs/prior-art.md`, `docs/charts/` |
+| One-command reproduction from public endpoints | **Built** (week 6) | `scripts/reproduce.py` |
+| Test suite | 711 tests, offline, ruff-clean, run on Linux, Windows and macOS in CI | `tests/` |
 | Full census of all 5,084 games | **Done** (week 3): 4,661 priced, 423 misses, 145.6M raw price rows | `data/census.duckdb` (gitignored) |
 | Immutable Parquet snapshot | **Cut** (week 3): `census-20260913-224d6ad985e0`, 162 MB | `data/snapshots/` (gitignored) |
 | Coverage and calibration charts | **Built** (week 4) | `src/chira/charts.py`, `scripts/make_charts.py`, `docs/charts/` |
@@ -173,7 +186,7 @@ You should see `0.1.0`.
 uv run pytest
 ```
 
-Expected: `617 passed`. The suite is offline. Any test that opens a socket fails, so this
+Expected: `711 passed`. The suite is offline. Any test that opens a socket fails, so this
 passes without a network connection.
 
 ### Step 3: Learn the week-1 abbreviation prior
@@ -820,6 +833,9 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 | `run_census.py` | Census plus validation gate for one sport-season | `data/abbr_map_resolved.json`, schedules | store, cache, log, gate report | Polymarket, `nba_api` or NHL |
 | `make_snapshot.py` | Cut, read back and verify the immutable Parquet snapshot | store | `data/snapshots/<id>/` | none |
 | `make_charts.py` | Cut both Phase 2 charts and the statistics behind them | snapshot | `docs/charts/` | none |
+| `run_headline2.py` | Headline 2: strata, the primary test, every robustness split, chart 3 | snapshot, volume patch | `docs/charts/headline2.json`, `chart3-headline2.png` | none |
+| `fetch_volume_patch.py` | Recover volume the census missed; record the games that have none | snapshot, cache | `data/volume_patch/` | Gamma (cache first) |
+| `reproduce.py` | Print, then optionally run, every stage end to end | none | delegates to the above | via the steps it runs |
 | `derive_null_bands.py` | Re-derive the section-4 null from real census prices; exits 1 on a breach | snapshot | `data/noise_floor_census.json` | none |
 | `run_collector.py` | One forward-collector session, or a dry run of one | schedules, CLOB | `data/collector/live.duckdb`, log | Polymarket; none with `--dry-run` |
 | `learn_abbr.py` | Learn the `{slug_abbr: nickname}` prior from Gamma | none | `data/abbr_map.json` | Gamma, ~180 requests |
@@ -847,7 +863,8 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 | `chira.gate` | Validation gate checks and report | `run_gate(store, sport, season, require_complete=...)`, `format_report` |
 | `chira.calibration` | Metrics, binning, the game-level bootstrap and the null simulator | `equal_count_bins`, `n_bins_for`, `quantile_bin_edges`, `binned_curve`, `ece`, `max_bin_dev`, `cox_slope_intercept`, `brier`, `murphy`, `bootstrap_curve`, `bootstrap_scalars`, `simulate_null` |
 | `chira.analysis` | The snapshot read as an analysis frame: home side, canonical order, the four looks | `open_frame`, `frame`, `look`, `look_coverage`, `coverage_by_week`, `price_pool`, `sport_seasons`, `assert_canonical` |
-| `chira.charts` | The two Phase 2 charts and every statistic they report | `chart_coverage`, `chart_calibration`, `calibration_stats` |
+| `chira.charts` | The three charts and every statistic they report | `chart_coverage`, `chart_calibration`, `chart_strata`, `calibration_stats` |
+| `chira.strata` | Headline 2: the 2x2, the primary directional test, and the artifact checks around it | `assign_strata`, `cell_table`, `primary_test`, `sensitivity`, `range_sensitivity`, `caliper_match`, `cluster_sensitivity`, `slope_difference`, `clustered_slope_difference`, `null_reference` |
 | `chira.collector` | Forward prices-only collector: ET gates, dedup, quote store, heartbeat | `CollectorStore`, `Heartbeat`, `HEARTBEAT_PROVIDERS`, `is_season_active`, `in_poll_window`, `dedup_key`, `quote_row`, `parse_book`, `upcoming_targets`, `zero_capture_is_a_failure`, `describe_plan` |
 | `chira.telemetry` | JSONL event log and run manifest | `Telemetry`, `run_id`, `git_hash` |
 
@@ -1301,6 +1318,9 @@ label-agreement failure costs 600 requests instead of 16,000.
 | [notes/week2-census-gate.md](notes/week2-census-gate.md) | Gate results, coverage findings, and the contaminated-slice correction |
 | [notes/week3-census.md](notes/week3-census.md) | The full census: coverage, the four defects the first gate failure exposed, and Amendment 1 |
 | [notes/week4-charts.md](notes/week4-charts.md) | Both gate charts, the market's measured calibration, the primary-sport answer, Amendment 2, and the Cox-fit bug |
+| [notes/week5-headline2.md](notes/week5-headline2.md) | Headline 2 in full: the strata, the primary test, every robustness split, two more estimator bugs, and what the volume gap actually was |
+| [docs/index.md](docs/index.md) | **Artifact v1**: the published writeup |
+| [docs/prior-art.md](docs/prior-art.md) | Four sources, what each actually says, and what this project adds |
 
 ---
 

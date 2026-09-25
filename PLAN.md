@@ -76,6 +76,28 @@ redistribution is prohibited to capital-markets entities, which a public release
 exclude. **Decision: no dataset release.** T11/E1 become the collector code plus a
 reproduction path, which still meets the week-6 gate. Licences added: MIT for code, CC BY
 4.0 for the writeup. Full reading: notes/week1-tos-check.md.
+
+**Week 6 done 2026-09-25: the week 5-6 gate is met. An artifact exists.**
+`docs/index.md` is artifact v1, published with `docs/prior-art.md`, the three charts and
+`scripts/reproduce.py`. It states the 6-of-7 test position, the non-blind disclosure, the
+outcome-correlated volume caveat, the 318 excluded games and the no-dataset decision in its
+own limitations section rather than leaving a reader to find them.
+
+**T12 produced a correction, not a formality.** Two of the four sources were read in full:
+Le (2026, arXiv:2602.19520) decomposes the SAME estimand across 353M Kalshi and Polymarket
+trades and finds trade-size compression that is explicitly **not robust on Polymarket**,
+which is where this result sits; and Wheatcroft (arXiv:1908.08980, 2019 not 2022)
+**contradicts** this plan's claim that it "recommends Brier/log-loss over RPS" -- it finds
+the log score beats RPS *and* Brier, while PREREGISTRATION section 3 makes Brier primary.
+Both are now stated in docs/prior-art.md. SSRN 5910522 blocks automated access (403) and the
+Wilkens 2026 paper could not be found, so both are marked unverified rather than cited.
+
+**Le's paper also changed the analysis.** It reports that event-clustered errors absorb
+roughly half of raw slope variation, so a date-clustered bootstrap was added beside the
+pre-registered game bootstrap. It widened the interval by 5% ([+0.602, +1.037] against
+[+0.618, +1.033]) and the conclusion held. The small effect is structural: the estimand is a
+within-date difference between strata that appear on the same nights, so a shared nightly
+shock largely cancels.
 | 7 (Oct 27-Nov 2) | Feature store with `ASOF JOIN`. One timeboxed slot to prove the availability source against live regular-season games | Availability: proven or dropped |
 | 8-9 (Nov 3-16) | Model, **full dress rehearsal on dev producing every table and figure**, then sealed holdout opened ONCE | Holdout opened once, never reopened |
 | 10-11 (Nov 17-30) | Add headline 1 as artifact v2. Remaining tests "if time" | v2 published |
@@ -608,7 +630,11 @@ leakage can bias either direction and the gap does not decompose into leakage pl
       would expose the heartbeat secret to any fork that opened a PR. A `concurrency` group
       stops the two chained sessions double-polling at their boundary, and the quote store
       leaves as a build artifact rather than a commit.
-- [ ] Published writeup with charts on GitHub Pages. A repo alone is not a portfolio piece.
+- [x] Published writeup with charts on GitHub Pages. A repo alone is not a portfolio piece.
+      **Done 2026-09-25:** `docs/index.md` plus `docs/_config.yml` (Jekyll, primer theme,
+      `designs/` excluded from the site). **One manual step remains for the user:** enable
+      Pages in repository settings, source = `main` branch, folder = `/docs`. Until that
+      switch is flipped the artifact is public in the repo but not served as a site.
 
 ---
 
@@ -1298,10 +1324,13 @@ The design doc's architecture description now conflicts with this review on two 
   - Surfaced by: Subagent CEO finding 5 — highest-value output treated as plumbing
   - Files: docs/dataset.md, .github/workflows/release.yml
   - Verify: release asset with checksum, manifest, schema, and license
-- [ ] **T12 (P2, human: ~4h / CC: ~20min)** — docs — Prior-art positioning section
+- [x] **T12 (P2, human: ~4h / CC: ~20min)** — docs — Prior-art positioning section
   - Surfaced by: 0B + Subagent CEO finding 7 — four relevant papers exist, none cited
   - Files: docs/prior-art.md
   - Verify: each of the 4 sources named with a one-line statement of what this project adds
+  - **DONE 2026-09-25** (docs/prior-art.md). 2 read in full, 1 blocked (SSRN 403), 1 not
+    found, and 1 of the 2 read contradicts what this plan said about it. Marked unverified
+    where unverified, rather than citing a paper nobody opened
 - [ ] **T13 (P2, human: ~3h / CC: ~15min)** — ingest — Structured JSONL run log and run manifest
   - Surfaced by: Section 8 F11 — a 20,000-request census has no progress or failure telemetry
   - Files: ingest/telemetry.py

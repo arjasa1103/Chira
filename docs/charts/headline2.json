@@ -450,6 +450,43 @@
       "sport": "nhl"
     }
   ],
+  "clustered": {
+    "ci_widths": {
+      "date_clustered": 0.43516143930249507,
+      "game": 0.41474512092714255
+    },
+    "date_clustered_bootstrap": {
+      "bootstrap_asl": 0.0,
+      "bootstrap_asl_floor": 0.0005,
+      "ci_hi": 1.0367070691777345,
+      "ci_lo": 0.6015456298752394,
+      "clusters": 311,
+      "cox_failures": 0,
+      "difference": 0.8115128187806959,
+      "excludes_zero": true,
+      "n_high": 1146,
+      "n_low": 1148,
+      "reps": 2000,
+      "slope_high": 0.5862685642282579,
+      "slope_low": 1.3977813830089538
+    },
+    "game_bootstrap": {
+      "bootstrap_asl": 0.0,
+      "bootstrap_asl_floor": 0.0005,
+      "ci_hi": 1.0325209964499942,
+      "ci_lo": 0.6177758755228516,
+      "cox_failures": 0,
+      "difference": 0.8115128187806959,
+      "excludes_zero": true,
+      "n_high": 1146,
+      "n_low": 1148,
+      "reps": 2000,
+      "slope_high": 0.5862685642282579,
+      "slope_low": 1.3977813830089538
+    },
+    "note": "section 8 pre-registers the game bootstrap; the clustered one is exploratory, prompted by Le (2026) arXiv:2602.19520 finding that event-clustered errors absorb roughly half of raw slope variation. The writeup quotes the wider interval.",
+    "wider": "date_clustered"
+  },
   "cuts": {
     "nba/2024-25": {
       "n": 1229,
