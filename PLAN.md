@@ -590,8 +590,8 @@ is pinned in UTC because that is all GitHub offers; the gate is computed in
       `collector.resolve_targets` / `poll_target`, `run_collector.py`). 47 of 47 opening-week
       NHL markets resolved; 36 rows captured in a rehearsal. The NHL season window was wrong
       by two days and is fixed, with a live check and a pinned test. See
-      notes/week7-collector.md. **Blocked on the user for the heartbeat secret before
-      2026-09-29.**
+      notes/week7-collector.md. **The heartbeat secret was already set** (2026-09-25); the
+      only step left before 2026-09-29 is uncommenting the cron.
 - [ ] **Scheduling, corrected by the eng review (the earlier 5-10 minute polling was
       unaffordable: ~130 runs/day x ~180 days exceeds the free Actions allowance and the
       collector dies from quota, not from the delay the plan models).** Use **one

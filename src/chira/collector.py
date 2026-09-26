@@ -67,7 +67,11 @@ UTC = ZoneInfo("UTC")
 # would have no-opped through the first two nights of the season -- the exact
 # failure the gate exists to prevent, inverted. Verified against the leagues on
 # 2026-09-26: NHL regular season opens 2026-09-29, NBA runs 2026-10-20 to
-# 2027-04-11 (its preseason, 2026-10-03 to 10-16, is inside the window too).
+# 2027-04-11. The NBA window opens 2026-10-15, five days before that first
+# game. NBA preseason (2026-10-03 to 10-16) is therefore mostly OUTSIDE the
+# window and is not a capture target; only its last two days fall inside. An
+# earlier version of this comment claimed the preseason was covered, which it
+# never was.
 # `upcoming.check_season_window` re-checks this against the live schedule, and
 # tests/test_collector.py pins the measured dates.
 SEASON_WINDOWS: dict[tuple[str, str], tuple[date, date]] = {

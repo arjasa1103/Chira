@@ -6,8 +6,15 @@ theme: jekyll-theme-primer
 
 # The design document is internal planning, not part of the published artifact.
 # It stays in the repository, it just does not get a page on the site.
+#
+# timeline.md and checklist.md are the same kind of thing: project status for the
+# people building it, not part of the research artifact a reader came for. They
+# render on GitHub, and their links are repo-relative so they work there. Delete
+# a line here to publish one as a page.
 exclude:
   - designs/
+  - timeline.md
+  - checklist.md
 
 # Charts and their backing JSON are served as files so every figure in the
 # writeup can be traced to the numbers behind it.

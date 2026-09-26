@@ -216,12 +216,16 @@ on every pair. Full write-up: notes/week7-collector.md.
 plus `--check-windows` to re-verify against the real schedule and a test pinning both
 leagues' measured openers.
 
-**Two things remain, and the first is now the most urgent item in the project:**
+**One thing remains, and the season opens 2026-09-29:**
 
-1. **Set `CHIRA_HEARTBEAT_URL`** (Healthchecks.io). The season opens **2026-09-29** and the
-   dead-man's switch is unarmed. Nothing else in the project is date-critical this week.
-2. **Uncomment the cron** in `.github/workflows/collector.yml`, after the secret exists and
-   one real scheduled session has been read.
+1. **Uncomment the cron** in `.github/workflows/collector.yml`. The secret exists, so this is
+   the only step left before the collector runs on its own.
+
+**Corrected 2026-09-26:** this item previously listed "set `CHIRA_HEARTBEAT_URL`" first and
+called it the most urgent thing in the project. **The secret was already set** (repo secret,
+2026-09-25T15:36:14Z, confirmed with `gh secret list`). The false alarm came from checking
+the local environment, where it is correctly absent: a repo secret only reaches the
+environment inside an Actions job.
 
 **Original item, kept for the record:**
 

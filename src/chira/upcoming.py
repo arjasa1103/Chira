@@ -73,13 +73,27 @@ def validate_week(payload: object) -> bool:
 
 
 def nhl_upcoming(client: Client, start: date, days: int = 7, *,
-                 states: tuple[str, ...] = UPCOMING_STATES) -> list[dict]:
+                 states: tuple[str, ...] = UPCOMING_STATES,
+                 bypass_cache: bool = True) -> list[dict]:
     """Regular-season NHL games not yet played, from `start` for `days` days.
 
     Returns the same dict shape the census uses, minus the result fields:
     `game_id`, `et_date`, `away`, `home`, the four label fields,
     `start_time_utc` and `neutral_site`. Sorted by (et_date, game_id), so the
     collector's targets are in a canonical order like everything else here.
+
+    **`bypass_cache` defaults True, and that default is load-bearing.** The
+    collector attaches an on-disk cache, and the schedule URL is keyed by date,
+    so a cached week freezes the slate for the rest of the session: the 30-minute
+    target refresh re-reads its own first answer and a game added, moved or
+    postponed mid-session is invisible until the calendar date changes the URL.
+    It also quietly broke a stated invariant. `live_quotes.game_start_time` is
+    documented "re-read every poll, never cached", and `poll_target` prefers this
+    module's `start_time_utc` over Gamma's (correctly: Amendment 1 established
+    the league's own time is the trustworthy one, disagreeing with Gamma by up to
+    360 minutes), so a cached schedule pinned both the tipoff and `secs_to_tipoff`
+    to whenever the session first looked. Every other live path already bypasses:
+    `resolve_targets` for `/events`, `poll_target` for `/midpoint` and `/book`.
     """
     if days < 1:
         raise ValueError("days must be >= 1")
@@ -88,7 +102,8 @@ def nhl_upcoming(client: Client, start: date, days: int = 7, *,
     cursor = start
     while cursor <= end:
         payload = client.get_json(f"{NHL_API}/schedule/{cursor.isoformat()}",
-                                  validator=validate_week)
+                                  validator=validate_week,
+                                  bypass_cache=bypass_cache)
         week = (payload or {}).get("gameWeek") or []
         if not week:
             break
@@ -127,7 +142,7 @@ def nhl_upcoming(client: Client, start: date, days: int = 7, *,
 
 
 def check_season_window(client: Client, start: date, window: tuple[date, date],
-                        *, scan_days: int = 45) -> dict:
+                        *, scan_days: int = 45, sport: str = "nhl") -> dict:
     """Does the configured window actually contain the league's first game?
 
     Hand-entered dates rot: a league moves its opener and the collector
@@ -135,8 +150,19 @@ def check_season_window(client: Client, start: date, window: tuple[date, date],
     gate. This scans the real schedule from `start` and reports the first
     regular-season date it finds against the window.
 
+    **NHL only, and it raises rather than answering for another sport.** The
+    scan is `nhl_upcoming`, so pointing it at an NBA window would compare that
+    window against the NHL schedule and return a confident, wrong `covered`.
+    A checker that can quietly validate the wrong league is worse than no
+    checker, which is the whole lesson of the window this function exists to
+    catch.
+
     Network. Deliberately NOT part of `--dry-run`, which promises no calls.
     """
+    if sport != "nhl":
+        raise ValueError(
+            f"check_season_window scans the NHL schedule; it cannot verify a "
+            f"{sport!r} window. Wire an upcoming-games source for {sport!r} first")
     games = nhl_upcoming(client, start, days=scan_days)
     dates = sorted({g["et_date"] for g in games})
     first = date.fromisoformat(dates[0]) if dates else None

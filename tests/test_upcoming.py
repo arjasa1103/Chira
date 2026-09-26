@@ -138,7 +138,49 @@ class TestStrictness:
         assert parse_start(None) is None
 
 
+class TestTheScheduleIsNeverServedFromCache:
+    """A cached week freezes the slate for a whole session.
+
+    The collector attaches a disk cache and refreshes targets every 30 minutes.
+    Without the bypass that refresh re-reads its own first answer, so a moved or
+    newly listed game stays invisible, and `poll_target` pins `game_start_time`
+    and `secs_to_tipoff` to whenever the session first looked -- against a column
+    documented "re-read every poll, never cached".
+    """
+
+    class Recorder(FakeClient):
+        def __init__(self, days):
+            super().__init__(days)
+            self.bypasses = []
+
+        def get_json(self, url, validator=None, bypass_cache=False, **kw):
+            self.bypasses.append(bypass_cache)
+            return super().get_json(url, validator=validator,
+                                    bypass_cache=bypass_cache, **kw)
+
+    def test_enumeration_bypasses_the_cache_by_default(self):
+        c = self.Recorder({"2026-10-01": [game(1, "fla", "car",
+                                               "2026-10-01T23:00:00Z")]})
+        nhl_upcoming(c, date(2026, 10, 1), days=1)
+        assert c.bypasses == [True]
+
+    def test_the_bypass_can_be_turned_off_explicitly(self):
+        c = self.Recorder({"2026-10-01": []})
+        nhl_upcoming(c, date(2026, 10, 1), days=1, bypass_cache=False)
+        assert c.bypasses == [False]
+
+
 class TestSeasonWindowCheck:
+    def test_it_refuses_a_sport_it_cannot_actually_scan(self):
+        """It scans the NHL schedule, so an NBA window would be checked against
+        the wrong league and come back confidently wrong."""
+        c = FakeClient({})
+        with pytest.raises(ValueError, match="NHL schedule"):
+            check_season_window(c, date(2026, 10, 1),
+                                (date(2026, 10, 15), date(2027, 4, 20)),
+                                sport="nba")
+
+
     def test_it_catches_a_window_that_opens_after_the_first_game(self):
         """The real bug: the NHL window said Oct 1, the season opened Sep 29."""
         c = FakeClient({"2026-09-29": [game(1, "fla", "car", "2026-09-29T21:00:00Z")]})

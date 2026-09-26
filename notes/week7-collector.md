@@ -85,10 +85,17 @@ hand-run session satisfying it would hide a cron that never fired.
 
 ## Still open
 
-- **`CHIRA_HEARTBEAT_URL` is not set.** The switch is unarmed and the season opens in three
-  days. This is the single most urgent item in the project.
 - **The cron is still commented out** in `.github/workflows/collector.yml`, by design: it is
-  enabled after the secret exists and one real session has been read.
+  enabled after the secret exists and one real session has been read. **This is now the only
+  thing between the collector and opening night.**
+
+  **Correction (2026-09-26 review): `CHIRA_HEARTBEAT_URL` IS set.** This note first said it
+  was unset and called it the most urgent item in the project. It is a repo secret, set
+  2026-09-25T15:36:14Z, confirmed with `gh secret list`. The check that produced the false
+  alarm read the local environment, which is correctly empty: `Heartbeat` reads
+  `os.environ[HEARTBEAT_ENV]`, and a repo secret only enters the environment inside an
+  Actions job. Worth recording because the same check will read "unarmed" on every developer
+  machine forever, and the only place the answer is real is GitHub.
 - **NBA enumeration is not wired.** Only NHL has an upcoming-games source; the NBA 2026-27
   regular season opens 2026-10-20, so there is time, and the session logs `sport_not_wired`
   rather than skipping silently.
