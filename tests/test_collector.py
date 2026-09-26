@@ -12,7 +12,9 @@ project a slug convention.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import json
+from datetime import date, datetime, timedelta
+from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -20,10 +22,14 @@ import pytest
 from chira.collector import (
     ET,
     HEARTBEAT_PROVIDERS,
+    MEASURED_FIRST_GAME,
+    SEASON_WINDOWS,
     UTC,
     CollectorStore,
     Heartbeat,
     active_seasons,
+    book_depth,
+    complement_check,
     dedup_key,
     describe_plan,
     et_now,
@@ -31,7 +37,9 @@ from chira.collector import (
     is_season_active,
     next_poll_delay,
     parse_book,
+    poll_target,
     quote_row,
+    resolve_targets,
     upcoming_targets,
     zero_capture_is_a_failure,
 )
@@ -422,3 +430,161 @@ class TestPollPacing:
     def test_zone_constants_are_real_zones(self):
         assert ZoneInfo("America/New_York") == ET
         assert ZoneInfo("UTC") == UTC
+
+
+class TestBookDepth:
+    """The live book is not sorted best-first, which is easy to get wrong."""
+
+    LIVE: ClassVar[dict] = {  # measured 2026-09-26 on nhl-phi-nj-2026-10-01
+        "bids": [{"price": "0.01", "size": "18.33"}, {"price": "0.43", "size": "30.61"}],
+        "asks": [{"price": "0.99", "size": "20.63"}, {"price": "0.45", "size": "151.11"}],
+        "last_trade_price": "0.44", "timestamp": "1790454368086",
+    }
+
+    def test_size_comes_from_the_best_level_not_the_first(self):
+        d = book_depth(self.LIVE)
+        assert d["best_bid_size"] == pytest.approx(30.61)
+        assert d["best_ask_size"] == pytest.approx(151.11)
+
+    def test_it_agrees_with_parse_book_on_which_level_is_best(self):
+        p = parse_book(self.LIVE)
+        assert p["best_bid"] == 0.43 and p["best_ask"] == 0.45
+
+    def test_last_trade_and_book_clock_are_captured(self):
+        d = book_depth(self.LIVE)
+        assert d["last_trade_price"] == pytest.approx(0.44)
+        assert d["book_timestamp"] == "1790454368086"
+
+    def test_a_resolved_market_has_no_depth(self):
+        assert book_depth("No orderbook exists") == {
+            "best_bid_size": None, "best_ask_size": None,
+            "last_trade_price": None, "book_timestamp": None}
+
+    def test_sizes_at_the_same_best_price_are_summed(self):
+        d = book_depth({"bids": [{"price": "0.4", "size": "10"},
+                                 {"price": "0.4", "size": "5"}], "asks": []})
+        assert d["best_bid_size"] == pytest.approx(15)
+
+
+class TestZeroCaptureNeedsADenominator:
+    """Widening the NHL window to cover a 2026-09-29 opener created nine
+    in-season days with no games. Season-active plus window-open plus zero
+    captured would have failed every one and pinged the monitor."""
+
+    IN_WINDOW = utc(2026, 12, 1, 22, 0)
+
+    def test_a_quiet_night_is_not_an_outage(self):
+        assert not zero_capture_is_a_failure(0, now=self.IN_WINDOW, windows=WINDOWS,
+                                             targets_due=0)
+
+    def test_games_due_and_nothing_captured_is_an_outage(self):
+        assert zero_capture_is_a_failure(0, now=self.IN_WINDOW, windows=WINDOWS,
+                                         targets_due=6)
+
+    def test_a_failed_enumeration_is_an_outage_even_with_nothing_due(self):
+        """"No games" and "could not find out" must not look the same."""
+        assert zero_capture_is_a_failure(0, now=self.IN_WINDOW, windows=WINDOWS,
+                                         targets_due=0, enumeration_ok=False)
+
+    def test_an_unknown_denominator_falls_back_to_the_strict_rule(self):
+        assert zero_capture_is_a_failure(0, now=self.IN_WINDOW, windows=WINDOWS)
+
+    def test_captures_are_never_an_outage(self):
+        assert not zero_capture_is_a_failure(4, now=self.IN_WINDOW, windows=WINDOWS,
+                                             targets_due=6)
+
+
+class TestConfiguredWindowsMatchTheLeagues:
+    """Hand-entered dates, wrong once. Measured against the leagues 2026-09-26."""
+
+    def test_every_window_contains_its_leagues_first_game(self):
+        for key, first in MEASURED_FIRST_GAME.items():
+            lo, hi = SEASON_WINDOWS[key]
+            assert lo <= first <= hi, (
+                f"{key} window {lo}..{hi} does not contain its opener {first}; "
+                f"the collector would no-op through opening night")
+
+    def test_the_nhl_window_opens_before_the_2026_09_29_opener(self):
+        """The bug this pins: the window said Oct 1 and the season opened Sep 29."""
+        assert SEASON_WINDOWS[("nhl", "2026-27")][0] <= date(2026, 9, 29)
+
+
+class TestResolveAndPoll:
+    class FakeClient:
+        """`confirm` goes through event_by_slug; the CLOB calls go through get_json."""
+
+        def __init__(self, events=None, mid="0.44", book=None, boom=False):
+            self.events, self.mid, self.book, self.boom = events or {}, mid, book, boom
+            self.urls = []
+
+        def event_by_slug(self, slug, bypass_cache=False):
+            self.urls.append(f"events:{slug}")
+            return self.events.get(slug, [])
+
+        def get_json(self, url, validator=None, bypass_cache=False, **kw):
+            self.urls.append(url)
+            if self.boom:
+                raise RuntimeError("clob down")
+            if "/midpoint" in url:
+                return {"mid": self.mid}
+            return self.book if self.book is not None else {"bids": [], "asks": []}
+
+    @staticmethod
+    def _game():
+        return {"sport": "nhl", "season": "2026-27", "game_id": "1", "et_date":
+                "2026-10-01", "away": "phi", "home": "njd", "away_name": "Flyers",
+                "home_name": "Devils", "away_place": "Philadelphia",
+                "home_place": "New Jersey", "start_time_utc": "2026-10-01T23:00:00Z"}
+
+    @staticmethod
+    def _event(tokens=("tokA", "tokB")):
+        return [{"markets": [{"sportsMarketType": "moneyline",
+                              "question": "Flyers vs Devils",
+                              "outcomes": '["Flyers", "Devils"]',
+                              "clobTokenIds": json.dumps(list(tokens)),
+                              "gameStartTime": "2026-10-01 23:00:00+00"}]}]
+
+    def test_it_resolves_through_the_abbreviation_map(self):
+        c = self.FakeClient({"nhl-phi-nj-2026-10-01": self._event()})
+        targets, unresolved = resolve_targets(c, [self._game()], {"njd": "nj"})
+        assert not unresolved and len(targets) == 1
+        assert targets[0]["slug"] == "nhl-phi-nj-2026-10-01"
+
+    def test_token_order_is_away_then_home(self):
+        """confirm() validates the label order; a flip swaps which side is priced."""
+        c = self.FakeClient({"nhl-phi-nj-2026-10-01": self._event()})
+        targets, _ = resolve_targets(c, [self._game()], {"njd": "nj"})
+        assert targets[0]["tokens"] == [("away", "tokA"), ("home", "tokB")]
+
+    def test_a_missing_market_is_classified_not_dropped(self):
+        c = self.FakeClient({})
+        targets, unresolved = resolve_targets(c, [self._game()], {"njd": "nj"})
+        assert not targets and unresolved[0]["reason"] == "no_market"
+        assert "nhl-phi-nj-2026-10-01" in unresolved[0]["detail"]
+
+    def test_a_market_with_the_wrong_token_count_is_rejected(self):
+        c = self.FakeClient({"nhl-phi-nj-2026-10-01": self._event(("only",))})
+        targets, unresolved = resolve_targets(c, [self._game()], {"njd": "nj"})
+        assert not targets and unresolved[0]["reason"] == "unparseable_market"
+
+    def test_polling_returns_one_row_per_side(self):
+        c = self.FakeClient({"nhl-phi-nj-2026-10-01": self._event()})
+        targets, _ = resolve_targets(c, [self._game()], {"njd": "nj"})
+        rows = poll_target(c, targets[0], poll_seq=1, run_id="r",
+                           now=utc(2026, 10, 1, 22, 0))
+        assert [r["side"] for r in rows] == ["away", "home"]
+        assert rows[0]["secs_to_tipoff"] == 3600
+        assert rows[0]["midpoint"] == 0.44
+
+    def test_a_dead_token_does_not_end_the_session(self):
+        c = self.FakeClient({"nhl-phi-nj-2026-10-01": self._event()})
+        targets, _ = resolve_targets(c, [self._game()], {"njd": "nj"})
+        c.boom = True
+        assert poll_target(c, targets[0], poll_seq=1, run_id="r") == []
+
+    def test_complement_check_flags_a_pair_that_does_not_sum_to_one(self):
+        ok = [{"side": "away", "midpoint": 0.44}, {"side": "home", "midpoint": 0.56}]
+        bad = [{"side": "away", "midpoint": 0.44}, {"side": "home", "midpoint": 0.44}]
+        assert complement_check(ok)["ok"] is True
+        assert complement_check(bad)["ok"] is False
+        assert complement_check([ok[0]])["checked"] is False

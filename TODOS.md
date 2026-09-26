@@ -203,7 +203,27 @@ specific failure mode in this pipeline, not about which rule is better in genera
 
 **Effort:** S to decide. **Priority:** P2, before week 8.
 
-## P1 — The collector's live polling path has never run (before late Oct 2026)
+## RESOLVED 2026-09-26 — The collector's live polling path has never run
+
+**It runs.** `scripts/run_collector.py` now enumerates upcoming games
+(`src/chira/upcoming.py`), resolves each to its moneyline market through the census's own
+`confirm`, and polls `/midpoint` and `/book`. Rehearsed against live opening-night markets:
+47 of 47 resolved with the 2025-26 abbreviation map, 36 rows written, complementarity 1.0000
+on every pair. Full write-up: notes/week7-collector.md.
+
+**It also found a date bug that would have cost the first two nights of the season.**
+`SEASON_WINDOWS` opened NHL 2026-27 on 2026-10-01; the league opens it 2026-09-29. Fixed,
+plus `--check-windows` to re-verify against the real schedule and a test pinning both
+leagues' measured openers.
+
+**Two things remain, and the first is now the most urgent item in the project:**
+
+1. **Set `CHIRA_HEARTBEAT_URL`** (Healthchecks.io). The season opens **2026-09-29** and the
+   dead-man's switch is unarmed. Nothing else in the project is date-critical this week.
+2. **Uncomment the cron** in `.github/workflows/collector.yml`, after the secret exists and
+   one real scheduled session has been read.
+
+**Original item, kept for the record:**
 
 **What:** Wire `upcoming_targets` to real markets, and prove one session against live games.
 

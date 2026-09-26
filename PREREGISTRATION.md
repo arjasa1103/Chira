@@ -111,7 +111,7 @@ convention and every analysis quantity are unchanged; per-game evidence is store
 ## 4. Integrity gate — derived from simulation, not intuition
 
 The gate exists to catch a broken pipeline. A threshold below the estimator's own sampling
-noise rejects a *correct* pipeline, which is the worst failure this gate can have.
+noise rejects a _correct_ pipeline, which is the worst failure this gate can have.
 
 A null distribution was simulated (4 significant figures, 1,500 replicates per n) by
 bootstrapping prices from a **measured** 128-game empirical distribution of NBA home closing
@@ -119,13 +119,13 @@ prices and drawing outcomes as `y ~ Bernoulli(p)` — perfectly calibrated by co
 
 **Null behaviour of a PERFECTLY calibrated market** (10 equal-count bins):
 
-| n | ECE p95 | ECE p99 | max-bin-dev p99 | slope 95% CI | intercept 95% CI |
-|---|---|---|---|---|---|
-| 150 (one bin) | 0.1289 | 0.1454 | 0.3941 | [0.66, 1.50] | [-0.41, 0.36] |
-| 850 (one stratum) | 0.0544 | 0.0620 | 0.1669 | [0.83, 1.17] | [-0.15, 0.15] |
-| 1,230 (one season) | 0.0451 | 0.0520 | 0.1417 | [0.87, 1.15] | [-0.13, 0.12] |
-| 2,460 (NBA both) | 0.0317 | 0.0362 | 0.0991 | [0.90, 1.10] | [-0.09, 0.09] |
-| 5,084 (both sports) | 0.0226 | 0.0260 | 0.0713 | [0.93, 1.07] | [-0.06, 0.06] |
+| n                   | ECE p95 | ECE p99 | max-bin-dev p99 | slope 95% CI | intercept 95% CI |
+| ------------------- | ------- | ------- | --------------- | ------------ | ---------------- |
+| 150 (one bin)       | 0.1289  | 0.1454  | 0.3941          | [0.66, 1.50] | [-0.41, 0.36]    |
+| 850 (one stratum)   | 0.0544  | 0.0620  | 0.1669          | [0.83, 1.17] | [-0.15, 0.15]    |
+| 1,230 (one season)  | 0.0451  | 0.0520  | 0.1417          | [0.87, 1.15] | [-0.13, 0.12]    |
+| 2,460 (NBA both)    | 0.0317  | 0.0362  | 0.0991          | [0.90, 1.10] | [-0.09, 0.09]    |
+| 5,084 (both sports) | 0.0226  | 0.0260  | 0.0713          | [0.93, 1.07] | [-0.06, 0.06]    |
 
 **Earlier draft thresholds are hereby withdrawn as unusable.** An ECE cap of 0.02 false-fires
 at every n tested, including by 2.7x at per-stratum n and 6.4x at per-bin n. A per-bin
@@ -135,17 +135,17 @@ n >= 2,460 but too tight at per-stratum n.
 **Adopted gate — evaluated on the FULL census (n ~ 5,084), never on the holdout.**
 
 **Every bound is rounded OUTWARD from the simulated null.** A first draft rounded to two
-decimals in whichever direction was tidier, which put three of four thresholds *inside* the
+decimals in whichever direction was tidier, which put three of four thresholds _inside_ the
 null distribution they were derived from — re-creating the exact false-fire defect this
 simulation existed to remove. The intercept was the worst: band `[-0.06, 0.06]` against a
 null 95% CI of `[-0.0612, 0.0640]`, so a perfectly calibrated market failed by construction.
 
-| Check | Null (n=5,084) | Adopted threshold | Direction |
-|---|---|---|---|
-| ECE | p99 = 0.0260 | <= **0.03** | outward |
-| max per-bin deviation | p99 = 0.0713 | <= **0.08** | outward |
-| Cox slope 95% CI | [0.9305, 1.0703] | within **[0.93, 1.08]** — **superseded, see Amendment 2** | outward |
-| Cox intercept 95% CI | [-0.0612, 0.0640] | within **[-0.07, 0.07]** | outward |
+| Check                 | Null (n=5,084)    | Adopted threshold                                         | Direction |
+| --------------------- | ----------------- | --------------------------------------------------------- | --------- |
+| ECE                   | p99 = 0.0260      | <= **0.03**                                               | outward   |
+| max per-bin deviation | p99 = 0.0713      | <= **0.08**                                               | outward   |
+| Cox slope 95% CI      | [0.9305, 1.0703]  | within **[0.93, 1.08]** — **superseded, see Amendment 2** | outward   |
+| Cox intercept 95% CI  | [-0.0612, 0.0640] | within **[-0.07, 0.07]**                                  | outward   |
 
 These live in `chira.constants` as `GATE_ECE_MAX`, `GATE_MAX_BIN_DEV`, `GATE_SLOPE_BAND`,
 `GATE_INTERCEPT_BAND`, and `tests/test_week1_facts.py::TestNoiseFloorIsRespected` asserts each
@@ -168,7 +168,7 @@ re-measured once real NHL prices existed. Re-simulated on the census's own closi
 (`scripts/derive_null_bands.py`, 1,500 replicates, outcomes drawn `y ~ Bernoulli(p)` so the
 market is perfectly calibrated by construction), the pooled null 95% CI for the Cox slope is
 **[0.9183, 1.0908]**, which escapes the adopted [0.93, 1.08] at both ends. Since section 4
-states the bound as an *equivalence* test — the CI must lie entirely inside the band — a
+states the bound as an _equivalence_ test — the CI must lie entirely inside the band — a
 perfectly calibrated market would have failed it. That is the exact false-fire defect this
 simulation exists to prevent, so the bound is re-rounded outward to [0.91, 1.10].
 
@@ -177,7 +177,7 @@ Two independent causes, both of which the week-1 derivation could not have known
 - **The real pooled pool is more concentrated than the NBA-only pool it was built from.**
   Measured: E[p(1-p)] 0.2162 pooled (NBA 0.1971, NHL 0.2375) against the 0.1970 assumed, and
   60.5% of pooled closes inside [0.35, 0.65] (NBA 40.5%, NHL 82.6%) against 41%. Mass near
-  0.50 is where Bernoulli variance is highest, so the null widens. The caveat's *predictions*
+  0.50 is where Bernoulli variance is highest, so the null widens. The caveat's _predictions_
   were accurate — it guessed NHL at 83% and 0.2395 — it simply had no census to bind them to.
 - **The operative n is 4,661, not 5,084.** The week-1 table assumed every scheduled game
   would be priced; 423 are classified misses. Fewer observations widen the null again.
@@ -198,7 +198,7 @@ informed this change.
 **Where the numbers live.** `chira.constants.CENSUS_NULL_*`, with
 `tests/test_week1_facts.py::TestNoiseFloorIsRespected` asserting each adopted bound covers
 the re-measured null. That guard test previously simulated a `uniform(0.1, 0.9)` pool, which
-is *less* concentrated than the census and is why it never caught this. It now asserts
+is _less_ concentrated than the census and is why it never caught this. It now asserts
 against the measured census numbers.
 
 **Per-stratum reference, required by the rule below.** Per-season and per-sport n values run
@@ -206,7 +206,7 @@ well above the pooled ECE cap and must never be judged against it — for exampl
 p99 is 0.0515 at NBA n=1,226 and 0.0655 at NHL n=896, against 0.0272 pooled. The per-n rows
 are recorded in `CENSUS_NULL_ECE_P99_BY_N` and in notes/week4-charts.md.
 
-Stated as an **equivalence** test: the CI must lie *entirely within* the band, so an
+Stated as an **equivalence** test: the CI must lie _entirely within_ the band, so an
 imprecise estimate fails. "CI contains 1.0" is accept-the-null testing and would let noisy
 data pass while punishing precise data.
 
@@ -258,7 +258,7 @@ fits the schedule.**
 - **Sealed holdout: the 2025-26 season.** Opened exactly once, after the model is frozen by
   commit. A full dress rehearsal on dev must first produce every table and figure that will
   appear in the writeup, so opening the holdout only fills in numbers.
-- **Dev: 2024-25**, with rolling-origin evaluation *within* the season. Cross-season rolling
+- **Dev: 2024-25**, with rolling-origin evaluation _within_ the season. Cross-season rolling
   origin is impossible with one dev season, which is why §5 pre-commits to a pre-game state
   that needs no cross-season intercept projection.
 - Clark-West is never computed on dev data.
@@ -302,7 +302,7 @@ fits the schedule.**
 - Bootstrap resamples **games, not rows.** Time-to-close (close, T-1h, T-6h, T-24h) is a
   repeated measure — four looks at one sample — so row-level resampling gives bands that are
   too narrow.
-- **Honest framing:** this guarantees a *measurement*, not a *finding*. Under the n
+- **Honest framing:** this guarantees a _measurement_, not a _finding_. Under the n
   constraints above, wide overlapping bands are a plausible outcome and will be reported as
   such rather than mined for significance.
 
@@ -317,17 +317,17 @@ the between-season confound and does nothing about the within-season one. Measur
 census (`week_of_season` against terminal volume, games with volume present):
 
 | Sport-season | Spearman(volume, week) | Low-liquidity games that are early, as pre-registered |
-|---|---|---|
-| NBA 2024-25 | +0.521 | 0.686 |
-| NBA 2025-26 | +0.361 | 0.660 |
-| NHL 2024-25 | +0.532 | 0.719 |
-| NHL 2025-26 | +0.413 | 0.695 |
+| ------------ | ---------------------- | ----------------------------------------------------- |
+| NBA 2024-25  | +0.521                 | 0.686                                                 |
+| NBA 2025-26  | +0.361                 | 0.660                                                 |
+| NHL 2024-25  | +0.532                 | 0.719                                                 |
+| NHL 2025-26  | +0.413                 | 0.695                                                 |
 
 0.500 would mean the two axes are independent. At 0.69 they are close to the same cut, and
 section 8's primary directional test is the slope difference BETWEEN strata, so the
 confound lands directly on the headline. Cutting volume inside each phase restores
 0.511 / 0.503 / 0.506 / 0.534 and evens the cells (221-312 per cell, against 126-419).
-The stratum now reads "low liquidity *relative to that point in the season*", which is the
+The stratum now reads "low liquidity _relative to that point in the season_", which is the
 quantity section 8 intended.
 
 A residual-based alternative (regress log volume on week, stratify on the residual) was
@@ -339,8 +339,8 @@ PLAN.md made NHL load-bearing for per-stratum n, and n is fine (896 and 1,310 pr
 that reasoning could not anticipate is that the NHL market carries almost no information.
 Murphy resolution at the close, measured in week 4:
 
-| | NBA | NHL |
-|---|---|---|
+|         | NBA     | NHL     |
+| ------- | ------- | ------- |
 | 2024-25 | 0.04831 | 0.01520 |
 | 2025-26 | 0.05201 | 0.00571 |
 
@@ -380,11 +380,11 @@ band, and any model fit. Full disclosure, because this is the one that matters: 
 the three candidate designs on 2026-09-19 computed **Cox slope point estimates per liquidity
 level, on real outcomes**, for each candidate. Those numbers were visible when 3a was chosen:
 
-| Design | Low-liquidity slope | High-liquidity slope |
-|---|---|---|
-| As pre-registered | +1.136 to +1.447 | +0.411 to +0.901 |
-| Within-phase (adopted) | +1.079 to +1.399 | +0.535 to +0.904 |
-| Residualized | +1.162 to +1.403 | +0.413 to +0.917 |
+| Design                 | Low-liquidity slope | High-liquidity slope |
+| ---------------------- | ------------------- | -------------------- |
+| As pre-registered      | +1.136 to +1.447    | +0.411 to +0.901     |
+| Within-phase (adopted) | +1.079 to +1.399    | +0.535 to +0.904     |
+| Residualized           | +1.162 to +1.403    | +0.413 to +0.917     |
 
 Two things follow, and both are stated rather than argued. First, the design was chosen on
 orthogonality and cell balance, which are computable without outcomes, and the contrast is
@@ -491,11 +491,11 @@ the model's own disagreement with the market.
 
 Three tiers on the absolute edge `|p_model − p_market|`, home side, one observation per game:
 
-| Tier | Edge band | Expectation |
-|---|---|---|
-| T1 | [0.02, 0.05) | Most populated; smallest and least reliable edge |
-| T2 | [0.05, 0.10) | Sparse |
-| T3 | >= 0.10 | May be **empty**, which is a valid published result |
+| Tier | Edge band    | Expectation                                         |
+| ---- | ------------ | --------------------------------------------------- |
+| T1   | [0.02, 0.05) | Most populated; smallest and least reliable edge    |
+| T2   | [0.05, 0.10) | Sparse                                              |
+| T3   | >= 0.10      | May be **empty**, which is a valid published result |
 
 Games with edge below 0.02 are not tiered: that is inside the measurement noise of the
 closing price itself, which is carried forward on 41% of games (measured, week 1).

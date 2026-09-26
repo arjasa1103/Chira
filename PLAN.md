@@ -586,6 +586,12 @@ leave room to report its own outcome, so **two** chained sessions cover the wind
 is pinned in UTC because that is all GitHub offers; the gate is computed in
 `America/New_York` in code, so a DST shift moves the effective window and not the coverage.
 
+- [x] **Live polling path wired and rehearsed 2026-09-26** (`src/chira/upcoming.py`,
+      `collector.resolve_targets` / `poll_target`, `run_collector.py`). 47 of 47 opening-week
+      NHL markets resolved; 36 rows captured in a rehearsal. The NHL season window was wrong
+      by two days and is fixed, with a live check and a pinned test. See
+      notes/week7-collector.md. **Blocked on the user for the heartbeat secret before
+      2026-09-29.**
 - [ ] **Scheduling, corrected by the eng review (the earlier 5-10 minute polling was
       unaffordable: ~130 runs/day x ~180 days exceeds the free Actions allowance and the
       collector dies from quota, not from the delay the plan models).** Use **one

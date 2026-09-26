@@ -39,6 +39,7 @@ collector has to start before the season does.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
 import time
@@ -51,6 +52,7 @@ from zoneinfo import ZoneInfo
 import duckdb
 
 from .constants import CLOB
+from .resolve import confirm, team_labels
 
 ET = ZoneInfo("America/New_York")
 UTC = ZoneInfo("UTC")
@@ -58,10 +60,25 @@ UTC = ZoneInfo("UTC")
 # Season windows in ET dates, deliberately generous at both ends: a window that
 # closes too early loses the games it exists to collect, and an extra no-op day
 # costs one API call to the schedule. Pre-season and play-in are included.
+#
+# **These are hand-entered and were wrong once.** The NHL window originally
+# opened 2026-10-01; the league's own schedule puts the first 2026-27
+# regular-season game on **2026-09-29** (fla@car, 21:00Z), so the collector
+# would have no-opped through the first two nights of the season -- the exact
+# failure the gate exists to prevent, inverted. Verified against the leagues on
+# 2026-09-26: NHL regular season opens 2026-09-29, NBA runs 2026-10-20 to
+# 2027-04-11 (its preseason, 2026-10-03 to 10-16, is inside the window too).
+# `upcoming.check_season_window` re-checks this against the live schedule, and
+# tests/test_collector.py pins the measured dates.
 SEASON_WINDOWS: dict[tuple[str, str], tuple[date, date]] = {
     ("nba", "2026-27"): (date(2026, 10, 15), date(2027, 4, 20)),
-    ("nhl", "2026-27"): (date(2026, 10, 1), date(2027, 4, 25)),
+    ("nhl", "2026-27"): (date(2026, 9, 20), date(2027, 4, 30)),
 }
+
+# The first regular-season date each league actually scheduled, measured
+# 2026-09-26. A window that starts after one of these loses opening night.
+MEASURED_FIRST_GAME = {("nhl", "2026-27"): date(2026, 9, 29),
+                       ("nba", "2026-27"): date(2026, 10, 20)}
 
 # The ET clock window a session polls in. It SPANS MIDNIGHT: a 22:30 ET tipoff on
 # the west coast is still being quoted at 01:00 ET the next calendar day, and a
@@ -74,6 +91,10 @@ POLL_END_ET = dtime(2, 30)
 # its own failure reporting, so the run looks like a success that captured less.
 SESSION_MAX_SECONDS = 5 * 3600 + 30 * 60
 POLL_INTERVAL_SECONDS = 300
+
+# Live midpoints are quoted to the tick, so the two sides sum to 1 only up to
+# rounding; the census's 1e-6 is for settled series, not for a live book.
+COMPLEMENT_LIVE_TOL = 0.02
 
 HEARTBEAT_ENV = "CHIRA_HEARTBEAT_URL"
 HEARTBEAT_TIMEOUT = 10
@@ -92,6 +113,14 @@ CREATE TABLE IF NOT EXISTS live_quotes (
     best_bid    DOUBLE,
     best_ask    DOUBLE,
     spread      DOUBLE,
+    -- Depth at top of book, plus the venue's own book clock. Size is why this
+    -- is worth storing: the underconfidence headline 2 found lives in thin
+    -- markets, and "is there anything to trade against" is a size question
+    -- that a price series cannot answer.
+    best_bid_size    DOUBLE,
+    best_ask_size    DOUBLE,
+    last_trade_price DOUBLE,
+    book_timestamp   TEXT,
     -- Re-read every poll, never cached: a postponed game's tipoff moves, and a
     -- stale target keeps polling a market whose game already started (T18).
     game_start_time TIMESTAMPTZ,
@@ -208,6 +237,39 @@ def parse_book(payload: Any) -> dict:
     return {"best_bid": bid, "best_ask": ask, "spread": spread}
 
 
+def book_depth(payload: Any) -> dict:
+    """Size at top of book, last trade, and the venue's own book timestamp.
+
+    Kept separate from `parse_book` on purpose: that function answers "what is
+    the price", this one answers "how much is there and how fresh is it", and
+    the two have different failure modes. A resolved market returns no book at
+    all, which is None everywhere rather than zero size.
+    """
+    out = {"best_bid_size": None, "best_ask_size": None,
+           "last_trade_price": None, "book_timestamp": None}
+    if not isinstance(payload, dict):
+        return out
+    bids = [b for b in (payload.get("bids") or []) if isinstance(b, dict)]
+    asks = [a for a in (payload.get("asks") or []) if isinstance(a, dict)]
+    # The live book is NOT sorted best-first: measured 2026-09-26, bids arrive
+    # ascending and asks descending, so "the first level" is the WORST price on
+    # both sides. Size is taken from whichever level actually is the best.
+    best_bid = max((_num(b.get("price")) for b in bids
+                    if _num(b.get("price")) is not None), default=None)
+    best_ask = min((_num(a.get("price")) for a in asks
+                    if _num(a.get("price")) is not None), default=None)
+    if best_bid is not None:
+        out["best_bid_size"] = sum(_num(b.get("size")) or 0.0 for b in bids
+                                   if _num(b.get("price")) == best_bid) or None
+    if best_ask is not None:
+        out["best_ask_size"] = sum(_num(a.get("size")) or 0.0 for a in asks
+                                   if _num(a.get("price")) == best_ask) or None
+    out["last_trade_price"] = _num(payload.get("last_trade_price"))
+    ts = payload.get("timestamp")
+    out["book_timestamp"] = str(ts) if ts not in (None, "") else None
+    return out
+
+
 def quote_row(*, sport: str, season: str, game_id: str, slug: str | None,
               token_id: str, side: str, captured_at: datetime,
               midpoint: Any, book: Any, game_start_time: datetime | None,
@@ -225,6 +287,7 @@ def quote_row(*, sport: str, season: str, game_id: str, slug: str | None,
         "captured_at": captured_at.astimezone(UTC),
         "midpoint": _num(midpoint.get("mid") if isinstance(midpoint, dict) else midpoint),
         **parse_book(book),
+        **book_depth(book),
         "game_start_time": (None if game_start_time is None
                             else game_start_time.astimezone(UTC)),
         "secs_to_tipoff": secs,
@@ -234,6 +297,7 @@ def quote_row(*, sport: str, season: str, game_id: str, slug: str | None,
 
 _COLS = ("dedup_key", "sport", "season", "game_id", "slug", "token_id", "side",
          "captured_at", "midpoint", "best_bid", "best_ask", "spread",
+         "best_bid_size", "best_ask_size", "last_trade_price", "book_timestamp",
          "game_start_time", "secs_to_tipoff", "poll_seq", "run_id")
 
 
@@ -428,16 +492,38 @@ class Heartbeat:
 
 
 def zero_capture_is_a_failure(captured: int, *, now: datetime | None = None,
-                              windows: dict | None = None) -> bool:
+                              windows: dict | None = None,
+                              targets_due: int | None = None,
+                              enumeration_ok: bool = True) -> bool:
     """A zero-capture run fails ONLY when it should have captured something.
 
     Off-season and outside the poll window, zero is the correct answer and
     failing the workflow would train the reader to ignore red runs, which is
     how a real outage gets missed (T14).
+
+    **`targets_due` matters as much as the window, and leaving it out caused a
+    false alarm.** The NHL window opens 2026-09-20 to cover a 2026-09-29
+    opener, so there are nine in-season days with no games at all. Season
+    active plus window open plus zero captured would have failed every one of
+    them and pinged the monitor, which is the alarm-fatigue failure this rule
+    exists to avoid.
+
+    **But "no games" and "could not find out" are different**, and only one is
+    benign. If enumeration itself failed, the collector does not know whether
+    there were games, so that is an outage: `enumeration_ok=False` fails even
+    with nothing due. A schedule endpoint returning nothing looks exactly like
+    a quiet night otherwise, which is how a silent outage survives a season.
     """
     if captured > 0:
         return False
-    return is_season_active(now, windows) and in_poll_window(now)
+    if not (is_season_active(now, windows) and in_poll_window(now)):
+        return False
+    if not enumeration_ok:
+        return True
+    # A genuinely quiet night: nothing was due, so capturing nothing is right.
+    # `targets_due=None` means the caller did not say, and an unknown denominator
+    # falls back to the strict rule rather than to silence.
+    return targets_due != 0
 
 
 def session_deadline(started: float | None = None,
@@ -499,3 +585,112 @@ def upcoming_targets(games: list[dict], *, now: datetime | None = None,
         if -timedelta(minutes=grace_minutes) <= st - n <= timedelta(hours=lookahead_hours):
             out.append(g)
     return out
+
+
+def resolve_targets(client, games: list[dict], abbr_map: dict[str, str],
+                    *, bypass_cache: bool = True) -> tuple[list[dict], list[dict]]:
+    """Turn upcoming games into pollable targets. Returns (targets, unresolved).
+
+    Reuses the census's own resolver rather than re-deriving slug rules: the
+    two date conventions, the per-season abbreviation translations, and the
+    away-then-home label check that stops an orientation flip. A flip does not
+    crash, it silently swaps which side's price you are recording, so it is
+    checked here for exactly the reason the census checks it.
+
+    `bypass_cache` defaults True: a market listed days before the game changes
+    between polls, and serving a cached `/events` response would pin the
+    collector to the token ids and tipoff of whenever it first looked.
+    """
+    labels = team_labels(games)
+    targets, unresolved = [], []
+    for g in games:
+        away = abbr_map.get(g["away"], g["away"])
+        home = abbr_map.get(g["home"], g["home"])
+        try:
+            hit = confirm(client, g["sport"], g, away, home, labels,
+                          bypass_cache=bypass_cache)
+        # Broad by intent: one bad game must not end a session.
+        except Exception as e:
+            unresolved.append({**g, "reason": f"error:{type(e).__name__}",
+                               "detail": str(e)[:200]})
+            continue
+        market = hit.get("market")
+        if not market:
+            unresolved.append({
+                **g,
+                "reason": "no_moneyline_market" if hit.get("rejected_types")
+                          else ("label_mismatch_at_slug" if hit.get("saw_events")
+                                else "no_market"),
+                "detail": ",".join(hit.get("attempted") or []),
+            })
+            continue
+        try:
+            tokens = json.loads(market.get("clobTokenIds") or "[]")
+        except json.JSONDecodeError:
+            tokens = []
+        if len(tokens) != 2:
+            unresolved.append({**g, "reason": "unparseable_market",
+                               "detail": f"{len(tokens)} token ids"})
+            continue
+        # confirm() validated the outcomes in away-then-home order, so index 0
+        # is the away token and index 1 the home token. That ordering is the
+        # whole reason confirm is used here instead of a slug lookup.
+        targets.append({
+            **g,
+            "slug": hit.get("slug"),
+            "convention": hit.get("convention"),
+            "market_question": market.get("question"),
+            "gamma_start_time": market.get("gameStartTime"),
+            "tokens": [("away", str(tokens[0])), ("home", str(tokens[1]))],
+        })
+    return targets, unresolved
+
+
+def poll_target(client, target: dict, *, poll_seq: int, run_id: str,
+                now: datetime | None = None) -> list[dict]:
+    """Fetch both sides of one market. Returns rows; never raises for one game.
+
+    The tipoff is re-read from the market on every poll (T18): a postponed game
+    moves, and a stale target keeps polling a market whose game already started.
+    """
+    captured = (now or datetime.now(UTC)).astimezone(UTC)
+    start = None
+    for source in (target.get("start_time_utc"), target.get("gamma_start_time")):
+        if isinstance(source, str) and source:
+            try:
+                start = datetime.fromisoformat(source.replace("Z", "+00:00")
+                                               .replace(" ", "T"))
+            except ValueError:
+                start = None
+            if start is not None and start.tzinfo is not None:
+                break
+            start = None
+    rows = []
+    for side, token in target["tokens"]:
+        try:
+            midpoint = client.get_json(midpoint_url(token), bypass_cache=True)
+            book = client.get_json(book_url(token), bypass_cache=True)
+        # Broad by intent: a dead token must not end the session.
+        except Exception:
+            continue
+        rows.append(quote_row(
+            sport=target["sport"], season=target["season"],
+            game_id=target["game_id"], slug=target.get("slug"),
+            token_id=token, side=side, captured_at=captured,
+            midpoint=midpoint, book=book, game_start_time=start,
+            poll_seq=poll_seq, run_id=run_id))
+    return rows
+
+
+def complement_check(rows: list[dict]) -> dict:
+    """Do the two sides' midpoints still sum to 1? The census's invariant, live.
+
+    Cheap, and it is the one check that catches a token-leg mix-up at capture
+    time rather than months later in analysis.
+    """
+    mids = {r["side"]: r["midpoint"] for r in rows if r.get("midpoint") is not None}
+    if len(mids) != 2:
+        return {"checked": False, "sum": None}
+    total = mids["away"] + mids["home"]
+    return {"checked": True, "sum": round(total, 6),
+            "ok": abs(total - 1.0) <= COMPLEMENT_LIVE_TOL}
