@@ -129,6 +129,34 @@ market) rather than as a second stratified sample.
 
 **Effort:** S to decide. **Priority:** P2, before week 5-6 strata.
 
+## P1 — Travel distance has no data source (blocks a week-7 feature)
+
+**What:** Vendor a venue table (team -> city -> lat/long) and a distance function before
+Phase 3's feature list is built.
+
+**Why:** PLAN Phase 3 lists "rest days, back-to-backs, travel distance" as historical
+features. Rest and back-to-backs fall straight out of the schedule already in the store.
+**Travel does not:** nothing in the repo carries arena coordinates, cities, or a haversine.
+Audited 2026-09-26, zero matches.
+
+**Shape of the fix:** ~30 rows per league, vendored rather than fetched (the same rule
+`nhl.NHL_TEAMS` follows, so a half-failed fetch cannot silently shorten the table), plus a
+haversine in the feature module. Neutral-site games already carry `neutral_site` for NHL and
+will need the venue, not the home team's city, or the distance is wrong for exactly the
+games where it is most interesting.
+
+**Effort:** S (human ~2h / CC ~20min). **Priority:** P1, inside week 7.
+
+## P1 — T15 should land with the feature store, not after it
+
+**What:** Materialize the narrow `game_prices` table (PLAN T15) as part of week 7.
+
+**Why:** It exists so feature assembly does not scan 145.6M raw price rows. Zero references
+in the codebase today; week 7 is its first real consumer, and building the feature store
+against the raw table first means building it twice.
+
+**Effort:** S (human ~2h / CC ~10min). **Priority:** P1, inside week 7.
+
 ## P1 — Two prior-art citations are unverified (before artifact v2)
 
 **What:** A human opens the two sources T12 could not, and either records their claims in

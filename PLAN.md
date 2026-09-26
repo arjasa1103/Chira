@@ -83,6 +83,28 @@ reproduction path, which still meets the week-6 gate. Licences added: MIT for co
 outcome-correlated volume caveat, the 318 excluded games and the no-dataset decision in its
 own limitations section rather than leaving a reader to find them.
 
+**Week 7 readiness check (2026-09-26): no blockers. Four things to know before starting.**
+
+1. **`ASOF JOIN` is available and verified**, duckdb 1.5.5 on this machine, so E9's
+   point-in-time assembly needs no workaround and no new dependency.
+2. **Travel distance has NO data source.** Phase 3 lists it as a historical feature and
+   nothing in the repo carries arena coordinates, cities or a distance function. Rest days
+   and back-to-backs fall straight out of the schedule already in the store; travel needs a
+   vendored venue table first. Small, but it is unscheduled work sitting inside a week-7
+   deliverable.
+3. **T15 should land WITH the feature store, not after it.** The narrow `game_prices` table
+   exists precisely so feature assembly does not scan 145.6M raw rows, and week 7 is its
+   first real consumer.
+4. **E7 is date-locked and cannot be pulled forward.** Proving an availability source needs
+   live regular-season games with injury reports; the NBA 2026-27 season tips late October.
+   Everything else in week 7 runs against the frozen snapshot and can start now.
+
+**Schedule position: ~4.5 weeks ahead.** Week 6 was due 2026-10-26 and finished 2026-09-25.
+66 days remain to the deadline against 5 plan-weeks of remaining work. The binding
+constraint is no longer effort, it is two dates: **NHL 2026-27 opens 2026-10-01**
+(`collector.SEASON_WINDOWS`), which is when forward capture starts being lost if the
+collector's live path is still unproven, and the NBA tip in late October for E7.
+
 **T12 produced a correction, not a formality.** Two of the four sources were read in full:
 Le (2026, arXiv:2602.19520) decomposes the SAME estimand across 353M Kalshi and Polymarket
 trades and finds trade-size compression that is explicitly **not robust on Polymarket**,
@@ -395,7 +417,7 @@ Answers whether the project is viable, and in which sport.
       ~2,460 NBA games and ~2,624 NHL games. Per game: 1 `/events?slug=` + 2
       `prices-history` = 3 requests, so **~7,400 NBA + ~7,900 NHL ≈ 15,300 requests**,
       plus ~400 abbreviation-map probes.
-- [ ] **Report the two seasons separately as well as pooled.** Per-game liquidity quadrupled
+- [x] **Report the two seasons separately as well as pooled.** Per-game liquidity quadrupled
       between them (~$500k in 2024-25 vs ~$1.9M in 2025-26), so they are two different market
       regimes and price sharpness is not constant across them.
 - [x] (week 3; the close is cut at league tipoff per Amendment 1) Per game, store `outcomePrices` (free label), `gameStartTime`, volume, and the
@@ -468,7 +490,7 @@ in `chart-data.json`). Full write-up: notes/week4-charts.md.
 
 - [ ] DuckDB store. Game key: `nba_api` `GAME_ID` joined to Polymarket `conditionId` via
       an explicit, auditable join table keyed on (sport, ET date, away abbr, home abbr).
-- [ ] Price table grain: one row per token per minute. **~94.6M rows** (5,084 games x 2
+- [x] Price table grain: one row per token per minute. **~94.6M rows** (5,084 games x 2
       tokens x ~9,300 points). Earlier drafts said 46M/69M by counting one token; corrected.
       **Partition the Parquet release by sport and season** — GitHub caps a single release
       asset at 2GB.
@@ -573,12 +595,12 @@ is pinned in UTC because that is all GitHub offers; the gate is computed in
       slate across DST, the same bug class already fixed for slugs. A nightly job captures nothing that deserves the name
       "closing": tipoffs are staggered and a closing snapshot must land within minutes of
       each `gameStartTime`.
-- [ ] Record the **actual snapshot timestamp** on every row so staleness is measurable.
-- [ ] Capture live bid/ask via `/midpoint` and `/book`, which return
+- [x] Record the **actual snapshot timestamp** on every row so staleness is measurable.
+- [x] Capture live bid/ask via `/midpoint` and `/book`, which return
       `"No orderbook exists"` for resolved markets and so are forward-only.
-- [ ] Persist to an external store or release artifact. Never commit a growing DuckDB file
+- [x] Persist to an external store or release artifact. Never commit a growing DuckDB file
       into the git tree.
-- [ ] GitHub Actions cron is best-effort: commonly delayed 10+ minutes, dropped under load,
+- [x] GitHub Actions cron is best-effort: commonly delayed 10+ minutes, dropped under load,
       auto-disabled after 60 days of repo inactivity. Treat delay as measured, not assumed
       away.
 - [ ] **Pre-register the availability test in a SEPARATE, LATER-HASHED ADDENDUM**, committed
@@ -1263,17 +1285,45 @@ No pre-existing ASCII diagrams in the repo (one commit, two docs, zero code). No
 The design doc's architecture description now conflicts with this review on two points
 (three-season window, `statsmodels` as an option) and is amended below.
 
+## Task-list reconciliation (2026-09-26)
+
+The boxes below drifted badly: the narrative sections were kept current and the task
+lists were not. Audited against the code, **23 items were ticked** that had shipped weeks
+earlier (T1, T2, T3, T6, T8, T10, T13, T14, E1, E2, E3, E6, E10, E12, E14, E15, E20, and
+six Phase 1/3/6 bullets). Each was verified by reading the implementation, not by memory.
+
+Six items are neither done nor simply pending, and the checkbox cannot say so:
+
+- **E4 is SUPERSEDED, not pending.** Decision A4 pre-committed team strength as a
+  deterministic pre-game rating supplied as a fixed covariate, not a rolling latent state.
+  The box stays unticked because the work was never done; it should never be done.
+- **Phase 3's `conditionId` join table was SUPERSEDED by the built design.** There is no
+  `conditionId` anywhere in the codebase. The store keys on `(sport, season, game_id)` and
+  confirms the market by slug plus a two-sided label match, which is stronger than the
+  planned join because it verifies orientation. The plan text describes a design that was
+  replaced in week 2.
+- **E8 is done except one piece deliberately NOT built.** The dead-man's switch exists and
+  is armed (secret set 2026-09-25). The keepalive was refused on reasoning recorded in
+  TODOS: the 60-day clock only disables enabled scheduled workflows, this cron is
+  commented out, and a keepalive that is itself a scheduled workflow faces the auto-disable
+  it exists to prevent.
+- **T4 and E11 are PARTIAL and on purpose.** 6 of the 7 designated P1 tests are in place;
+  the leakage canary (E5) guards week-7 machinery and is scheduled with it. 711 tests pass.
+- **E19 is HALF built.** `neutral_site` is captured for NHL, but play-in, NBA Cup and
+  international games are still not enumerated or routed to their own reason enum. The
+  week-1 learner already found All-Star and 4 Nations entities, so these slugs exist.
+
 ## Implementation Tasks (CEO phase)
 
-- [ ] **T1 (P1, human: ~2h / CC: ~15min)** — plan/docs — Correct the usable-season window to 2024-25 and 2025-26 everywhere
+- [x] **T1 (P1, human: ~2h / CC: ~15min)** — plan/docs — Correct the usable-season window to 2024-25 and 2025-26 everywhere
   - Surfaced by: 0A Premise Challenge — Dec 2023 NBA volumes are $6/$0/$0/$0; Mar 2024 has zero sports slugs
   - Files: PLAN.md, docs/designs/chira-market-calibration-engine.md
   - Verify: no remaining reference to "2023-24"; census request budget and J values updated
-- [ ] **T2 (P1, human: ~4h / CC: ~25min)** — ingest — Close the 8 silent-failure gaps with a `misses` table and a balancing reconciliation assert
+- [x] **T2 (P1, human: ~4h / CC: ~25min)** — ingest — Close the 8 silent-failure gaps with a `misses` table and a balancing reconciliation assert
   - Surfaced by: Section 2 Error & Rescue Map — 4 GAPS; Failure Modes Registry — 8 CRITICAL GAPS
   - Files: ingest/fetch.py, ingest/slug.py, store/schema.sql
   - Verify: `scheduled == priced + misses` asserts; every miss row carries a reason enum and attempted slug set
-- [ ] **T3 (P1, human: ~3h / CC: ~20min)** — ingest — Learn the abbreviation map PER SEASON, not once
+- [x] **T3 (P1, human: ~3h / CC: ~20min)** — ingest — Learn the abbreviation map PER SEASON, not once
   - Surfaced by: 0A — `nba-lal-no-2023-12-07` vs `nba-nop-lal-2025-11-30`; conventions drift across seasons
   - Files: ingest/abbr.py
   - Verify: unit test asserts `no` and `nop` both resolve in their own era; unknown abbr raises
@@ -1285,7 +1335,7 @@ The design doc's architecture description now conflicts with this review on two 
   - Surfaced by: Section 2 — a quietly non-converged posterior yields a real-looking Brier score
   - Files: model/fit.py
   - Verify: deliberately under-sampled fit raises rather than warns
-- [ ] **T6 (P1, human: ~3h / CC: ~15min)** — ingest/store — Make the census idempotent
+- [x] **T6 (P1, human: ~3h / CC: ~15min)** — ingest/store — Make the census idempotent
   - Surfaced by: Section 4 F6 — re-run after partial failure double-inserts price rows
   - Files: store/schema.sql, ingest/run.py
   - Verify: chaos test — kill at a random request index, resumed run is byte-identical
@@ -1293,7 +1343,7 @@ The design doc's architecture description now conflicts with this review on two 
   - Surfaced by: Section 1 F2 — one unauthenticated third-party endpoint, no contract, multi-month project
   - Files: ingest/snapshot.py, .github/workflows/release.yml
   - Verify: every downstream phase runs with the network disabled
-- [ ] **T8 (P2, human: ~4h / CC: ~20min)** — scoring — Split the integrity gate into hard invariants and descriptive reporting
+- [x] **T8 (P2, human: ~4h / CC: ~20min)** — scoring — Split the integrity gate into hard invariants and descriptive reporting
   - Surfaced by: Section 8 / Reviewer Concerns — thresholds sit at or below the estimator noise floor and will false-fire
   - Files: scoring/integrity.py, PREREGISTRATION.md
   - Verify: simulated perfectly-calibrated market passes the hard gate; ECE/slope/tilt report against simulated noise bands
@@ -1317,7 +1367,7 @@ The design doc's architecture description now conflicts with this review on two 
     |logit p| equalises the price spread (sd 0.595 vs 0.593) and returns +0.804
     [+0.559, +1.057]. Per-cell claims are deliberately not made -- at NHL n=225 the null
     ECE p99 is 0.1288, so single cells are close to unfalsifiable.
-- [ ] **T10 (P2, human: ~2h / CC: ~10min)** — scoring — Hostile-QA synthetic-market test of the scorer
+- [x] **T10 (P2, human: ~2h / CC: ~10min)** — scoring — Hostile-QA synthetic-market test of the scorer
   - Surfaced by: Section 6 — the instrument is never validated before it judges the market
   - Files: tests/test_scorer_synthetic.py
   - Verify: perfectly-calibrated synthetic → near-zero miscalibration; deliberately tilted → caught, correct sign
@@ -1332,11 +1382,11 @@ The design doc's architecture description now conflicts with this review on two 
   - **DONE 2026-09-25** (docs/prior-art.md). 2 read in full, 1 blocked (SSRN 403), 1 not
     found, and 1 of the 2 read contradicts what this plan said about it. Marked unverified
     where unverified, rather than citing a paper nobody opened
-- [ ] **T13 (P2, human: ~3h / CC: ~15min)** — ingest — Structured JSONL run log and run manifest
+- [x] **T13 (P2, human: ~3h / CC: ~15min)** — ingest — Structured JSONL run log and run manifest
   - Surfaced by: Section 8 F11 — a 20,000-request census has no progress or failure telemetry
   - Files: ingest/telemetry.py
   - Verify: one line per request; manifest records season windows and abbr-map version
-- [ ] **T14 (P2, human: ~2h / CC: ~10min)** — collector — Heartbeat and loud zero-capture failure for the forward collector
+- [x] **T14 (P2, human: ~2h / CC: ~10min)** — collector — Heartbeat and loud zero-capture failure for the forward collector
   - Surfaced by: Section 8 F12 — runs unattended for six months with no alerting
   - Files: .github/workflows/collector.yml, collector/heartbeat.py
   - Verify: zero-capture day fails the workflow visibly
@@ -1727,13 +1777,13 @@ Synthesized from this phase's findings. These were previously written only to th
 artifact and not into the plan, which caused the re-review to see 6 P1 tasks instead of 17.
 Corrected here.
 
-- [ ] **E1 (P1, human: ~2h / CC: ~15min)** — tests — Label agreement assert: outcomePrices winner == nba_api box-score winner, and p_home nickname maps to slug home abbr
+- [x] **E1 (P1, human: ~2h / CC: ~15min)** — tests — Label agreement assert: outcomePrices winner == nba_api box-score winner, and p_home nickname maps to slug home abbr
   - Surfaced by: Eng Section 1 R2 (conf 9/10): ground-truth label comes from the same third party being benchmarked; orientation flip would mirror the curve about 0.5, not crash
   - Files: tests/test_label_agreement.py, ingest/label.py
-- [ ] **E2 (P1, human: ~3h / CC: ~20min)** — scoring — Strip all gate authority from market calibration; validate the pipeline only with tests that do not assume calibration
+- [x] **E2 (P1, human: ~3h / CC: ~20min)** — scoring — Strip all gate authority from market calibration; validate the pipeline only with tests that do not assume calibration
   - Surfaced by: Eng Section 1 R3 (conf 8/10): gate conflates pipeline validation with the project own finding; miscalibration is ambiguous between a bug and the Approach C headline
   - Files: scoring/integrity.py, PREREGISTRATION.md
-- [ ] **E3 (P1, human: ~1h / CC: ~10min)** — plan — Reorder Phase 0: the blocking modeling decision and the noise-floor simulation become strict predecessors; PREREGISTRATION.md is the LAST Phase 0 artifact
+- [x] **E3 (P1, human: ~1h / CC: ~10min)** — plan — Reorder Phase 0: the blocking modeling decision and the noise-floor simulation become strict predecessors; PREREGISTRATION.md is the LAST Phase 0 artifact
   - Surfaced by: Eng Section 1 R1 (conf 9/10): pre-registration is committed before the two decisions that determine its contents
   - Files: PLAN.md
 - [ ] **E4 (P1, human: ~1d / CC: ~40min)** — model — Adopt a rolling pre-game team-strength state (Elo-like/state-space) instead of team-season intercepts plus random walk
@@ -1742,7 +1792,7 @@ Corrected here.
 - [ ] **E5 (P1, human: ~3h / CC: ~20min)** — tests — Leakage canary that is allowed to fail: fit with final margin leaked, assert Brier collapses below 0.05
   - Surfaced by: Eng Section 2 R8 (conf 8/10): the as_of truncation test validates the read path only; without a canary, no-leakage-detected is unfalsifiable
   - Files: tests/test_leakage_canary.py
-- [ ] **E6 (P1, human: ~4h / CC: ~25min)** — ingest — Harden the cache: content-type plus schema check before caching, cache key versioned by abbr-map, non-JSON 200 raises and is never a miss, second-pass re-probe of every no_market
+- [x] **E6 (P1, human: ~4h / CC: ~25min)** — ingest — Harden the cache: content-type plus schema check before caching, cache key versioned by abbr-map, non-JSON 200 raises and is never a miss, second-pass re-probe of every no_market
   - Surfaced by: Eng Section 2 R9 (conf 8/10): WAF challenge pages return HTTP 200 with HTML and become fabricated misses that keep the reconciliation assert balanced
   - Files: ingest/cache.py, ingest/fetch.py
 - [ ] **E7 (P1, human: ~4h / CC: ~25min)** — collector — Name and prove the availability data source before late Oct 2026; one day of end-to-end capture diffing consecutive pulls to observe a timestamped status change
@@ -1754,22 +1804,22 @@ Corrected here.
 - [ ] **E9 (P1, human: ~3h / CC: ~20min)** — store — Implement point-in-time feature assembly with DuckDB native ASOF JOIN and model announcement lag as availability_delay; keep the mandatory as_of API discipline
   - Surfaced by: Eng Step 0 Search check, [Layer 1]: DuckDB has a native ASOF JOIN purpose-built for as-of lookups; the plan hand-rolls it
   - Files: store/features.py
-- [ ] **E10 (P1, human: ~2h / CC: ~15min)** — ingest — Name, probe, and vendor the NHL schedule source; never call nba_api from Actions (stats.nba.com blocks cloud egress)
+- [x] **E10 (P1, human: ~2h / CC: ~15min)** — ingest — Name, probe, and vendor the NHL schedule source; never call nba_api from Actions (stats.nba.com blocks cloud egress)
   - Surfaced by: Eng Section 2 addendum (conf 9/10): NHL schedule source is never named yet half the census depends on it
   - Files: ingest/schedule.py, PLAN.md
 - [ ] **E11 (P1, human: ~5h / CC: ~30min)** — tests — Build the remaining 23-gap test plan: shuffled-join collapse, reconciliation fault injection, non-JSON 200, cache invalidation, ET/DST boundary, closing-price extraction, Murphy self-consistency, golden fixtures
   - Surfaced by: Eng Section 3 (conf 9/10): plan specifies 1 test for 24 identifiable paths (4% coverage)
   - Files: tests/
-- [ ] **E12 (P2, human: ~2h / CC: ~15min)** — scoring — Replace the impossible trailing-15-min VWAP with two constructions that actually differ (last pre-tipoff value, and T-1h)
+- [x] **E12 (P2, human: ~2h / CC: ~15min)** — scoring — Replace the impossible trailing-15-min VWAP with two constructions that actually differ (last pre-tipoff value, and T-1h)
   - Surfaced by: Eng Section 3 R6 (conf 8/10), VERIFIED BY PROBE: prices-history points carry only {t,p} with no volume field, so a VWAP has no weights; carry-forward also makes a trailing average equal the last value
   - Files: scoring/closing.py, PREREGISTRATION.md
 - [x] **E13 (P2, human: ~2h / CC: ~15min)** — store/docs — Correct the price row count to ~94.6M (two tokens per game, not one) and partition the Parquet release by sport and season
   - Surfaced by: Eng Section 4 (conf 8/10), VERIFIED BY PROBE: plan says 46M in two places; 5084 games x 2 tokens x ~9300 points = 94.6M, and GitHub caps a release asset at 2GB
   - Files: PLAN.md, store/schema.sql, .github/workflows/release.yml
-- [ ] **E14 (P2, human: ~2h / CC: ~15min)** — ingest — Phase 0 rate-limit calibration probe: ramp until the first 429, record reset behaviour, add a circuit breaker and 429-count telemetry
+- [x] **E14 (P2, human: ~2h / CC: ~15min)** — ingest — Phase 0 rate-limit calibration probe: ramp until the first 429, record reset behaviour, add a circuit breaker and 429-count telemetry
   - Surfaced by: Eng Section 4 (conf 8/10): a conservative fixed delay is the difference between a 4-hour and a 3-day census and is currently chosen blind
   - Files: ingest/ratelimit.py
-- [ ] **E15 (P2, human: ~3h / CC: ~20min)** — collector — Rework collector scheduling: one long job per day chained, UTC cron with explicit ET conversion in code, credentials out of fork-triggerable workflows
+- [x] **E15 (P2, human: ~3h / CC: ~20min)** — collector — Rework collector scheduling: one long job per day chained, UTC cron with explicit ET conversion in code, credentials out of fork-triggerable workflows
   - Surfaced by: Eng Section 4 (conf 7/10): 130 runs/day x 180 days exceeds the free Actions allowance, and an ET window on a UTC cron clips the slate across DST
   - Files: .github/workflows/collector.yml, collector/schedule.py
 - [ ] **E16 (P2, human: ~2h / CC: ~15min)** — scoring — Write B linear predictor explicitly so it literally nests the recalibration null; carry the primary-test designation into PLAN.md
@@ -1789,7 +1839,7 @@ Corrected here.
 - [ ] **E19 (P3, human: ~2h / CC: ~15min)** — ingest — Enumerate neutral-site, international, play-in and NBA Cup games up front and route them to an explicit reason enum
   - Surfaced by: Eng Section 3 R17 (conf 8/10): dropped between the design doc and PLAN.md; these are exactly where the away-home and home-side conventions break
   - Files: ingest/special_games.py
-- [ ] **E20 (P3, human: ~1h / CC: ~10min)** — tests — Define resume equality on a canonically sorted frame with tolerance, excluding run metadata
+- [x] **E20 (P3, human: ~1h / CC: ~10min)** — tests — Define resume equality on a canonically sorted frame with tolerance, excluding run metadata
   - Surfaced by: Eng Section 3 R16 (conf 8/10): byte-identical will flake since DuckDB parallel aggregation does not fix float summation order and telemetry makes runs differ by design
   - Files: tests/test_resume.py
 

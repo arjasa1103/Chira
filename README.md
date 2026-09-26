@@ -31,6 +31,13 @@ The claim is about calibration, not profit. Nothing here places bets.
 > sport-seasons. **The feature store and the model (headline 1) are not built yet**, and
 > nothing here claims a betting edge.
 >
+> **Next: week 7, the point-in-time feature store** (`ASOF JOIN`, rest, back-to-backs,
+> travel), then the model in weeks 8-9 against a holdout that stays sealed until it is
+> frozen. Weeks 1-6 finished about 4.5 weeks ahead of the plan's calendar, so the
+> remaining risk is two fixed dates rather than effort: the NHL 2026-27 season opens
+> 2026-10-01, and the availability source can only be proven once the NBA tips in late
+> October.
+>
 > Start with [the writeup](docs/index.md) and its
 > [prior art](docs/prior-art.md). Then [What exists today](#what-exists-today),
 > [notes/week5-headline2.md](notes/week5-headline2.md) for how the result was built,
