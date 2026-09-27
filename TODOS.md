@@ -129,7 +129,21 @@ market) rather than as a second stratified sample.
 
 **Effort:** S to decide. **Priority:** P2, before week 5-6 strata.
 
-## P1 — Travel distance has no data source (blocks a week-7 feature)
+## RESOLVED 2026-09-27 — Travel distance has no data source
+
+**`src/chira/venues.py`.** 62 vendored rows (30 NBA, 32 NHL): arena-area coordinates at
+two decimal places, city, and the STANDARD UTC offset. `haversine_km` and `distance_km`
+beside them, and a matching haversine in SQL inside `features.py` because the join needs
+it there; the two are pinned against each other, and ten pairs are pinned against
+published great-circle distances from `nyr`-`njd` at 15 km to `sea`-`fla` at 4,357 km.
+Median travel came out at 985-1,012 km (NBA) and 711 km (NHL), longest leg 4,357 km.
+
+**One thing the fix could NOT cover, now a separate item below:** `schedule.nba_games`
+never sets `neutral_site`, so a neutral-site NBA game is indistinguishable from a home
+game and its travel is wrong. The NHL source does set it (10 games over two seasons) and
+those yield `travel_km = NULL` with `travel_known = FALSE` rather than a guess.
+
+**Original item, kept for the record:**
 
 **What:** Vendor a venue table (team -> city -> lat/long) and a distance function before
 Phase 3's feature list is built.
@@ -147,15 +161,53 @@ games where it is most interesting.
 
 **Effort:** S (human ~2h / CC ~20min). **Priority:** P1, inside week 7.
 
-## P1 — T15 should land with the feature store, not after it
+## RESOLVED 2026-09-27 — T15 landed with the feature store
 
-**What:** Materialize the narrow `game_prices` table (PLAN T15) as part of week 7.
+**`src/chira/prices.py`, `scripts/build_game_prices.py`.** 145,626,599 rows / 162 MB →
+36,976 rows / 248 KB, both sides at all four horizons, in 3.3 s. It reproduces the
+census exactly — 0 disagreements on 4,661 games across four horizons, `n_pre_tipoff` and
+`secs_before_tip` — and the build script re-runs that comparison and exits non-zero on
+any drift.
 
-**Why:** It exists so feature assembly does not scan 145.6M raw price rows. Zero references
-in the codebase today; week 7 is its first real consumer, and building the feature store
-against the raw table first means building it twice.
+**The obvious build filled the disk.** `ASOF LEFT JOIN price_points` over 145.6M rows
+spilled until `No space left on device`; DuckDB sorts the right side of an ASOF join,
+which is the same trap week 3 hit with `ORDER BY` on this table. The conditional
+`arg_max(p, t) FILTER (t <= target)` form is one streaming pass. ASOF JOIN is now used
+where the table is narrow, which is what it is for.
 
-**Effort:** S (human ~2h / CC ~10min). **Priority:** P1, inside week 7.
+## P2 — The NBA has no `neutral_site` source, so NBA travel is silently wrong
+
+**What:** Source the neutral-site flag for NBA games, or record the affected games by
+hand and patch them in a side table.
+
+**Why:** `nhl.nhl_games` reads `neutralSite` and flags 10 games across the two seasons.
+`schedule.nba_games` never sets the field, so all 2,460 NBA rows carry FALSE **by
+construction, not by measurement**. `features.py` therefore computes travel to and from
+the nominal home team's city for any NBA game that was not played there — which is
+exactly the longest, most interesting trips. It cannot be detected from the store: a
+home-and-away pair within four days is the signature of an international series, but 63
+NBA pairs match it and almost all are ordinary scheduling.
+
+**Scope:** a handful of games a season, so it will not move a coefficient much. It is
+P2, not P3, because it is a *wrong* number rather than a missing one, and the model has
+no way to know.
+
+**Effort:** S (human ~30min to list them / CC ~15min to patch). **Priority:** P2, before
+Phase 4 fits travel.
+
+## P2 — An NHL back-to-back is partly a road dummy
+
+**What:** Decide, before Phase 4's spec is written, whether the NHL back-to-back term
+carries a home/away interaction or is reported as a joint effect.
+
+**Why, measured 2026-09-27 on the full feature frame:** the second leg of an NHL
+back-to-back is on the road about twice as often as at home (away 21.1% / home 9.2% in
+2024-25, 20.5% / 12.3% in 2025-26). The NBA is symmetric (18.6% / 18.0%, 18.4% / 17.5%).
+PLAN.md Phase 4 keeps rest, back-to-back and travel global rather than per team, which
+is right; it does not say anything about this confound, and a b2b coefficient fitted
+without the interaction absorbs part of NHL home advantage.
+
+**Effort:** S to decide. **Priority:** P2, before week 8.
 
 ## P1 — Two prior-art citations are unverified (before artifact v2)
 

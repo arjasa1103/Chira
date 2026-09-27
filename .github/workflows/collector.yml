@@ -29,8 +29,9 @@ name: collector
 #
 # TO ENABLE, in this order:
 #   1. Pick a monitoring provider and set the CHIRA_HEARTBEAT_URL repo secret.
-#   2. Run one real session by hand (workflow_dispatch with dry_run=false) and
-#      read the captured rows.
+#   2. Run one real session by hand (workflow_dispatch with dry_run=false, and
+#      once=true so it stops after a cycle instead of holding a runner for
+#      5h30) and read the captured rows.
 #   3. Only then uncomment the two crons below.
 on:
   # schedule:
@@ -42,6 +43,10 @@ on:
         description: "Decide everything, touch no network"
         type: boolean
         default: true
+      once:
+        description: "One poll cycle, then stop (a real session runs 5h30)"
+        type: boolean
+        default: false
 
 # `schedule` and `workflow_dispatch` only: never a fork-triggerable trigger,
 # because this job reads a secret. A `pull_request` trigger here would expose
@@ -85,7 +90,16 @@ jobs:
           CHIRA_HEARTBEAT_URL: ${{ secrets.CHIRA_HEARTBEAT_URL }}
         # A zero-capture run inside an open window exits 1 and fails the job
         # visibly (T14). Off-season it exits 0.
-        run: uv run python scripts/run_collector.py
+        #
+        # `once` exists because a hand-run proof is otherwise unaffordable.
+        # A scheduled session is MEANT to run 5h30 and poll the whole window;
+        # proving the heartbeat reaches the monitor needs one cycle, and
+        # burning a 5h30 job on it would eat a third of a day's free minutes.
+        # It still runs the real gates and still pings, unlike `--force`,
+        # because this IS a real session -- just a short one.
+        run: |
+          uv run python scripts/run_collector.py \
+            ${{ github.event.inputs.once == 'true' && '--once' || '' }}
 
       # The quote store is NEVER committed to the tree (PLAN.md: "never commit a
       # growing DuckDB file into the git tree"). It leaves as a build artifact.

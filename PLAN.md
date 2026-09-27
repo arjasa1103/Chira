@@ -83,7 +83,16 @@ reproduction path, which still meets the week-6 gate. Licences added: MIT for co
 outcome-correlated volume caveat, the 318 excluded games and the no-dataset decision in its
 own limitations section rather than leaving a reader to find them.
 
-**Week 7 readiness check (2026-09-26): no blockers. Four things to know before starting.**
+**Week 7 is DONE (2026-09-27), both halves.** The collector's live path landed
+2026-09-26 (notes/week7-collector.md); the feature store, the narrow price table and the
+leakage canary landed 2026-09-27 (notes/week7-features.md). What remains inside week 7
+is **E7, the availability slot, which is date-locked** and needs live regular-season
+injury reports — the NBA tips 2026-10-20. Two collector items also remain and are
+date-critical rather than week-critical: the cron is still commented out, and the
+heartbeat ping is still unproven end to end.
+
+**Week 7 readiness check (2026-09-26), kept for the record. Four things to know before
+starting.**
 
 1. **`ASOF JOIN` is available and verified**, duckdb 1.5.5 on this machine, so E9's
    point-in-time assembly needs no workaround and no new dependency.
@@ -494,13 +503,27 @@ in `chart-data.json`). Full write-up: notes/week4-charts.md.
       tokens x ~9,300 points). Earlier drafts said 46M/69M by counting one token; corrected.
       **Partition the Parquet release by sport and season** — GitHub caps a single release
       asset at 2GB.
-- [ ] **Point-in-time correctness enforced structurally.** Every feature query takes a
-      mandatory `as_of`; no unqualified read path exists in the API. Regression test: a
-      query with `as_of=T` returns byte-identical results against a DB truncated at T and
-      a DB holding all later rows.
-- [ ] Features, historical half: schedule, rest days, back-to-backs, travel distance,
-      prior-game results with known completion times. **Nothing availability-derived** —
-      see the blocker.
+- [x] **Point-in-time correctness enforced structurally** (`src/chira/features.py`,
+      2026-09-27). `as_of` has no default, rejects a float/string/bool/naive datetime,
+      and refuses a target game that has already started. The pre-registered regression
+      test runs in three forms in `tests/test_features.py` — truncation, a held-but-future
+      game, and a deliberate failure proving the canary can die — plus on the real census
+      in `scripts/run_features.py` (31 targets, 1,289 of 5,084 games visible,
+      byte-identical). `assemble` and `assemble_backtest` are one statement, so no fast
+      path can drift from the audited one.
+- [x] Features, historical half (`src/chira/features.py`, `src/chira/venues.py`): rest
+      days, back-to-backs, 7-day density, travel distance, time-zone shift, and prior
+      results gated by `RESULT_DELAY_SECONDS` (E9's availability_delay: NBA 8,400 s, NHL
+      9,000 s). Travel needed a venue table, which did not exist; 62 rows are vendored
+      and pinned against ten published great-circle distances. **Nothing
+      availability-derived.** Measured: the result delay binds on 0 of 5,084 backtest
+      games, and will bind for the forward collector.
+      **Two findings.** NHL back-to-backs are a road phenomenon (away 21.1%/20.5% vs home
+      9.2%/12.3%, against a symmetric 18.6%/18.0% in the NBA), so an NHL b2b dummy is
+      partly a road dummy and Phase 4 needs the interaction or must read it as a joint
+      effect. And `schedule.nba_games` never sets `neutral_site`, so all 2,460 NBA rows
+      are FALSE by construction and NBA travel is wrong for any game played away from the
+      nominal home city. See notes/week7-features.md.
 
 ## Phase 4 — Model
 
@@ -1396,10 +1419,16 @@ Six items are neither done nor simply pending, and the checkbox cannot say so:
   - Surfaced by: Section 8 F12 — runs unattended for six months with no alerting
   - Files: .github/workflows/collector.yml, collector/heartbeat.py
   - Verify: zero-capture day fails the workflow visibly
-- [ ] **T15 (P2, human: ~2h / CC: ~10min)** — store — Materialize a narrow `game_prices` table
+- [x] **T15 (P2, human: ~2h / CC: ~10min)** — store — Materialize a narrow `game_prices` table
   - Surfaced by: Section 7 F10 — 46M rows carried to compute ~5 values per game
-  - Files: store/schema.sql
-  - Verify: modeling and scoring never scan the raw minute table
+  - Files: src/chira/prices.py, scripts/build_game_prices.py, tests/test_prices.py
+  - **Done 2026-09-27.** 145,626,599 rows / 162 MB → 36,976 rows / 248 KB, both sides at
+    all four horizons. Reproduces the census exactly: 0 disagreements on 4,661 games
+    across four horizons, `n_pre_tipoff` and `secs_before_tip`. The build script
+    re-checks that every run and exits non-zero on any drift.
+  - **The ASOF-JOIN build filled the disk**; the conditional `arg_max ... FILTER` build
+    takes 3.3 s. Same lesson as week 3's `ORDER BY` over the same table. ASOF JOIN is
+    used where the table is narrow, which is what it is for.
 - [ ] **T16 (P3, human: ~3h / CC: ~15min)** — ingest — Cross-validate the census against public GitHub datasets
   - Surfaced by: 0B reuse-ladder failure — two large public datasets exist, unevaluated
   - Files: scripts/crossval_public.py
@@ -1807,9 +1836,13 @@ Corrected here.
 - [ ] **E8 (P1, human: ~3h / CC: ~20min)** — collector — Dead-man switch: external monitor alerts on ABSENCE of a success ping, plus keepalive against the 60-day Actions auto-disable
   - Surfaced by: Eng Section 1 R5 (conf 9/10): an in-workflow heartbeat cannot report its own absence, which is the most likely failure mode
   - Files: .github/workflows/collector.yml, collector/heartbeat.py
-- [ ] **E9 (P1, human: ~3h / CC: ~20min)** — store — Implement point-in-time feature assembly with DuckDB native ASOF JOIN and model announcement lag as availability_delay; keep the mandatory as_of API discipline
+- [x] **E9 (P1, human: ~3h / CC: ~20min)** — store — Implement point-in-time feature assembly with DuckDB native ASOF JOIN and model announcement lag as availability_delay; keep the mandatory as_of API discipline
   - Surfaced by: Eng Step 0 Search check, [Layer 1]: DuckDB has a native ASOF JOIN purpose-built for as-of lookups; the plan hand-rolls it
-  - Files: store/features.py
+  - Files: src/chira/features.py, src/chira/venues.py, src/chira/prices.py,
+    scripts/run_features.py, tests/test_features.py, tests/test_venues.py
+  - **Done 2026-09-27.** ASOF JOIN finds the most recent prior appearance per team
+    (`features.py`) and the newest visible price anchor (`prices.price_as_of`).
+    `RESULT_DELAY_SECONDS` is the announcement lag. See notes/week7-features.md.
 - [x] **E10 (P1, human: ~2h / CC: ~15min)** — ingest — Name, probe, and vendor the NHL schedule source; never call nba_api from Actions (stats.nba.com blocks cloud egress)
   - Surfaced by: Eng Section 2 addendum (conf 9/10): NHL schedule source is never named yet half the census depends on it
   - Files: ingest/schedule.py, PLAN.md
