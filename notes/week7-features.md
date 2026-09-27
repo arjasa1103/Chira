@@ -10,33 +10,69 @@ against the closing line, and the cheapest guarantee is structural: `features.py
 price column, and a test asserts it has none. The nested test (Phase 5, model B) joins
 `prices.price_as_of` itself, which is one visible line rather than a default.
 
-## The obvious way to build the narrow table filled the disk
+## The obvious way to build the narrow table ran out of memory
 
 Cross 4,661 games with two sides and four horizons into 37,288 target timestamps,
-`ASOF LEFT JOIN price_points`, done. It ran for minutes and then:
+`ASOF LEFT JOIN price_points`, done. It failed:
 
 ```
 IO Error: Could not write file ".tmp/duckdb_temp_storage_DEFAULT-1.tmp":
 No space left on device
 ```
 
-DuckDB partitions and sorts the right side of an ASOF join, and sorting 145,626,599
-rows spills. This is the same trap week 3 hit with `ORDER BY` over the same table, from
-a different direction, and it is worth naming as a rule: **on this table, anything that
-has to order the whole thing is out of budget.**
+**The first explanation written here was too strong.** It said DuckDB sorts the right
+side of an ASOF join, so ASOF is out of budget on this table, full stop. Measured, the
+truth is narrower, and the narrower version is the useful one.
 
-The conditional aggregate does the same job in one streaming pass:
+ASOF resolves "the last row at or before t" by keeping the **build** side materialised
+and ordered by (equality keys, t). The probe side here is 37,288 rows. The build side is
+the whole of `price_points`, because nothing is pushed into the scan:
+
+```
+┌──────────────────┐        ┌──────────────┐
+│    ASOF_JOIN     │        │ READ_PARQUET │
+│  sport = sport   ├────────┤ game_id,side │
+│  target_t >= t   │        │ t, p, season │
+└──────────────────┘        └──────────────┘
+```
+
+So the cost is set by the build side alone. Measured with a 500 MB memory limit and a
+6 GB temp cap, spilling the rest:
+
+| build side | rows | peak temp | wall | result |
+|---|---|---|---|---|
+| nhl 2024-25 | 11,996,280 | 0.45 GB | 1.2 s | ok |
+| both leagues, 2024-25 | 26,830,874 | 1.36 GB | 3.5 s | ok |
+| all nhl | 108,125,584 | hit the cap | 21.7 s | **out of memory** |
+| everything | 145,626,599 | hit the cap | 19.1 s | **out of memory** |
+
+Resident plus spilled comes to **~70-80 bytes per row** — four VARCHARs carried as
+16-byte inline `string_t` values, plus a BIGINT and a DOUBLE — so the full table is a
+**~10 GB working set on a machine with 8.6 GB of RAM**. The threshold sits somewhere
+between 27M and 108M rows.
+
+**So ASOF is not the wrong operator, it is the wrong scale.** The identical query
+against one pre-filtered sport-season runs in 1.2 s and never touches the disk. Two
+fixes were available. Hash-join `price_points` to the tips first and keep only
+`t BETWEEN tip - 25h AND tip`, which streams, then ASOF the remainder. Or notice that
+the four anchor times are **known constants per game**, which makes the whole thing an
+aggregate:
 
 ```sql
 arg_max(pp.p, pp.t) FILTER (pp.t <= c.tip_t - 3600) AS p_t1h
 ```
 
-| | ASOF JOIN | `arg_max ... FILTER` |
-|---|---|---|
-| Result | exhausted the free disk (8.9 GB) | **3.3 s** |
+A `HASH_GROUP_BY` over 9,322 groups holds one accumulator set per group and discards
+every row as it passes. Nothing is ordered and nothing is retained, and it finishes in
+**3.3 s** on the full table. That is the build that shipped.
 
-ASOF JOIN is not the wrong tool, it is the wrong *place*. It is used in
-`prices.price_as_of` and in `features.py`, where the tables are 37k and 5k rows.
+**One hypothesis tested and killed.** The failing run left `preserve_insertion_order` at
+its default while the working one had it off, which is a real confound and would have
+been a much cheaper fix. It is not the cause: under the same caps both settings fail,
+at 10.0 s and 12.7 s.
+
+ASOF JOIN is still used, in `prices.price_as_of` and in `features.py`, where the build
+sides are 37k and 5k rows.
 
 ## The narrow table reproduces the census exactly
 

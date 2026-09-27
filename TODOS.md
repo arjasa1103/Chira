@@ -169,11 +169,18 @@ census exactly — 0 disagreements on 4,661 games across four horizons, `n_pre_t
 `secs_before_tip` — and the build script re-runs that comparison and exits non-zero on
 any drift.
 
-**The obvious build filled the disk.** `ASOF LEFT JOIN price_points` over 145.6M rows
-spilled until `No space left on device`; DuckDB sorts the right side of an ASOF join,
-which is the same trap week 3 hit with `ORDER BY` on this table. The conditional
-`arg_max(p, t) FILTER (t <= target)` form is one streaming pass. ASOF JOIN is now used
-where the table is narrow, which is what it is for.
+**The obvious build ran out of memory.** `ASOF LEFT JOIN price_points` failed with
+`No space left on device`. ASOF keeps its BUILD side materialised and ordered by
+(keys, t), and nothing is pushed into the scan, so that build side is all 145,626,599
+rows at ~70-80 bytes each — a ~10 GB working set on a machine with 8.6 GB of RAM.
+Measured: 12.0M rows succeed in 1.2 s with no spill, 26.8M in 3.5 s, 108.1M and 145.6M
+fail. `preserve_insertion_order` was tested as a confound and is not the cause.
+
+**The operator was not the problem, the scale was.** The conditional
+`arg_max(p, t) FILTER (t <= target)` form works because the four anchor times are known
+constants per game, so a hash aggregate over 9,322 groups replaces the join: nothing
+retained, nothing ordered, 3.3 s. ASOF JOIN is now used where the build side is small
+(`price_as_of` at 37k rows, `features.py` at 5k).
 
 ## P2 — The NBA has no `neutral_site` source, so NBA travel is silently wrong
 

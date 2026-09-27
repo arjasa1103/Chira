@@ -9,12 +9,21 @@ feature store rather than after it.
 **Built with a single-pass conditional aggregate, NOT with ASOF JOIN, and that
 was measured.** The obvious shape -- cross the 4,661 games with two sides and
 four horizons into 37,288 target timestamps and `ASOF LEFT JOIN price_points`
--- filled the disk. DuckDB partitions and sorts the right-hand side of an ASOF
-join, and sorting 145.6M rows spilled until `No space left on device`, the same
-trap week 3 hit with `ORDER BY` over the same table. The conditional
-`arg_max(p, t) FILTER (t <= target)` form needs one streaming hash aggregate
-and finishes in **3.3 seconds**. ASOF JOIN is the right tool once the table is
-narrow, which is what `price_as_of` below uses it for.
+-- ran out of memory. ASOF keeps its BUILD side materialised and ordered by
+(keys, t) so it can answer "last row at or before t", and the plan pushes no
+predicate into the scan, so the build side is all 145,626,599 rows at ~70-80
+bytes each: a ~10 GB working set on a machine with 8.6 GB of RAM. Measured, it
+succeeds at 12.0M rows in 1.2 s with no spill and at 26.8M in 3.5 s, and fails
+at 108.1M and 145.6M.
+
+**The operator is not the problem, the scale is.** Filtering the build side to
+one sport-season first makes the same ASOF query fast. The reason this module
+does not bother is that the four anchor times are KNOWN CONSTANTS per game,
+which turns the whole job into an aggregate:
+`arg_max(p, t) FILTER (t <= target)` is a hash aggregate over 9,322 groups
+that retains nothing and orders nothing, and finishes in **3.3 seconds**. ASOF
+JOIN is the right tool once the build side is small, which is what
+`price_as_of` below uses it for.
 
 **The build reproduces the census exactly.** These anchors are recomputed in
 SQL from the raw series, while `priced.p_home_*` were computed in Python by

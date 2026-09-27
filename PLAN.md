@@ -1426,9 +1426,13 @@ Six items are neither done nor simply pending, and the checkbox cannot say so:
     all four horizons. Reproduces the census exactly: 0 disagreements on 4,661 games
     across four horizons, `n_pre_tipoff` and `secs_before_tip`. The build script
     re-checks that every run and exits non-zero on any drift.
-  - **The ASOF-JOIN build filled the disk**; the conditional `arg_max ... FILTER` build
-    takes 3.3 s. Same lesson as week 3's `ORDER BY` over the same table. ASOF JOIN is
-    used where the table is narrow, which is what it is for.
+  - **The ASOF-JOIN build ran out of memory**; the conditional `arg_max ... FILTER`
+    build takes 3.3 s. ASOF keeps its build side materialised and ordered, and with no
+    predicate pushed into the scan that build side is all 145.6M rows at ~70-80 bytes
+    each — a ~10 GB working set on an 8.6 GB machine. Measured: fine at 12.0M rows
+    (1.2 s, no spill) and 26.8M (3.5 s), out of memory at 108.1M and 145.6M. The
+    operator is not the problem, the scale is, and ASOF is used where the build side is
+    small (`price_as_of`, `features.py`).
 - [ ] **T16 (P3, human: ~3h / CC: ~15min)** — ingest — Cross-validate the census against public GitHub datasets
   - Surfaced by: 0B reuse-ladder failure — two large public datasets exist, unevaluated
   - Files: scripts/crossval_public.py
