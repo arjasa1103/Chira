@@ -82,6 +82,18 @@ def steps() -> list[dict]:
          "why": "the strata, the primary test and every robustness split; "
                 "--reps 2000 is what the published intervals used",
          "network": False},
+        {"name": "narrow price table",
+         "cmd": ["scripts/build_game_prices.py"],
+         "makes": "data/game_prices/game_prices.parquet",
+         "why": "T15: reduces 145.6M raw price points to 37k anchors, and "
+                "re-checks that they still reproduce the census exactly",
+         "network": False},
+        {"name": "feature store",
+         "cmd": ["scripts/run_features.py"],
+         "makes": "data/features/features.parquet",
+         "why": "E9: runs the leakage canary against the real census, then "
+                "assembles rest, back-to-backs, travel and prior results",
+         "network": False},
     ]
     return out
 
@@ -154,6 +166,9 @@ def main() -> int:
           f"{(time.monotonic() - started) / 60:.1f} min.")
     print("Published figures are in docs/charts/. The writeup that reads them is "
           "docs/index.md.")
+    print("The feature store is data/features/features.parquet, and the narrow "
+          "price table is data/game_prices/game_prices.parquet. Neither is "
+          "committed; both rebuild from the snapshot in seconds.")
     return 0
 
 
