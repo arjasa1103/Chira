@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, "src")
+import chira
 from chira.cache import Cache
 from chira.census import load_abbr_map, map_fingerprint
 from chira.collector import (
@@ -55,6 +56,29 @@ TARGET_REFRESH_SECONDS = 30 * 60
 LOOKAHEAD_DAYS = 3
 
 
+def abbr_map_path() -> str:
+    """The resolver's output if it exists, else the map vendored in the package.
+
+    **`data/` is gitignored, so on a fresh checkout the resolver's output does
+    not exist.** Measured the hard way: the first real Actions dispatch
+    (run 36481636318, 2026-09-28) died at startup with
+    `FileNotFoundError: data/abbr_map_resolved.json`, before polling anything
+    and before the heartbeat ping, which is why the monitor stayed silent
+    rather than going red loudly. A scheduled session the next night would have
+    failed identically, on opening night.
+
+    The vendored copy carries only `map` and `unresolved`, the two keys
+    `load_abbr_map` reads. The resolver's `evidence` field is excluded on
+    purpose: it holds Polymarket slugs, and this file ships in a public repo.
+    A locally resolved map still wins, so re-running the resolver changes
+    behaviour here exactly as before.
+    """
+    local = Path(ABBR)
+    if local.is_file():
+        return str(local)
+    return str(Path(chira.__file__).with_name("abbr_map_collector.json"))
+
+
 def abbr_map_for(sport: str, season: str) -> tuple[dict, str]:
     """The season's map, or the newest earlier one as a prior. Never silent.
 
@@ -66,17 +90,20 @@ def abbr_map_for(sport: str, season: str) -> tuple[dict, str]:
     rather than as the wrong market. Measured 2026-09-26: the 2025-26 NHL map
     resolved 47 of 47 upcoming 2026-27 games.
     """
+    path = abbr_map_path()
     try:
-        return load_abbr_map(ABBR, season, sport), season
+        return load_abbr_map(path, season, sport), season
     except (KeyError, FileNotFoundError):
-        import json
-        doc = json.loads(Path(ABBR).read_text(encoding="utf-8"))
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
         earlier = sorted(k for k, v in (doc.get("seasons") or {}).items()
                          if sport in v and k < season)
         if not earlier:
             raise
         prior = earlier[-1]
-        return load_abbr_map(ABBR, prior, sport), prior
+        # `path`, not ABBR: this branch is the one 2026-27 actually takes, so
+        # reading the gitignored path here reproduced the original crash even
+        # after the lookup above was fixed.
+        return load_abbr_map(path, prior, sport), prior
 
 
 def collect_targets(client, tel, days: int = LOOKAHEAD_DAYS

@@ -13,7 +13,9 @@ project a slug convention.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
@@ -588,3 +590,62 @@ class TestResolveAndPoll:
         assert complement_check(ok)["ok"] is True
         assert complement_check(bad)["ok"] is False
         assert complement_check([ok[0]])["checked"] is False
+
+
+class TestTheVendoredAbbreviationMap:
+    """`data/` is gitignored, so a fresh checkout has no resolved map.
+
+    Measured: the first real Actions dispatch (run 36481636318, 2026-09-28)
+    died at startup with FileNotFoundError on data/abbr_map_resolved.json,
+    before polling anything and before the heartbeat ping. A scheduled session
+    the next night would have failed the same way, on opening night. The
+    package now vendors a minimal copy.
+    """
+
+    @staticmethod
+    def _vendored() -> Path:
+        import chira
+
+        return Path(chira.__file__).with_name("abbr_map_collector.json")
+
+    def test_it_ships_inside_the_package(self):
+        assert self._vendored().is_file()
+
+    def test_the_census_loader_accepts_it_for_every_sport_season(self):
+        from chira.census import load_abbr_map
+
+        path = str(self._vendored())
+        doc = json.loads(self._vendored().read_text(encoding="utf-8"))
+        pairs = [(season, sport)
+                 for season, sports in doc["seasons"].items()
+                 for sport in sports]
+        assert pairs, "a vendored map with no sport-seasons collects nothing"
+        for season, sport in pairs:
+            # Raises on an unresolved team, which is the guard that stops a
+            # whole franchise being booked as "no market".
+            assert load_abbr_map(path, season, sport)
+
+    def test_the_nhl_irregulars_survived_minimisation(self):
+        """vgk->las is worth 164 games and appears in no league document."""
+        from chira.census import load_abbr_map
+
+        amap = load_abbr_map(str(self._vendored()), "2025-26", "nhl")
+        assert amap["vgk"] == "las"
+        assert amap["cgy"] == "cal"
+        assert len(amap) == 32
+
+    def test_it_carries_no_polymarket_slugs(self):
+        """The resolver's `evidence` field holds slugs; this file is public.
+
+        PREREGISTRATION and notes/week1-tos-check.md put derived Polymarket
+        data out of scope for redistribution, so minimisation is not cosmetic.
+        """
+        blob = self._vendored().read_text(encoding="utf-8")
+        assert not re.search(r"\b(?:nhl|nba)-[a-z0-9]+-[a-z0-9]+-\d{4}-\d{2}-\d{2}\b",
+                             blob)
+        # The KEY, not the word: the file's own comment explains why evidence
+        # is excluded, so a substring check on the raw text fails on itself.
+        doc = json.loads(blob)
+        for sports in doc["seasons"].values():
+            for entry in sports.values():
+                assert set(entry) == {"map", "unresolved"}
