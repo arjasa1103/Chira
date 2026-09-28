@@ -522,8 +522,12 @@ in `chart-data.json`). Full write-up: notes/week4-charts.md.
       9.2%/12.3%, against a symmetric 18.6%/18.0% in the NBA), so an NHL b2b dummy is
       partly a road dummy and Phase 4 needs the interaction or must read it as a joint
       effect. And `schedule.nba_games` never sets `neutral_site`, so all 2,460 NBA rows
-      are FALSE by construction and NBA travel is wrong for any game played away from the
-      nominal home city. See notes/week7-features.md.
+      were FALSE by construction. **Fixed 2026-09-28**: `venues.NBA_NEUTRAL_SITES`
+      vendors 14 games across 2023-24, 2024-25 and 2025-26 from `scheduleleaguev2`,
+      derived by comparing `arenaCity` against the home team's own city rather than by
+      reading the league's `isNeutral`, which is false for all four neutral 2023-24
+      games. `scripts/fetch_neutral_sites.py` re-derives and diffs. See
+      notes/week7-features.md and notes/week7-neutral-and-holdout.md.
 
 ## Phase 4 — Model
 
@@ -545,6 +549,16 @@ in `chart-data.json`). Full write-up: notes/week4-charts.md.
 > before each holdout game, and it removes the model-fit leakage path as a side effect.
 > Two independent voices converged on (a). No longer a gate item.
 
+- [x] **The holdout is sealed by code, before any model exists**
+      (`src/chira/holdout.py`, 2026-09-28). Amendment 5e: `open_holdout` refuses a dirty
+      tree (`--porcelain`, so untracked files count), refuses a second call, and commits
+      a marker carrying the frozen commit hash, the UTC time, a required reason, the
+      game count and a SHA-256 of the released labels. It **fails closed** -- the marker
+      is committed before any label is returned. `assert_dev_only` is the guard model
+      code calls on its own training frame, because the realistic leak is a frame
+      assembled without a season filter, not a stray `open_holdout` call. The seal is on
+      the MODEL's access to 2025-26; the census, the gate and headline 2 read both
+      seasons by design. See notes/week7-neutral-and-holdout.md.
 - [ ] Hierarchical logistic in `numpyro`. Non-centered parameterization, R-hat and
       divergence diagnostics, posterior predictive checks.
 - [ ] **Pool team-BY-SEASON effects** (J = 60 NBA, 64 NHL — two seasons, not three). Pool the team-season

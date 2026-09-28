@@ -182,25 +182,45 @@ constants per game, so a hash aggregate over 9,322 groups replaces the join: not
 retained, nothing ordered, 3.3 s. ASOF JOIN is now used where the build side is small
 (`price_as_of` at 37k rows, `features.py` at 5k).
 
-## P2 — The NBA has no `neutral_site` source, so NBA travel is silently wrong
+## RESOLVED 2026-09-28 — The NBA neutral-site list is vendored
 
-**What:** Source the neutral-site flag for NBA games, or record the affected games by
-hand and patch them in a side table.
+**`venues.NBA_NEUTRAL_SITES`, 14 games across 2023-24, 2024-25 and 2025-26** (the two
+census seasons plus the Elo burn-in season Amendment 5b needs). Derived from
+`stats.nba.com/stats/scheduleleaguev2`, which carries `arenaName` / `arenaCity` /
+`isNeutral` where `LeagueGameFinder` carries no venue at all.
+`scripts/fetch_neutral_sites.py` re-derives and diffs, exiting non-zero on disagreement.
 
-**Why:** `nhl.nhl_games` reads `neutralSite` and flags 10 games across the two seasons.
-`schedule.nba_games` never sets the field, so all 2,460 NBA rows carry FALSE **by
-construction, not by measurement**. `features.py` therefore computes travel to and from
-the nominal home team's city for any NBA game that was not played there — which is
-exactly the longest, most interesting trips. It cannot be detected from the store: a
-home-and-away pair within four days is the signature of an international series, but 63
-NBA pairs match it and almost all are ordinary scheduling.
+**The league's own `isNeutral` is wrong for 2023-24** — all four neutral games that
+season carry `false`, the same fixtures in later seasons carry `true` — so the
+derivation ignores the flag and compares `arenaCity` against the home team's own city.
 
-**Scope:** a handful of games a season, so it will not move a coefficient much. It is
-P2, not P3, because it is a *wrong* number rather than a missing one, and the model has
-no way to know.
+**Two things the fix turned up.** The Emirates NBA Cup semifinals are regular-season
+games at a neutral site (two a year, Las Vegas, priced and in the census, previously
+scored as home games). And the Spurs' two games a season at the Moody Center in Austin
+are **relocated home games, not neutral**: vendored separately as `NBA_RELOCATED_HOME`
+and deliberately inert, because zeroing a real home advantage to fix 120 km of travel
+would be the larger error.
 
-**Effort:** S (human ~30min to list them / CC ~15min to patch). **Priority:** P2, before
-Phase 4 fits travel.
+NBA game-sides with no known venue went 0 -> 18 per season; median NBA travel moved
+1,012 -> 1,003 km and 985 -> 976 km. Full write-up: notes/week7-neutral-and-holdout.md.
+
+## RESOLVED 2026-09-28 — The holdout is sealed by code
+
+**`src/chira/holdout.py`, `open_holdout`.** Amendment 5e in one function: refuses a
+dirty tree (`--porcelain`, so untracked files count), refuses a second call, and commits
+a marker carrying the frozen commit hash, the UTC time, a required reason, the game
+count and a SHA-256 over the released labels. It **fails closed** — the marker is
+committed before any label is returned, so a failed commit leaves the tree dirty and the
+next attempt refuses.
+
+`assert_dev_only(rows)` is the guard model code actually calls: nobody invokes
+`open_holdout` by accident, but a frame assembled without a season filter is routine.
+
+**Scope, stated because it cuts both ways:** the seal is on the MODEL's access to
+2025-26 outcomes. The census, the gate and headline 2 read both seasons by design
+(section 8 stratifies within season, and headline 2 shipped in week 6 before any model
+existed). A test asserts this repo has no `HOLDOUT_OPENED.json`.
+
 
 ## P2 — An NHL back-to-back is partly a road dummy
 

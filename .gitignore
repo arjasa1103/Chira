@@ -27,3 +27,9 @@ cache/
 .coverage
 coverage.xml
 htmlcov/
+
+# Downloaded CI artifacts. `upload-artifact` roots them at `data/`, so an
+# extracted collector artifact lands as ./logs/ and ./collector/ rather than
+# under the gitignored data/. One `git add -A` from committing quote data.
+/logs/
+/collector/

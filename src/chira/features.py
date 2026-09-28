@@ -36,7 +36,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .snapshot import _sql_path
-from .venues import EARTH_RADIUS_KM, venue_rows
+from .venues import EARTH_RADIUS_KM, neutral_site_rows, venue_rows
 
 # E9's availability_delay: how long after the opening whistle a result is
 # public. These are wall-clock game lengths including stoppages and the usual
@@ -78,10 +78,18 @@ _HAVERSINE = f"""
 
 _SQL = """
 WITH base AS (
-    SELECT sport, season, game_id, et_date, away, home, winner,
-           coalesce(neutral_site, FALSE) AS neutral_site,
-           epoch(CAST(start_time_utc AS TIMESTAMPTZ))::BIGINT AS start_t
-    FROM games
+    -- The store's own flag OR the vendored NBA table. The NHL source sets
+    -- `neutralSite` and the census keeps it; `schedule.nba_games` has no
+    -- venue field at all, so every NBA row says FALSE by construction and
+    -- `venues.NBA_NEUTRAL_SITES` is the missing half.
+    SELECT g.sport, g.season, g.game_id, g.et_date, g.away, g.home, g.winner,
+           coalesce(g.neutral_site, FALSE) OR ns.game_id IS NOT NULL
+               AS neutral_site,
+           epoch(CAST(g.start_time_utc AS TIMESTAMPTZ))::BIGINT AS start_t
+    FROM games g
+    LEFT JOIN neutral_sites ns
+           ON ns.sport = g.sport AND ns.season = g.season
+          AND ns.game_id = g.game_id
 ),
 -- One row per (game, team). The host of an appearance is the venue that
 -- matters for travel; for a neutral-site game it is unknown, which is carried
@@ -95,15 +103,26 @@ app AS (
            home AS team, home AS host, 'home' AS side, winner
     FROM base
 ),
+-- The same override on the TARGET side. A caller passing
+-- neutral_site=False for a Paris game must not reintroduce the bug, and
+-- `assemble_backtest` reads the flag straight out of `games`.
+tgt AS (
+    SELECT t.sport, t.season, t.game_id, t.et_date, t.as_of, t.away, t.home,
+           coalesce(t.neutral_site, FALSE) OR ns.game_id IS NOT NULL
+               AS neutral_site
+    FROM targets t
+    LEFT JOIN neutral_sites ns
+           ON ns.sport = t.sport AND ns.season = t.season
+          AND ns.game_id = t.game_id
+),
 tt AS (
-    SELECT t.sport, t.season, t.game_id, t.et_date, t.as_of,
-           coalesce(t.neutral_site, FALSE) AS neutral_site,
+    SELECT t.sport, t.season, t.game_id, t.et_date, t.as_of, t.neutral_site,
            t.home AS host, t.away AS team, 'away' AS tside
-    FROM targets t
+    FROM tgt t
     UNION ALL
-    SELECT t.sport, t.season, t.game_id, t.et_date, t.as_of,
-           coalesce(t.neutral_site, FALSE), t.home, t.home, 'home'
-    FROM targets t
+    SELECT t.sport, t.season, t.game_id, t.et_date, t.as_of, t.neutral_site,
+           t.home, t.home, 'home'
+    FROM tgt t
 ),
 -- The most recent PRIOR appearance, by start time, strictly before as_of.
 -- ASOF JOIN is exactly this query (E9); hand-rolling it with a correlated
@@ -230,6 +249,25 @@ def attach_venues(con, table: str = "venues") -> int:
     return len(rows)
 
 
+def attach_neutral_sites(con, table: str = "neutral_sites") -> int:
+    """Materialise the vendored NBA neutral-site table. Returns the row count.
+
+    A table rather than a view, for the same reason `attach_venues` uses one:
+    it is 14 rows of Python literals joined twice per query.
+    """
+    rows = neutral_site_rows()
+    con.execute(f"CREATE OR REPLACE TABLE {table} ("
+                "sport VARCHAR, season VARCHAR, game_id VARCHAR, "
+                "et_date VARCHAR, away VARCHAR, home VARCHAR, "
+                "venue VARCHAR, why VARCHAR)")
+    if rows:
+        con.executemany(
+            f"INSERT INTO {table} VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [(r["sport"], r["season"], r["game_id"], r["et_date"], r["away"],
+              r["home"], r["venue"], r["why"]) for r in rows])
+    return len(rows)
+
+
 def to_unix(value: datetime) -> int:
     """An aware datetime to unix seconds. A naive one is refused.
 
@@ -294,6 +332,9 @@ def _assemble_from_targets(con, result_delay, *, into: str | None = None):
     if not con.execute("SELECT count(*) FROM duckdb_tables() "
                        "WHERE table_name = 'venues'").fetchone()[0]:
         attach_venues(con)
+    if not con.execute("SELECT count(*) FROM duckdb_tables() "
+                       "WHERE table_name = 'neutral_sites'").fetchone()[0]:
+        attach_neutral_sites(con)
     started = con.execute(
         "SELECT count(*) FROM targets t JOIN games g "
         "  ON g.sport = t.sport AND g.season = t.season "

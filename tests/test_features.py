@@ -319,3 +319,76 @@ def test_no_price_column_reaches_the_feature_frame():
     con = build([*HISTORY, game(3, TARGET_START, "bos", "lal")])
     cols = set(assemble(con, [TARGET], as_of=TARGET_START)[0])
     assert not {c for c in cols if "price" in c or c.startswith("p_")}
+
+
+class TestTheNbaNeutralSiteOverride:
+    """The store says FALSE for every NBA game, so the vendored table in
+    `venues.py` is the only thing that makes a Paris game look like one.
+    """
+
+    # sas @ ind, 2025-01-23, Accor Arena, Paris. In the store as an ordinary
+    # Indianapolis home game.
+    PARIS = ("2024-25", "0022400621")
+    # phx @ sas, 2025-02-20, Moody Center, Austin. A relocated HOME game.
+    AUSTIN = ("2024-25", "0022400795")
+
+    def history(self, gid, start, away, home, neutral=False):
+        return [game(1, start - DAY, away, "bos", winner="home"),
+                game(gid, start, away, home, neutral=neutral)]
+
+    def test_a_listed_game_has_no_known_travel_although_the_store_says_home(self):
+        _, gid = self.PARIS
+        start = T0 + 2 * DAY
+        con = build(self.history(gid, start, "sas", "ind"))
+        assert con.execute(
+            "SELECT neutral_site FROM games WHERE game_id = ?", [gid]
+        ).fetchone()[0] is False
+        row = assemble(con, [target(gid, start, "sas", "ind")], as_of=start)[0]
+        assert row["away_travel_km"] is None
+        assert row["away_travel_known"] is False
+        assert row["away_rest_days"] == 1      # rest is still known
+
+    def test_a_caller_passing_false_cannot_reintroduce_the_bug(self):
+        _, gid = self.PARIS
+        start = T0 + 2 * DAY
+        con = build(self.history(gid, start, "sas", "ind"))
+        t = target(gid, start, "sas", "ind")
+        t["neutral_site"] = False
+        assert assemble(con, [t], as_of=start)[0]["away_travel_known"] is False
+
+    def test_the_next_game_after_a_neutral_one_also_has_no_known_travel(self):
+        """You cannot measure the leg out of a venue you do not know."""
+        _, gid = self.PARIS
+        start = T0 + 2 * DAY
+        con = build([*self.history(gid, start, "sas", "ind"),
+                     game(77, start + 2 * DAY, "sas", "lal")])
+        row = assemble(con, [target(77, start + 2 * DAY, "sas", "lal")],
+                       as_of=start + 2 * DAY)[0]
+        assert row["away_travel_km"] is None and row["away_travel_known"] is False
+
+    def test_a_relocated_home_game_keeps_its_travel(self):
+        """The Spurs at the Moody Center still play in front of their own
+        crowd, so it is not neutral and the 120 km is immaterial."""
+        _, gid = self.AUSTIN
+        start = T0 + 2 * DAY
+        con = build(self.history(gid, start, "phx", "sas"))
+        row = assemble(con, [target(gid, start, "phx", "sas")], as_of=start)[0]
+        assert row["away_travel_known"] is True
+        assert row["away_travel_km"] == pytest.approx(distance_km("nba", "bos", "sas"))
+
+    def test_an_ordinary_game_with_the_same_shape_is_unaffected(self):
+        start = T0 + 2 * DAY
+        con = build(self.history("0022400601", start, "sas", "ind"))
+        row = assemble(con, [target("0022400601", start, "sas", "ind")],
+                       as_of=start)[0]
+        assert row["away_travel_known"] is True
+
+    def test_the_nhl_flag_in_the_store_still_works(self):
+        """The override is an OR, not a replacement."""
+        start = T0 + 2 * DAY
+        con = build([game(1, start - DAY, "bos", "nyr", sport="nhl",
+                          winner="home"),
+                     game(2, start, "bos", "tbl", sport="nhl", neutral=True)])
+        row = assemble(con, [target(2, start, "bos", "tbl", sport="nhl",
+                                    neutral=True)], as_of=start)[0]
+        assert row["away_travel_known"] is False

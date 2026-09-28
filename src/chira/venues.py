@@ -178,3 +178,105 @@ def venue_rows() -> list[dict]:
         for sport, table in sorted(VENUES.items())
         for team, (lat, lon, city, tz) in sorted(table.items())
     ]
+
+
+# --- NBA neutral-site regular-season games ---------------------------------
+#
+# The NHL schedule source sets `neutralSite` and the census stores it.
+# `schedule.nba_games` reads nba_api's LeagueGameFinder, whose stat rows carry
+# no venue at all, so every NBA row in the store says FALSE **by construction,
+# not by measurement**. This table is the missing half.
+#
+# Vendored from `stats.nba.com/stats/scheduleleaguev2` on 2026-09-28, which
+# does carry `arenaName`, `arenaCity` and `isNeutral`. It is vendored rather
+# than fetched at runtime for the usual reason, plus one specific to it:
+#
+# **The league's own `isNeutral` is WRONG for 2023-24.** All four of that
+# season's genuinely neutral games -- Mexico City, Paris, and both Emirates
+# NBA Cup semifinals in Las Vegas -- carry `isNeutral: false`, while the same
+# fixtures in 2024-25 and 2025-26 carry `true`. Trusting the flag would
+# silently mis-set the Elo home bonus across the whole burn-in season
+# (PREREGISTRATION Amendment 5b). These rows were found by comparing
+# `arenaCity` against the home team's own city, which is measurable and does
+# not depend on the flag. `scripts/fetch_neutral_sites.py` re-runs exactly
+# that comparison and diffs it against this table.
+#
+# (season, game_id) -> (et_date, away, home, venue, why)
+NBA_NEUTRAL_SITES: dict[tuple[str, str], tuple[str, str, str, str, str]] = {
+    ("2023-24", "0022300172"):
+        ("2023-11-09", "atl", "orl", "Arena CDMX, Mexico City", "NBA Mexico City Game"),
+    ("2023-24", "0022301229"):
+        ("2023-12-07", "ind", "mil", "T-Mobile Arena, Las Vegas",
+         "Emirates NBA Cup East Semifinal"),
+    ("2023-24", "0022301230"):
+        ("2023-12-07", "nop", "lal", "T-Mobile Arena, Las Vegas",
+         "Emirates NBA Cup West Semifinal"),
+    ("2023-24", "0022300527"): ("2024-01-11", "bkn", "cle", "Accor Arena, Paris", "NBA Paris Game"),
+    ("2024-25", "0022400147"):
+        ("2024-11-02", "mia", "was", "Arena CDMX, Mexico City", "NBA Mexico City Game"),
+    ("2024-25", "0022401229"):
+        ("2024-12-14", "atl", "mil", "T-Mobile Arena, Las Vegas",
+         "Emirates NBA Cup East Semifinal"),
+    ("2024-25", "0022401230"):
+        ("2024-12-14", "hou", "okc", "T-Mobile Arena, Las Vegas",
+         "Emirates NBA Cup West Semifinal"),
+    ("2024-25", "0022400621"):
+        ("2025-01-23", "sas", "ind", "Accor Arena, Paris", "NBA Paris Games"),
+    ("2024-25", "0022400633"):
+        ("2025-01-25", "ind", "sas", "Accor Arena, Paris", "NBA Paris Games"),
+    ("2025-26", "0022500147"):
+        ("2025-11-01", "dal", "det", "Arena CDMX, Mexico City", "NBA Mexico City Game"),
+    ("2025-26", "0022501229"):
+        ("2025-12-13", "nyk", "orl", "T-Mobile Arena, Las Vegas",
+         "Emirates NBA Cup East Semifinal"),
+    ("2025-26", "0022501230"):
+        ("2025-12-13", "sas", "okc", "T-Mobile Arena, Las Vegas",
+         "Emirates NBA Cup West Semifinal"),
+    ("2025-26", "0022500578"):
+        ("2026-01-15", "mem", "orl", "Uber Arena, Berlin", "NBA Berlin Game"),
+    ("2025-26", "0022500602"):
+        ("2026-01-18", "orl", "mem", "The O2 Arena, London", "NBA London Game"),
+}
+
+# Home games moved to another venue in the SAME market. **Not neutral**, and
+# deliberately kept out of the table above: the Spurs at the Moody Center are
+# 120 km from home in front of their own crowd, so zeroing the home advantage
+# there would be a worse error than the 120 km of travel it would fix. The
+# median NBA trip in the feature store is ~1,000 km, so the travel error is
+# immaterial. Recorded so the decision is visible rather than an omission.
+#
+# One more of the same kind, with no row because it needs none: the Clippers
+# played 2023-24 at Crypto.com Arena and moved to the Intuit Dome for 2024-25.
+# `NBA_VENUES["lac"]` holds the Intuit Dome, which is right for both census
+# seasons and ~9 km off for the 2023-24 rating burn-in, where travel is not
+# used at all.
+NBA_RELOCATED_HOME: dict[tuple[str, str], tuple[str, str, str, str, str]] = {
+    ("2023-24", "0022300965"): ("2024-03-15", "den", "sas", "Moody Center, Austin", ""),
+    ("2023-24", "0022300981"): ("2024-03-17", "bkn", "sas", "Moody Center, Austin", ""),
+    ("2024-25", "0022400795"): ("2025-02-20", "phx", "sas", "Moody Center, Austin", ""),
+    ("2024-25", "0022400802"): ("2025-02-21", "det", "sas", "Moody Center, Austin", ""),
+    ("2025-26", "0022500798"): ("2026-02-19", "phx", "sas", "Moody Center, Austin", ""),
+    ("2025-26", "0022500815"): ("2026-02-21", "sac", "sas", "Moody Center, Austin", ""),
+}
+
+
+def is_neutral_site(sport: str, season: str, game_id: str) -> bool:
+    """Is this game at a neutral venue, per the vendored NBA table?
+
+    NHL games are not covered: the league's own flag is in the store and is
+    correct, so this returns False for them and the caller ORs the two.
+    """
+    if sport != "nba":
+        return False
+    return (season, str(game_id)) in NBA_NEUTRAL_SITES
+
+
+def neutral_site_rows() -> list[dict]:
+    """The NBA neutral-site table as flat rows, for materialising into DuckDB."""
+    return [
+        {"sport": "nba", "season": season, "game_id": game_id,
+          "et_date": et_date, "away": away, "home": home,
+          "venue": venue, "why": why}
+        for (season, game_id), (et_date, away, home, venue, why)
+        in sorted(NBA_NEUTRAL_SITES.items())
+    ]
