@@ -266,6 +266,74 @@ fits the schedule.**
   one (~$1.9M/game). Market Brier is reported on dev and holdout side by side so the
   model-vs-market gap is never confused with the regime difference.
 
+### Amendment 5 (2026-09-28): the model's free choices, fixed before the first fit
+
+Written before any model code exists and before any rating or model has been fitted. Every
+choice below was decided on schedule statistics, published methodology or cost, never on a
+fitted result.
+
+**5a. NHL back-to-backs get a home/away split.** Section 5 keeps rest, back-to-back and travel
+global. Measured on the feature store (notes/week7-features.md), the second leg of an NHL
+back-to-back is on the road 21.1% / 20.5% of the time against 9.2% / 12.3% at home, while the
+NBA is symmetric (18.6 / 18.0, 18.4 / 17.5). A single NHL b2b coefficient would therefore absorb
+part of home advantage. The NHL model carries two global b2b coefficients, one for the home
+team's b2b and one for the away team's; the NBA keeps one coefficient on the difference. This is
+one extra parameter, still global, still unpooled.
+
+**5b. The team rating.** Section 5's deterministic pre-game rating is an Elo rating updated after
+every game, computed outside the model and entered as the pre-game rating difference.
+- Start and carry-over: every team starts at 1500 at the beginning of 2023-24 and the rating
+  runs through **2023-24 results only**. This is not a reversal of section 1: section 1
+  excludes 2023-24 because its markets carried no trading, and no 2023-24 price is read here.
+  2023-24 games are rating burn-in only; they are never a model row and never scored. At every
+  season change each rating is pulled toward 1500: r_new = 1500 + c (r_old - 1500). That is
+  the only allowance for roster turnover, applied identically at every change. Utah
+  (2024-25 onward) inherits Arizona's end-of-2023-24 rating before the pull. The carry-over
+  grid includes c = 0, a fresh start every season, so the 2023-24 to 2024-25 change decides
+  whether carrying a rating over helps at all.
+- Expected result for the home team: 1 / (1 + 10^(-(r_home + H - r_away) / 400)), the standard
+  Elo scale, with H = 0 for a neutral-site game (the NHL's own flag; for the NBA, the vendored
+  neutral-site list, which covers 2023-24 as well as the two usable seasons). A game's
+  pre-game rating uses only games that started before it and whose result was public by then (`features.RESULT_DELAY_SECONDS`), the same rule as every other feature.
+- Update after each game: r += K x m x (result - expected), where expected is the formula
+  above, and m = (MOV + 3)^0.8 / (7.5 + 0.006 x the winner's pre-game rating edge), the published FiveThirtyEight NBA form, used for both sports and
+  never tuned. MOV is the final margin as recorded (an NHL shootout win is 1 goal).
+- Three parameters per sport, K, home bonus H and season carry-over c, chosen from this grid by
+  lowest log loss of the Elo win probability over every 2024-25 game (2023-24 is burn-in and
+  is not in the criterion):
+  | | K | H (rating points) | c |
+  |---|---|---|---|
+  | NBA | 10, 15, 20, 25, 30 | 50, 75, 100, 125 | 0, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9 |
+  | NHL | 8, 12, 16, 20, 30 | 25, 50, 75 | 0, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9 |
+
+  140 NBA and 105 NHL points. Ties go to the smaller K, then the smaller H, then the larger c.
+  An optimum on the edge of the grid is reported as a limitation; the grid is never widened
+  after seeing it. The NHL K values sit above FiveThirtyEight's 6 because the margin multiplier
+  gives a 1-goal win about 0.40, against about 1.16 for a typical 12-point NBA win.
+- The chosen values are frozen by commit before any 2025-26 rating is computed: they become
+  constants in `src/chira/ratings.py`, pinned by a test, and every grid point with its log
+  loss is published in `notes/week8-ratings.md`, in the same commit. 2025-26 ratings are
+  computed with them unchanged, each from games that started before it. Git history is the
+  proof of order.
+- 2023-24 results are fetched from the same league sources as the census and kept outside
+  the census store and the snapshot. Both fetches must be complete: all 1,230 NBA games (30
+  teams) and all 1,312 NHL games, or the fetch stops and names the shortfall.
+- **Disclosed overlap:** the rating is tuned on 2024-25, and 2024-25 is also where the model's
+  rolling-origin evaluation runs, so the dev evaluation is not fully out-of-sample for the
+  rating's three numbers. The holdout is.
+
+**5c. Rolling origin on dev is monthly.** Origins are the first day of each month from
+2024-11-01 to 2025-04-01. Each fit uses every 2024-25 game that started before the origin and
+predicts the games up to the next origin. October 2024 games are training data only.
+
+**5d. Missing travel.** A neutral-site game has no known travel (features.py sets it NULL
+rather than guess). The model fills it with the 2024-25 median for that sport, and every fit
+reports how many values were filled.
+
+**5e. The holdout is opened by code, once.** 2025-26 labels reach the model only through a
+single function that refuses a dirty tree, refuses a second call, and commits a marker with
+the frozen commit hash and time.
+
 ## 7. Nested test
 
 - **Model A:** market price only. **Model B:** market price + features.

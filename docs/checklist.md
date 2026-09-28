@@ -7,7 +7,7 @@ Tick a box when the work lands on `main` **and** something written backs it up. 
 completed week below links to its own write-up, so a claim here is always one click from
 its evidence.
 
-Last updated 2026-09-26. Source of truth for task detail stays [PLAN.md](../PLAN.md) and
+Last updated 2026-09-27. Source of truth for task detail stays [PLAN.md](../PLAN.md) and
 [TODOS.md](../TODOS.md); this page is the index over them.
 
 ---
@@ -68,7 +68,7 @@ Last updated 2026-09-26. Source of truth for task detail stays [PLAN.md](../PLAN
 - [x] E18 resolved: no dataset release → [notes/week1-tos-check.md](../notes/week1-tos-check.md)
 - [x] Published on 6 of 7 P1 tests, stated in the artifact's own limitations
 
-## Week 7 — collector and feature store — **half done**
+## Week 7 — collector and feature store — **done 2026-09-27** (E7 date-locked)
 
 Collector half, **done 2026-09-26** → [notes/week7-collector.md](../notes/week7-collector.md)
 
@@ -78,20 +78,34 @@ Collector half, **done 2026-09-26** → [notes/week7-collector.md](../notes/week
 - [x] `--check-windows` verifies every window against the real schedule
 - [x] Zero-capture rule takes the denominator, so a quiet night is not an outage
 - [ ] **Uncomment the cron** in `.github/workflows/collector.yml` — **before 2026-09-29**
+- [ ] If the collector runs off Actions: export `CHIRA_HEARTBEAT_URL` there, one heartbeat owner (P1 in TODOS)
 - [ ] Wire NBA upcoming enumeration — before 2026-10-20
 - [ ] Resolve a 2026-27 abbreviation map (the 2025-26 map is a logged fallback)
 
-Feature store half, **not started**
+Feature store half, **done 2026-09-27** → [notes/week7-features.md](../notes/week7-features.md)
 
-- [ ] Point-in-time assembly with `ASOF JOIN` (E9), every query taking a mandatory `as_of`
-- [ ] Leakage canary (E5), the seventh P1 test
-- [ ] Features: rest days, back-to-backs, travel distance
-- [ ] **Travel distance has no data source** — vendor a venue table first (P1 in TODOS)
-- [ ] **T15, the narrow `game_prices` table** — should land here, not after (P1 in TODOS)
+- [x] Point-in-time assembly (E9), every query taking a mandatory `as_of` with no default
+- [x] Leakage canary (E5), the seventh P1 test: truncation, held-but-future game, and a must-fail form, on fakes and on the real census
+- [x] Features: rest days, back-to-backs, 7-day density, travel distance, time-zone shift, prior results behind `RESULT_DELAY_SECONDS`
+- [x] Venue table vendored, 62 rows, pinned against ten published distances
+- [x] T15, the narrow `game_prices` table: 36,976 rows, 0 disagreements with the census on six columns
+- [x] No price column in the feature frame, asserted by a test
 - [ ] E7: prove an availability source, timeboxed, needs live games from late October
 
-## Weeks 8-9 — the model — **not started**
+## Weeks 8-9 — the model — **not started; spec decided 2026-09-27**
 
+Before the first fit (engineering review, 2026-09-27):
+
+- [ ] `uv sync --extra model` (numpyro and jax are declared but not installed)
+- [ ] PREREGISTRATION Amendment 5: NHL back-to-back x home term; rating grid (K, home bonus, season carry-over) tuned on 2024-25 only, then frozen; all teams start at 1500; monthly rolling origins
+- [ ] Brier confirmed as the primary score in PLAN.md, with the reason; log loss still reported
+- [ ] NBA neutral-site list, applied inside the feature query (the census store stays untouched), with regression tests
+- [ ] Missing travel filled with the dev median, count printed in every fit report
+- [ ] Holdout guard in code: fitting on 2025-26 raises; `open_holdout()` runs once and writes a marker
+
+The model:
+
+- [ ] Deterministic pre-game rating module, JAX-free, with its own point-in-time canary
 - [ ] Hierarchical logistic in `numpyro`, deterministic pre-game ratings as a fixed covariate
 - [ ] MCMC diagnostics as hard failures (T5)
 - [ ] Hyperprior sensitivity analysis
@@ -115,10 +129,12 @@ Detail and reasoning live in [TODOS.md](../TODOS.md).
 | Priority | Item | Deadline |
 |---|---|---|
 | P1 | Uncomment the collector cron | 2026-09-29 |
-| P1 | Travel distance has no data source | Inside week 7 |
-| P1 | T15 `game_prices` lands with the feature store | Inside week 7 |
+| P1 | Heartbeat owner if the collector runs off Actions | Before the first off-Actions run |
 | P1 | SSRN 5910522 unverified (403 to automated access; needs a human) | Before v2 |
-| P2 | Wheatcroft ranks the log score above Brier; confirm or amend | Before week 8 |
+| P2 | NBA `neutral_site` has no source (decided: vendored overlay) | Before the first fit |
+| P2 | NHL back-to-back is partly a road dummy (decided: interaction term) | Before the first fit |
+| P2 | Wheatcroft ranks the log score above Brier (decided: keep Brier, write the reason) | Before the first fit |
+| P3 | Verify `last_trade_price` is market-level before anything reads it | Unscheduled |
 | P2 | Cache sizing, store hardening, test-fixture consolidation | Unscheduled |
 | P3 | CI actions on deprecated Node 20; Ubuntu 26 migration | 2026-10-19 |
 | P3 | T16 census cross-validation, E19 special-game routing | Unscheduled |

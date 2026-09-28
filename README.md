@@ -13,7 +13,7 @@ Chira asks two questions:
 
 The claim is about calibration, not profit. Nothing here places bets.
 
-> **Project status: week 6 of 11 (September 2026). Artifact v1 is published and live at
+> **Project status: week 7 of 11 done (2026-09-27). Artifact v1 is published and live at
 > [arjasa1103.github.io/Chira](https://arjasa1103.github.io/Chira/)**
 > (source: [docs/index.md](docs/index.md)). The first of the two headline results is done
 > and frozen.
@@ -28,22 +28,27 @@ The claim is about calibration, not profit. Nothing here places bets.
 >
 > The census, the immutable snapshot and all three charts are done: 5,084 games settled
 > (4,661 priced, 423 classified misses), the validation gate passing on all four
-> sport-seasons. **The feature store and the model (headline 1) are not built yet**, and
-> nothing here claims a betting edge.
+> sport-seasons. **Week 7 added the point-in-time feature store** (rest, back-to-backs,
+> 7-day density, travel, time-zone shift, prior results), the narrow `game_prices` table,
+> the leakage canary (the seventh designated P1 test, now passing on the real census), and
+> the forward collector's live polling path, rehearsed against real opening-night markets.
+> **The model (headline 1) is not built yet**, and nothing here claims a betting edge.
 >
-> **Next: week 7, the point-in-time feature store** (`ASOF JOIN`, rest, back-to-backs,
-> travel), then the model in weeks 8-9 against a holdout that stays sealed until it is
-> frozen. Weeks 1-6 finished about 4.5 weeks ahead of the plan's calendar, so the
-> remaining risk is two fixed dates rather than effort: the NHL 2026-27 season opens
-> 2026-10-01, and the availability source can only be proven once the NBA tips in late
-> October.
+> **Next: week 8, the model**, against a 2025-26 holdout that stays sealed until the model
+> is frozen. The spec choices that must precede the first fit were settled on 2026-09-27
+> (an NHL back-to-back x home term, a dev-only grid for the rating's parameters, monthly
+> rolling origins, Brier kept primary) and go into PREREGISTRATION as Amendment 5 before any
+> fit. Weeks 1-7 finished about 4.5 weeks ahead of the plan's calendar, so the remaining
+> risk is fixed dates rather than effort: **the NHL 2026-27 season opens 2026-09-29** and
+> the collector's cron is still commented out; the NBA opens 2026-10-20.
 >
 > Start with [the writeup](docs/index.md) and its
 > [prior art](docs/prior-art.md). Then [What exists today](#what-exists-today),
 > [notes/week5-headline2.md](notes/week5-headline2.md) for how the result was built,
-> [notes/week4-charts.md](notes/week4-charts.md) and
-> [notes/week3-census.md](notes/week3-census.md) for the charts and the census, and
-> [PLAN.md](PLAN.md) for the schedule.
+> [notes/week7-features.md](notes/week7-features.md) and
+> [notes/week7-collector.md](notes/week7-collector.md) for the latest week, and
+> [docs/timeline.md](docs/timeline.md) and [docs/checklist.md](docs/checklist.md) for where
+> the project stands.
 
 ---
 
@@ -62,7 +67,8 @@ The claim is about calibration, not profit. Nothing here places bets.
   - [How to query the census store](#how-to-query-the-census-store)
   - [How to compute calibration metrics](#how-to-compute-calibration-metrics)
   - [How to cut the two charts](#how-to-cut-the-two-charts)
-  - [How to dry-run the forward collector](#how-to-dry-run-the-forward-collector)
+  - [How to build the feature store](#how-to-build-the-feature-store)
+  - [How to run the forward collector](#how-to-run-the-forward-collector)
   - [How to regenerate the noise floor](#how-to-regenerate-the-noise-floor)
   - [How to re-run the week-1 probes](#how-to-re-run-the-week-1-probes)
   - [How to run the tests and the linter](#how-to-run-the-tests-and-the-linter)
@@ -111,12 +117,16 @@ The claim is about calibration, not profit. Nothing here places bets.
 | Headline-2 strata, primary test and robustness | **Built** (week 5) | `src/chira/strata.py`, `scripts/run_headline2.py` |
 | Published artifact v1: writeup, charts, prior art | **Built** (week 6) | `docs/index.md`, `docs/prior-art.md`, `docs/charts/` |
 | One-command reproduction from public endpoints | **Built** (week 6) | `scripts/reproduce.py` |
-| Test suite | 711 tests, offline, ruff-clean, run on Linux, Windows and macOS in CI | `tests/` |
+| Narrow price table: close, T-1h, T-6h, T-24h for both sides, 36,976 rows | **Built** (week 7); reproduces the census's anchors with 0 disagreements | `src/chira/prices.py`, `scripts/build_game_prices.py` |
+| Point-in-time feature store with a mandatory `as_of` | **Built** (week 7) | `src/chira/features.py`, `scripts/run_features.py` |
+| Venue table: 62 arenas, coordinates, time zones | **Built** (week 7); pinned against ten published distances | `src/chira/venues.py` |
+| Leakage canary (the seventh P1 test) | **Passing** (week 7) on fakes and on the real census, and shown able to fail | `tests/test_features.py`, `scripts/run_features.py` |
+| Test suite | 821 tests, offline, ruff-clean, run on Linux, Windows and macOS in CI | `tests/` |
 | Full census of all 5,084 games | **Done** (week 3): 4,661 priced, 423 misses, 145.6M raw price rows | `data/census.duckdb` (gitignored) |
 | Immutable Parquet snapshot | **Cut** (week 3): `census-20260913-224d6ad985e0`, 162 MB | `data/snapshots/` (gitignored) |
 | Coverage and calibration charts | **Built** (week 4) | `src/chira/charts.py`, `scripts/make_charts.py`, `docs/charts/` |
-| Forward prices-only collector and dead-man's switch | **Built, deliberately NOT enabled** (week 4). Every gate is tested offline; the live poll itself is unexercised | `src/chira/collector.py`, `scripts/run_collector.py`, `.github/workflows/collector.yml` |
-| Feature store, hierarchical model, nested test | **Not built** (weeks 7-9) | |
+| Forward prices-only collector and dead-man's switch | **Live path proven, cron NOT yet enabled** (week 7). Rehearsed on 2026-09-26: 47 of 47 upcoming NHL markets resolved, 36 rows captured. NHL only; NBA enumeration not wired. The heartbeat secret is set in the repo | `src/chira/collector.py`, `src/chira/upcoming.py`, `scripts/run_collector.py`, `.github/workflows/collector.yml` |
+| Deterministic team rating, hierarchical model, holdout guard, nested test | **Not built** (weeks 8-9) | |
 
 Census results (full pass, all four sport-seasons):
 
@@ -194,7 +204,7 @@ You should see `0.1.0`.
 uv run pytest
 ```
 
-Expected: `711 passed`. The suite is offline. Any test that opens a socket fails, so this
+Expected: `821 passed`. The suite is offline. Any test that opens a socket fails, so this
 passes without a network connection.
 
 ### Step 3: Learn the week-1 abbreviation prior
@@ -667,20 +677,98 @@ bins and a threshold is only comparable to the null it came from.
 The charts are **derived aggregates**, so unlike the raw price series they are committed to
 the repository. See [Data and terms of use](#data-and-terms-of-use).
 
-### How to dry-run the forward collector
+### How to build the feature store
 
-The collector targets the 2026-27 seasons and does nothing before late October 2026. Its
-workflow is committed with the cron **commented out**, because a `schedule:` trigger on the
-default branch is armed by GitHub the moment it lands.
+Two steps, both offline, both reading the newest snapshot and verifying its checksums first.
+
+1. Build the narrow price table:
+
+   ```bash
+   uv run python scripts/build_game_prices.py
+   ```
+
+   One streaming pass over the 145.6M raw price points (about 4 seconds) writes
+   `data/game_prices/game_prices.parquet`: 36,976 rows, the close, T-1h, T-6h and T-24h for
+   both sides of every priced game. It re-computes the close independently of the census and
+   **exits `1` on any disagreement**, so the two implementations cannot drift apart quietly.
+   It lands beside the snapshot, not inside it, because the snapshot's directory name is its
+   content digest.
+
+2. Build the feature store and run the leakage canary:
+
+   ```bash
+   uv run python scripts/run_features.py
+   ```
+
+   It runs the canary against the real census first (a query at `as_of=T` must return
+   byte-identical rows from a store truncated at T and from one holding every later game),
+   then assembles one row per game into `data/features/features.parquet`. Exit `1` means a
+   check failed.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--snapshot PATH` | newest `data/snapshots/census-*` | Which snapshot to read |
+| `--out PATH` | `data/game_prices/...` / `data/features/...` | Where the Parquet goes |
+| `--prices PATH` | `data/game_prices/game_prices.parquet` | `run_features.py` only |
+| `--no-verify` | off | Skip snapshot checksums. Faster; not for a quoted result |
+
+**No price column reaches the feature frame.** Headline 1 is a price-free model, and a test
+asserts `features.FEATURE_COLUMNS` holds no price. The narrow table exists for the nested
+test, which joins `prices.price_as_of` itself.
+
+**`as_of` has no default.** `features.assemble(con, targets, as_of=...)` refuses a float, a
+string, a bool, a naive datetime and a target game that has already started. A prior result
+only counts once `RESULT_DELAY_SECONDS` has passed since its start, so a 19:00 game is not
+"known" at a 22:00 tipoff.
+
+### How to run the forward collector
+
+The collector captures live Polymarket quotes for 2026-27 games, which the historical API
+cannot give back later. Its workflow is committed with the cron **commented out**, because a
+`schedule:` trigger on the default branch is armed by GitHub the moment it lands. Only NHL
+enumeration is wired today; NBA logs `sport_not_wired`.
+
+Dry run, no network:
 
 ```bash
 uv run python scripts/run_collector.py --dry-run
 ```
 
-This makes no network call. It prints what a real session would decide: the ET offset it
-computed, which seasons are active, whether the poll window is open, and whether a monitoring
-URL is configured. It warns loudly when `CHIRA_HEARTBEAT_URL` is unset, because an unarmed
-dead-man's switch is the failure the switch exists to catch.
+It prints what a real session would decide: the ET offset, which seasons are active,
+whether the poll window is open, and whether a monitoring URL is configured.
+
+Check every configured season window against the leagues' real schedules (makes network
+calls):
+
+```bash
+uv run python scripts/run_collector.py --check-windows
+```
+
+Rehearse the live path before a season opens, one cycle only:
+
+```bash
+uv run python scripts/run_collector.py --force --once --lookahead-days 7
+```
+
+`--force` polls even when the season or daily gate says no, because markets list days before
+opening night. It deliberately does **not** ping the heartbeat: the dead-man's switch means
+"a scheduled session ran", and a hand run must not satisfy it.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--dry-run` | off | Decide everything, touch no network, write nothing |
+| `--once` | off | One poll cycle instead of a full session |
+| `--force` | off | Poll regardless of the season and daily gates; no heartbeat ping |
+| `--check-windows` | off | Verify season windows against the real schedule |
+| `--lookahead-days N` | `3` | How far ahead to enumerate games |
+| `--max-seconds N` | 5h30 | Session length; the default stops short of the 6 h Actions cap |
+| `--store PATH` | `data/collector/live.duckdb` | Quote store |
+| `--log PATH` | `data/logs/collector.jsonl` | Telemetry |
+
+**The heartbeat URL is a repo secret.** `CHIRA_HEARTBEAT_URL` reaches the environment only
+inside an Actions job, so every local run reports the switch as unarmed. That is correct for
+a check on your laptop. It is a real gap for a *collector* running on your own machine: export
+the URL there, and let only one runner (Actions or that machine) own the heartbeat.
 
 | Env var | Default | Effect |
 |---|---|---|
@@ -792,8 +880,11 @@ Chira/
 ├── CLAUDE.md                 agent instructions
 ├── pyproject.toml            dependencies, extras, ruff and pytest config
 ├── uv.lock                   pinned dependency lock
-├── docs/designs/             approved design document
-├── docs/charts/              the two Phase 2 charts, committed (derived aggregates)
+├── docs/index.md             artifact v1, published on GitHub Pages
+├── docs/timeline.md          plan against actual, and the fixed dates (not published)
+├── docs/checklist.md         per-week progress with links to evidence (not published)
+├── docs/designs/             design documents (not published)
+├── docs/charts/              the three charts and their data, committed (derived aggregates)
 ├── .github/workflows/        tests on push; the collector cron, committed disabled
 ├── notes/                    week-by-week measurement write-ups
 ├── scripts/                  runnable entry points (census, resolver, probes)
@@ -845,7 +936,9 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 | `fetch_volume_patch.py` | Recover volume the census missed; record the games that have none | snapshot, cache | `data/volume_patch/` | Gamma (cache first) |
 | `reproduce.py` | Print, then optionally run, every stage end to end | none | delegates to the above | via the steps it runs |
 | `derive_null_bands.py` | Re-derive the section-4 null from real census prices; exits 1 on a breach | snapshot | `data/noise_floor_census.json` | none |
-| `run_collector.py` | One forward-collector session, or a dry run of one | schedules, CLOB | `data/collector/live.duckdb`, log | Polymarket; none with `--dry-run` |
+| `build_game_prices.py` | The narrow price table, cross-checked against the census close | snapshot | `data/game_prices/` | none |
+| `run_features.py` | Leakage canary on the real census, then the feature store | snapshot, `data/game_prices/` | `data/features/` | none |
+| `run_collector.py` | One forward-collector session, a rehearsal, a window check, or a dry run | NHL schedule, Gamma, CLOB | `data/collector/live.duckdb`, log | Polymarket and NHL; none with `--dry-run` |
 | `learn_abbr.py` | Learn the `{slug_abbr: nickname}` prior from Gamma | none | `data/abbr_map.json` | Gamma, ~180 requests |
 | `resolve_abbrs.py` | Resolve `{schedule_abbr: slug_abbr}` for both sports and seasons | `data/abbr_map.json` | `data/abbr_map_resolved.json`, cache | Gamma, NHL, `nba_api` |
 | `probe_rate_limit.py` | Burst rate-limit ramp | none | stdout | Gamma, CLOB |
@@ -874,6 +967,10 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 | `chira.charts` | The three charts and every statistic they report | `chart_coverage`, `chart_calibration`, `chart_strata`, `calibration_stats` |
 | `chira.strata` | Headline 2: the 2x2, the primary directional test, and the artifact checks around it | `assign_strata`, `cell_table`, `primary_test`, `sensitivity`, `range_sensitivity`, `caliper_match`, `cluster_sensitivity`, `slope_difference`, `clustered_slope_difference`, `null_reference` |
 | `chira.collector` | Forward prices-only collector: ET gates, dedup, quote store, heartbeat | `CollectorStore`, `Heartbeat`, `HEARTBEAT_PROVIDERS`, `is_season_active`, `in_poll_window`, `dedup_key`, `quote_row`, `parse_book`, `upcoming_targets`, `zero_capture_is_a_failure`, `describe_plan` |
+| `chira.upcoming` | Forward NHL schedule for the collector, never cached, dated by the enclosing ET day | `nhl_upcoming`, `check_season_window`, `season_label`, `parse_start` |
+| `chira.prices` | The narrow `game_prices` table and point-in-time price reads | `build_game_prices`, `write_game_prices`, `attach_game_prices`, `price_as_of`, `GAME_PRICES` |
+| `chira.venues` | Vendored venue table, great-circle distance, time-zone shift | `venue`, `distance_km`, `tz_shift_hours`, `haversine_km`, `venue_rows` |
+| `chira.features` | Point-in-time feature assembly with a mandatory `as_of` | `assemble`, `assemble_backtest`, `write_backtest`, `attach_features`, `attach_venues`, `FEATURE_COLUMNS`, `RESULT_DELAY_SECONDS` |
 | `chira.telemetry` | JSONL event log and run manifest | `Telemetry`, `run_id`, `git_hash` |
 
 **Game dict shape.** `nba_games` and `nhl_games` both return a list sorted by
@@ -894,6 +991,9 @@ own UTC tipoff (None if the league source had none). NHL games also carry `neutr
 | `data/logs/census.jsonl` | `run_census.py` | Telemetry, one JSON object per line |
 | `data/price_sample.json` | `probe_price_distribution.py` | Week-1 sample of 128 NBA closing prices |
 | `data/noise_floor.json` | `calibration.simulate_null` (by hand) | Null metric distributions at n = 150, 850, 1230, 2460, 5084 |
+| `data/game_prices/game_prices.parquet` | `build_game_prices.py` | Four anchors for both sides of every priced game |
+| `data/features/features.parquet` | `run_features.py` | One point-in-time feature row per game |
+| `data/collector/live.duckdb` | `run_collector.py` | Live quotes: midpoint, best bid/ask and sizes, spread, last trade, book clock |
 | `.http-cache/<2 hex>/<sha256>.json` | `Client` via `Cache` | `{url, schema_version, abbr_version, payload}` |
 
 All of `data/` and `.http-cache/` are gitignored. `*.duckdb` must never be committed.
@@ -1136,6 +1236,8 @@ From `src/chira/constants.py` unless noted.
 | `GATE_SLOPE_BAND` | `(0.91, 1.10)` | Cox slope 95% CI must lie inside. **Widened from `(0.93, 1.08)` by PREREGISTRATION.md Amendment 2**: the real pooled null is `[0.9183, 1.0908]`, so the old band would have failed a perfectly calibrated market |
 | `GATE_INTERCEPT_BAND` | `(-0.07, 0.07)` | Cox intercept 95% CI must lie inside; null is `[-0.0606, 0.0620]` |
 | `CENSUS_NULL_*` | see `constants.py` | The null re-measured on real census prices at the operative n of 4,661, plus `CENSUS_NULL_ECE_P99_BY_N`, the per-n reference rows that per-stratum analyses must use instead of the pooled cap |
+| `features.RESULT_DELAY_SECONDS` | `{"nba": 8400, "nhl": 9000}` | How long after the start a result counts as public; an unknown sport gets the longest, never zero |
+| `features.DENSITY_WINDOW_DAYS` | `7` | Window for the games-in-last-7-days feature |
 | `collector.DEFAULT_HEARTBEAT_PROVIDER` | `"healthchecks"` | Overridden by `CHIRA_HEARTBEAT_PROVIDER` |
 | `collector.SESSION_MAX_SECONDS` | `19800` (5h30) | Stops short of the 6 h Actions job cap so a session can report its own outcome |
 | `http.RATE_RPS` | `5.0` | Default request rate |
@@ -1207,6 +1309,12 @@ uv sync --extra store
                        │
                        ▼
           every later phase: open_snapshot(), no network, no store
+                       │
+             ┌─────────┴──────────────────────┐
+             ▼                                ▼
+          build_game_prices               run_features
+          36,976 rows, 4 anchors          leakage canary, then one row per game
+          (nested test only)              (price-free: headline 1's inputs)
 ```
 
 Every HTTP call goes through `Client`: rate limit, backoff, circuit breaker, schema
@@ -1306,7 +1414,10 @@ label-agreement failure costs 600 requests instead of 16,000.
 | `ValueError: empty frame for sport=... season=...` | `analysis.frame` was scoped to a sport-season the snapshot has no priced rows for | Check `sport_seasons(con)` for what the snapshot actually holds |
 | `ValueError: frame is not in canonical ... order` | Rows were reordered after loading | Re-load through `analysis.frame`. Binning ties depend on row order, so an out-of-order frame silently changes every binned metric |
 | `ValueError: unknown heartbeat provider ...` | `CHIRA_HEARTBEAT_PROVIDER` is not a key of `collector.HEARTBEAT_PROVIDERS` | Use one of the listed names. It refuses to guess, because a wrong URL shape leaves the monitor green while the collector is dead |
-| `run_collector.py` exits `1` with "nothing was captured" | The season is active and the poll window was open, but no quotes landed | This is the outage signal, not a warning. Check the live poll path and the workflow logs |
+| `run_collector.py` exits `1` with "nothing was captured" | Games were due and no quotes landed, or the schedule could not be enumerated | This is the outage signal, not a warning. Check the live poll path and the workflow logs |
+| Dry run says the heartbeat is not armed, on your own machine | `CHIRA_HEARTBEAT_URL` is a repo secret; it only exists inside Actions | Expected for a check. For a collector you run locally, export the URL there first |
+| `IO Error: Could not write file ... No space left on device` from an `ASOF JOIN` over `price_points` | The whole 145.6M-row table becomes the join's build side (~10 GB working set) | Read the narrow table from `build_game_prices.py`, or pre-filter to one sport-season (see [notes/week7-features.md](notes/week7-features.md)) |
+| `run_features.py` exits `1` on the canary | A feature read something that was not public at `as_of` | Treat as a leak. Do not quote any number from that frame |
 
 ---
 
@@ -1317,16 +1428,21 @@ label-agreement failure costs 600 requests instead of 16,000.
 | [PLAN.md](PLAN.md) | The eleven-week schedule, phase checklists, CEO and engineering reviews, decision audit trail |
 | [PREREGISTRATION.md](PREREGISTRATION.md) | Analysis commitments: data, closing price, metrics, gate, model, splits, nested test, strata, risk tiers, falsification |
 | [TODOS.md](TODOS.md) | Deferred work with measured costs (cache cap, concurrency, store hardening, sport extensions) |
+| [docs/timeline.md](docs/timeline.md) | Plan calendar against what actually landed, and the dates that cannot move |
+| [docs/checklist.md](docs/checklist.md) | Per-week progress, each item linked to its evidence |
 | [docs/designs/chira-market-calibration-engine.md](docs/designs/chira-market-calibration-engine.md) | The approved design and verified API findings |
+| [docs/designs/chira-profit-track.md](docs/designs/chira-profit-track.md) | A separate, staged design for testing whether the liquidity finding survives as a trading signal. Not part of the semester deliverable; nothing is built |
 | [notes/week1-rate-limit.md](notes/week1-rate-limit.md) | Rate-limit measurements behind the 5 rps setting |
 | [notes/week1-slug-conventions.md](notes/week1-slug-conventions.md) | Slug format and the ET/UTC date discovery |
-| [notes/week1-tos-check.md](notes/week1-tos-check.md) | Polymarket terms-of-use status (unresolved) |
+| [notes/week1-tos-check.md](notes/week1-tos-check.md) | Polymarket terms of use: read, and the reason there is no dataset release |
 | [notes/week2-abbr-resolution.md](notes/week2-abbr-resolution.md) | How abbreviations are resolved and regenerated |
 | [notes/week2-nhl-schedule.md](notes/week2-nhl-schedule.md) | The NHL schedule source and its verified properties |
 | [notes/week2-census-gate.md](notes/week2-census-gate.md) | Gate results, coverage findings, and the contaminated-slice correction |
 | [notes/week3-census.md](notes/week3-census.md) | The full census: coverage, the four defects the first gate failure exposed, and Amendment 1 |
 | [notes/week4-charts.md](notes/week4-charts.md) | Both gate charts, the market's measured calibration, the primary-sport answer, Amendment 2, and the Cox-fit bug |
 | [notes/week5-headline2.md](notes/week5-headline2.md) | Headline 2 in full: the strata, the primary test, every robustness split, two more estimator bugs, and what the volume gap actually was |
+| [notes/week7-collector.md](notes/week7-collector.md) | The collector's live path, and a season window that would have missed opening night |
+| [notes/week7-features.md](notes/week7-features.md) | The feature store, the narrow price table, the canary, and the NHL back-to-back asymmetry |
 | [docs/index.md](docs/index.md) | **Artifact v1**: the published writeup |
 | [docs/prior-art.md](docs/prior-art.md) | Four sources, what each actually says, and what this project adds |
 

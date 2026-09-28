@@ -34,9 +34,9 @@ name: collector
 #      5h30) and read the captured rows.
 #   3. Only then uncomment the two crons below.
 on:
-  # schedule:
-  #   - cron: "0 20 * * *"   # session 1: ~16:00 ET
-  #   - cron: "45 1 * * *"   # session 2: ~20:45 ET, runs past midnight ET
+  schedule:
+    - cron: "0 20 * * *"   # session 1: ~16:00 ET
+    - cron: "45 1 * * *"   # session 2: ~20:45 ET, runs past midnight ET
   workflow_dispatch:
     inputs:
       dry_run:

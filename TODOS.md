@@ -320,6 +320,40 @@ worse than no cron: it burns quota and produces silence that nobody is watching 
 
 **Effort:** M (human ~4h / CC ~40min). **Priority:** P1, deadline-driven (late Oct 2026).
 
+## P1 — If the collector runs off Actions, decide who owns the heartbeat
+
+**What:** Before any collector session runs on a machine other than GitHub Actions, pick
+one heartbeat owner (Actions or that machine), export `CHIRA_HEARTBEAT_URL` there, and never
+run two schedulers without a single owner.
+
+**Why:** `src/chira/collector.py:441` reads the URL from `os.environ`, and the value exists
+only as a repo secret, so it reaches the environment only inside an Actions job. A run on
+another machine polls fine and pings nothing: the monitor reports it dead, or, if Actions is
+also enabled, two collectors poll and only one pings. This is the reverse of the week-7
+false alarm (see the RESOLVED item above): there, a local check wrongly said "unarmed";
+here, a local *run* really is unarmed.
+
+**Context:** Raised by the 2026-09-27 eng review while the user planned to run on a second
+machine. NHL 2026-27 opens 2026-09-29. The dedup key already makes duplicate rows harmless;
+the open question is only which runner the dead-man's switch listens to.
+
+**Effort:** S (human ~5min / CC ~3min). **Priority:** P1, before the first off-Actions run.
+**Depends on:** None.
+
+## P3 — Verify what `last_trade_price` means before anything reads it
+
+**What:** Sample ~20 live markets and confirm whether `last_trade_price` is market-level
+rather than per side; then rename the stored column or document it.
+
+**Why:** It came back identical for both tokens on 3 of 3 markets while the midpoints
+complemented correctly (notes/week7-collector.md:55-58). Read as "the last trade on this
+side", it would be wrong, and the profit track's fill modelling is the likely first reader.
+
+**Context:** Stored by the collector since week 7; nothing reads it today.
+
+**Effort:** S (human ~30min / CC ~10min). **Priority:** P3.
+**Depends on:** live markets (available now).
+
 ## P3 — CI actions target the deprecated Node 20
 
 **What:** Bump `actions/checkout` and `astral-sh/setup-uv` in `.github/workflows/tests.yml`
