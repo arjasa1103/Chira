@@ -34,16 +34,40 @@ def git(repo, *args):
     return out.stdout
 
 
+def _init_work(work):
+    git(work, "init", "-q", "-b", "main")
+    git(work, "config", "user.email", "t@example.com")
+    git(work, "config", "user.name", "T")
+    (work / "model.py").write_text("# the frozen model\n", encoding="utf-8")
+    git(work, "add", "-A")
+    git(work, "commit", "-q", "-m", "freeze the model")
+
+
 @pytest.fixture
 def repo(tmp_path):
-    """A real git repo with one commit, clean."""
-    git(tmp_path, "init", "-q", "-b", "main")
-    git(tmp_path, "config", "user.email", "t@example.com")
-    git(tmp_path, "config", "user.name", "T")
-    (tmp_path / "model.py").write_text("# the frozen model\n", encoding="utf-8")
-    git(tmp_path, "add", "-A")
-    git(tmp_path, "commit", "-q", "-m", "freeze the model")
-    return tmp_path
+    """A real git repo with one commit, clean, and PUSHED to a real remote.
+
+    The seal requires the frozen commit to be public, so the fixture gives it
+    a bare `origin` and pushes. Tests that need an unpushed HEAD make a new
+    commit on top; `local_only_repo` has no remote at all.
+    """
+    origin = tmp_path / "origin.git"
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    work = tmp_path / "work"
+    work.mkdir()
+    _init_work(work)
+    git(work, "remote", "add", "origin", str(origin))
+    git(work, "push", "-q", "-u", "origin", "main")
+    return work
+
+
+@pytest.fixture
+def local_only_repo(tmp_path):
+    """Clean and committed, but never pushed anywhere."""
+    work = tmp_path / "local"
+    work.mkdir()
+    _init_work(work)
+    return work
 
 
 @pytest.fixture
@@ -139,13 +163,67 @@ class TestItRefuses:
         with pytest.raises(HoldoutError):
             open_holdout(con, reason="week-9", repo=tmp_path / "nope")
 
-    def test_a_leftover_uncommitted_marker_fails_closed(self, repo, con):
-        """If the commit ever fails, the marker is on disk and the tree is
-        dirty. The next attempt must refuse, not succeed."""
-        open_holdout(con, reason="once", repo=repo, commit=False)
+    def test_a_failed_commit_fails_closed(self, repo, con, monkeypatch):
+        """If the commit fails, no label is returned, the marker stays on disk,
+        and the next attempt refuses.
+
+        This used to be tested with `commit=False`, a flag that SKIPPED the
+        commit rather than failing it -- and that same flag was a free look at
+        the holdout. Making git refuse the commit exercises the real path.
+        """
+        import chira.holdout as h
+
+        real_git = h._git
+
+        def git_that_refuses_commit(repo_, *args):
+            if args and args[0] == "commit":
+                raise HoldoutError("simulated: commit refused")
+            return real_git(repo_, *args)
+
+        monkeypatch.setattr(h, "_git", git_that_refuses_commit)
+        with pytest.raises(HoldoutError, match="simulated"):
+            open_holdout(con, reason="once", repo=repo)
+        monkeypatch.setattr(h, "_git", real_git)
+
+        assert (repo / MARKER).exists()
         assert not is_clean(repo)
         with pytest.raises(HoldoutError, match="already opened"):
             open_holdout(con, reason="again", repo=repo)
+
+
+class TestNoFreeLook:
+    """The bypass that shipped in b852666, pinned shut."""
+
+    def test_there_is_no_commit_keyword(self, repo, con):
+        with pytest.raises(TypeError):
+            open_holdout(con, reason="peek", repo=repo, commit=False)  # type: ignore[call-arg]
+
+    def test_deleting_the_marker_cannot_buy_a_second_look(self, repo, con):
+        """The marker is always committed, so removing the file leaves the
+        tree dirty (a tracked deletion) and the next open still refuses."""
+        open_holdout(con, reason="once", repo=repo)
+        (repo / MARKER).unlink()
+        assert not is_clean(repo)
+        with pytest.raises(HoldoutError):
+            open_holdout(con, reason="again", repo=repo)
+
+
+class TestTheFreezeMustBePublic:
+    def test_an_unpushed_head_refuses(self, repo, con):
+        (repo / "model.py").write_text("# tweaked after the push\n",
+                                       encoding="utf-8")
+        git(repo, "commit", "-q", "-am", "tweak")
+        with pytest.raises(HoldoutError, match="not on the remote"):
+            open_holdout(con, reason="week-9", repo=repo)
+        assert not (repo / MARKER).exists()
+
+    def test_a_repo_with_no_remote_refuses(self, local_only_repo, con):
+        with pytest.raises(HoldoutError, match="not on the remote"):
+            open_holdout(con, reason="week-9", repo=local_only_repo)
+        assert not (local_only_repo / MARKER).exists()
+
+    def test_a_pushed_head_opens(self, repo, con):
+        assert open_holdout(con, reason="week-9", repo=repo)
 
 
 class TestTheDevPathIsUnguarded:
@@ -177,6 +255,17 @@ class TestAssertDevOnly:
 
     def test_it_passes_on_an_empty_frame(self):
         assert assert_dev_only([]) is None
+
+    def test_a_row_with_no_season_is_refused(self):
+        """`None` is not "2025-26", so the first version passed these. A guard
+        that cannot see the column it guards must refuse, not approve."""
+        with pytest.raises(HoldoutError, match="carry no season"):
+            assert_dev_only([{"game_id": "x", "y": 1}])
+
+    def test_an_empty_season_is_refused_too(self):
+        with pytest.raises(HoldoutError, match="carry no season"):
+            assert_dev_only([{"season": "", "game_id": "x"},
+                             {"season": DEV_SEASON, "game_id": "d0"}])
 
     def test_the_label_can_be_customised(self):
         with pytest.raises(HoldoutError, match="tuning rows"):

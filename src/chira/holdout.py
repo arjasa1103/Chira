@@ -110,12 +110,23 @@ def dev_labels(con) -> list[dict]:
 
 
 def assert_dev_only(rows, *, what: str = "training rows") -> None:
-    """Raise if any row carries the holdout season.
+    """Raise if any row carries the holdout season, OR carries no season at all.
 
     Model code calls this on whatever it is about to fit or tune on. It is
     cheap, and it catches the realistic failure -- a frame assembled without a
     season filter -- which no amount of care around `open_holdout` would.
+
+    **A row with no `season` is refused, not passed.** The first version
+    tested `r.get("season") == HOLDOUT_SEASON`, and `None` is not "2025-26",
+    so a frame built without the column sailed through: a guard that cannot
+    see the thing it guards passes by construction. Absent is not dev.
     """
+    missing = sum(1 for r in rows if not r.get("season"))
+    if missing:
+        raise HoldoutError(
+            f"{missing} {what} carry no season, so this guard cannot tell dev "
+            f"from the sealed {HOLDOUT_SEASON}. Carry the season column through "
+            f"to the frame being fitted; a missing season is not a dev season.")
     bad = sorted({r["game_id"] for r in rows
                   if r.get("season") == HOLDOUT_SEASON})
     if bad:
@@ -123,6 +134,27 @@ def assert_dev_only(rows, *, what: str = "training rows") -> None:
             f"{len(bad)} {what} are from the sealed holdout season "
             f"{HOLDOUT_SEASON} (first: {bad[0]}). The holdout is opened once, "
             f"by holdout.open_holdout, after the model is frozen.")
+
+
+def is_pushed(repo: str | Path = ".") -> bool:
+    """Is HEAD already on the upstream branch, as the remote sees it NOW?
+
+    Fetches first, so a stale local `origin/main` cannot stand in for the
+    remote. Any failure -- no upstream, offline, fetch refused -- is False,
+    and False refuses the open: the seal fails closed on the network exactly
+    as it does on git itself.
+    """
+    repo = Path(repo)
+    try:
+        upstream = _git(repo, "rev-parse", "--abbrev-ref",
+                        "--symbolic-full-name", "@{u}").strip()
+        _git(repo, "fetch", "--quiet", upstream.split("/", 1)[0])
+    except HoldoutError:
+        return False
+    rc = subprocess.run(
+        ["git", "-C", str(repo), "merge-base", "--is-ancestor", "HEAD", upstream],
+        capture_output=True, check=False).returncode
+    return rc == 0
 
 
 def _rows(cur) -> list[dict]:
@@ -139,16 +171,27 @@ def _digest(rows: list[dict]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def open_holdout(con, *, reason: str, repo: str | Path = ".",
-                 commit: bool = True) -> list[dict]:
+def open_holdout(con, *, reason: str, repo: str | Path = ".") -> list[dict]:
     """Break the seal and return the 2025-26 labels. Once, ever.
 
     `reason` is required and goes into the marker: a sentence saying which
-    frozen model this pass is for. `commit=False` exists only for tests and
-    still writes the marker, so it cannot be used to take a free look.
+    frozen model this pass is for.
 
-    Raises `HoldoutError` if the tree is dirty, if the marker already exists,
-    or if git is unavailable. Nothing is returned in any of those cases.
+    **There is no `commit=False`.** An earlier version had one, "only for
+    tests", and it was a free look: the marker was written but never
+    committed, so deleting the untracked file left no trace and a second call
+    succeeded. Demonstrated 2026-09-28 in a throwaway repo -- two looks, one on
+    the record, nothing in git history. Every open now commits.
+
+    **The frozen model must already be public.** HEAD has to be on the
+    upstream branch as the remote sees it after a fetch. An unpushed "frozen"
+    commit can be amended after a peek, and the reflog that would betray it is
+    local and expires. For a project whose rule is that the git hash is the
+    timestamp, a freeze only the author can see is not a freeze.
+
+    Raises `HoldoutError` if the reason is empty, the marker already exists,
+    the tree is dirty, HEAD is not on the remote, the store has no holdout
+    games, or git is unavailable. Nothing is returned in any of those cases.
     """
     if not isinstance(reason, str) or not reason.strip():
         raise HoldoutError("reason is required: the marker has to say which "
@@ -168,6 +211,12 @@ def open_holdout(con, *, reason: str, repo: str | Path = ".",
             "the model about to see the holdout. Commit or stash first; the "
             "marker records the hash and that record is the freeze.\n"
             + _git(repo, "status", "--short")[:600])
+
+    if not is_pushed(repo):
+        raise HoldoutError(
+            "HEAD is not on the remote, so the model about to see the holdout "
+            "is frozen only on this machine. Push it first; the marker records "
+            "a hash anyone can check was public before a label came out.")
 
     frozen = head_commit(repo)
     rows = _rows(con.execute(_LABELS_SQL, [HOLDOUT_SEASON]))
@@ -189,13 +238,12 @@ def open_holdout(con, *, reason: str, repo: str | Path = ".",
     marker_path(repo).write_text(
         json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    if commit:
-        # Before the labels are handed over, never after. A failure here
-        # leaves the marker on disk and the tree dirty, so the next attempt
-        # refuses rather than silently succeeding.
-        _git(repo, "add", "--", MARKER)
-        _git(repo, "commit", "-m",
-             f"holdout: opened once on {frozen[:12]} -- {reason.strip()}",
-             "-m", f"{len(rows)} {HOLDOUT_SEASON} labels released, "
-                   f"sha256 {marker['label_sha256'][:16]}.")
+    # Before the labels are handed over, never after. A failure here leaves
+    # the marker on disk and the tree dirty, so the next attempt refuses
+    # rather than silently succeeding.
+    _git(repo, "add", "--", MARKER)
+    _git(repo, "commit", "-m",
+         f"holdout: opened once on {frozen[:12]} -- {reason.strip()}",
+         "-m", f"{len(rows)} {HOLDOUT_SEASON} labels released, "
+               f"sha256 {marker['label_sha256'][:16]}.")
     return rows
