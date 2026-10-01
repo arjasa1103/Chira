@@ -271,7 +271,9 @@ to the repository owner** -- it is the last link in the chain and the only one t
 cannot enforce. Stated in `holdout.py`'s own docstring so nobody reads the seal as
 airtight without it.
 
-**Still open for the user:** turn on branch protection for `main` (block force-pushes).
+**Done 2026-10-01:** ruleset `protect-main` is active on the default branch, blocking deletion
+and force-pushes only, with no bypass list. Pull requests and status checks are not required,
+on purpose: `open_holdout` pushes its marker straight to `main`.
 
 ## RESOLVED 2026-10-01 — Reichenbach and Walther (SSRN 5910522) read, contribution stands
 

@@ -70,7 +70,7 @@ and hand over through the concurrency group.
 | 09-29 | `45 1` | 07:26Z | 5h41 | 0 polls |
 | 09-30 | `0 20` (no dispatch) | 23:23Z | 3h23 | 98 quotes. **PIT@PHI and NYI@TOR got 7 minutes of pre-game data**; T-6h and T-1h lost for good. LAK@COL fine |
 | 09-30 | `45 1` | 07:47Z | 6h02 | 0 polls |
-| 10-01 | new schedule | — | — | No run delivered by 17:30Z, 3h40 after the push. Expected at this lag; watch for the first one |
+| 10-01 | **new schedule, first run** | 19:35Z | — | Created inside the 45-min wait margin, so it waited for the 20:00Z opening and polls tonight's 8 games. No hand dispatch on record. Confirm coverage from its artifact |
 
 Every artifact is copied to `data/collector-archive/` (gitignored): Actions keeps them 90
 days and runs do not accumulate. Re-run the download loop after each game night.
@@ -109,10 +109,13 @@ day before any 2025-26 rating existed ([notes/week8-ratings.md](../notes/week8-r
 - **Decisions before the first fit, done** (`0a75bc0`): the model takes
   `rating_diff_strength` and owns home advantage itself (third reading of 5b); Brier stays
   primary, with the reason in PLAN.md. The missing-travel fill lands with the model.
-- **The seal, finished in code** (`0a75bc0` plus the review fix): the marker is pushed
-  before any label, `is_open` reads the remote, and a push that does not land rolls back
-  instead of spending the holdout with nothing released. What is left is branch
-  protection on `main`, blocking force-pushes only, which is a GitHub setting and yours.
+- **The seal, finished in code** (`0a75bc0` plus the review fix `70c0aee`): the marker is
+  pushed before any label, `is_open` reads the remote, and a push that does not land rolls
+  back instead of spending the holdout with nothing released. **Branch protection is on**
+  (ruleset `protect-main`, 2026-10-01): deletions and force-pushes blocked, nothing else, so
+  the marker push still lands. The seal is complete.
+- **Prior art:** SSRN 5910522 read by hand 2026-10-01. No liquidity split, no NBA or NHL,
+  so the contribution stands. v1's one stale line is corrected when v2 publishes.
 
 **Next: the model.** The dev agent starts on the numpyro model and the 2024-25 rolling
 origins. Training uses the census, not the collector's 2026-27 prices, and the 2025-26
