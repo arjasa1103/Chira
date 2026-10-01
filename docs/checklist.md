@@ -7,7 +7,7 @@ Tick a box when the work lands on `main` **and** something written backs it up. 
 completed week below links to its own write-up, so a claim here is always one click from
 its evidence.
 
-Last updated 2026-09-27. Source of truth for task detail stays [PLAN.md](../PLAN.md) and
+Last updated 2026-10-01. Source of truth for task detail stays [PLAN.md](../PLAN.md) and
 [TODOS.md](../TODOS.md); this page is the index over them.
 
 ---
@@ -77,10 +77,17 @@ Collector half, **done 2026-09-26** → [notes/week7-collector.md](../notes/week
 - [x] NHL season window fixed: opened 2026-10-01, league opens 2026-09-29
 - [x] `--check-windows` verifies every window against the real schedule
 - [x] Zero-capture rule takes the denominator, so a quiet night is not an outage
-- [ ] **Uncomment the cron** in `.github/workflows/collector.yml` — **before 2026-09-29**
-- [ ] If the collector runs off Actions: export `CHIRA_HEARTBEAT_URL` there, one heartbeat owner (P1 in TODOS)
-- [ ] Wire NBA upcoming enumeration — before 2026-10-20
-- [ ] Resolve a 2026-27 abbreviation map (the 2025-26 map is a logged fallback)
+- [x] Abbreviation map vendored in the package (`src/chira/abbr_map_collector.json`): the first real dispatch crashed because `data/` is gitignored, so Actions never had the map (2026-09-28)
+- [x] Heartbeat proven end to end: run 36482495778, `heartbeat_delivered: true` (2026-09-28)
+- [x] **Cron uncommented and firing** (2026-09-28). Two scheduled runs on 09-29, both green
+- [x] **NHL opener 2026-09-29 captured by hand dispatch** (run 36623363003, 20:01Z): all five games every 5 minutes from pre-game through tipoff, 552 quotes across two runs
+- [x] **Schedule rebuilt for the 3-6 h cron lag** (`294dcd3`, 2026-10-01): fires every 30 min at :17/:47, each run polls, waits (within 45 min) or exits without pinging; sessions end at window close and hand over through the concurrency group. Replaces the `45 1` slot that idled 5h30 and pinged success every night
+- [x] Artifacts copied to `data/collector-archive/` (gitignored), 9 runs; re-run after each game night (90-day retention, runs do not accumulate). Known loss: 09-30 PIT@PHI and NYI@TOR have no T-6h or T-1h (no dispatch, scheduled run 3h23 late), not recoverable
+- [ ] **The new schedule covers a night on its own.** No run delivered yet as of 17:30Z 10-01; hand dispatch at 19:55Z (16:55 ADT) stays the safety net until it does. 10-01 dispatch scheduled (reminder 16:50 ADT)
+- [x] **Healthchecks period → 1 day, grace 6 h** (2026-10-01). Sessions now end at window close, so pings can be ~19 h apart
+- [x] Heartbeat owner decided (2026-10-01): **GitHub Actions owns `CHIRA_HEARTBEAT_URL`** and the collector stays on Actions. Any other runner gets its own Healthchecks check and its own variable (Chira-gamble's runner uses `CHIRA_GAMBLE_HEARTBEAT_URL`), so one green check can never hide another dead one. Reopen only if the collector itself moves off Actions
+- [ ] Wire NBA upcoming enumeration — before 2026-10-20. Source check 2026-10-01: the census's `nba_api` (stats.nba.com) needs a residential IP, so likely fails on Actions; `cdn.nba.com` schedule JSON returned 403 even locally; ESPN's scoreboard API answered locally (3 games on 10-20) but is unproven from Actions, and its 19:00Z BOS@DET looks like a placeholder time. Prove the source with a `once` dispatch before relying on it
+- [x] 2026-27 abbreviation map: **the 2025-26 fallback is accepted** (2026-10-01). It resolved every listed NHL game from the opener on; the only unresolved games were `no_market` (Polymarket had not listed them yet). The fallback is safe because `confirm` checks both team labels against each market's own outcomes, so a drifted code shows up as an unresolved game, never as a wrong market. **Reopen** if any unresolved reason other than `no_market` appears, and re-check NBA once its 2026-27 markets list
 
 Feature store half, **done 2026-09-27** → [notes/week7-features.md](../notes/week7-features.md)
 
@@ -92,20 +99,39 @@ Feature store half, **done 2026-09-27** → [notes/week7-features.md](../notes/w
 - [x] No price column in the feature frame, asserted by a test
 - [ ] E7: prove an availability source, timeboxed, needs live games from late October
 
-## Weeks 8-9 — the model — **not started; spec decided 2026-09-27**
+## Weeks 8-9 — the model — **in progress: rating frozen 2026-10-01; model not started**
 
 Before the first fit (engineering review, 2026-09-27):
 
-- [ ] `uv sync --extra model` (numpyro and jax are declared but not installed)
-- [ ] PREREGISTRATION Amendment 5: NHL back-to-back x home term; rating grid (K, home bonus, season carry-over) tuned on 2024-25 only, then frozen; all teams start at 1500; monthly rolling origins
-- [ ] Brier confirmed as the primary score in PLAN.md, with the reason; log loss still reported
-- [ ] NBA neutral-site list, applied inside the feature query (the census store stays untouched), with regression tests
-- [ ] Missing travel filled with the dev median, count printed in every fit report
-- [ ] Holdout guard in code: fitting on 2025-26 raises; `open_holdout()` runs once and writes a marker
+- [x] Model extras installed. Use `uv sync --extra store --extra model --group dev`: `uv sync --extra model` on its own is an exact sync and **removes** matplotlib and pyarrow
+- [x] PREREGISTRATION Amendment 5, written before any model code (2026-09-28): NHL back-to-back x home term; Elo rating tuned on 2024-25 only with the overlap disclosed; monthly rolling origins; missing-travel fill rule; holdout opened by code once → [PREREGISTRATION.md](../PREREGISTRATION.md)
+- [x] **Brier confirmed as the primary score** in [PLAN.md](../PLAN.md) Phase 5, with the reason (2026-10-01): an unclipped log loss is unbounded, so one mis-joined label at an extreme price can move it without limit while Brier's worst single game contributes 1 — and labels come from a third party, joined by slug, where this project has already found defects. Log loss still reported for every result
+- [x] NBA neutral-site list, vendored and applied inside the feature query, with regression tests; the league's own `isNeutral` is wrong for 2023-24 and is ignored → [notes/week7-neutral-and-holdout.md](../notes/week7-neutral-and-holdout.md)
+- [ ] Missing travel filled with the dev median, count printed in every fit report (pre-registered in 5d; lands with the model)
+- [x] Holdout seal in code: `open_holdout()` refuses a dirty tree, a second call, and an unpushed HEAD, and commits a marker; `assert_dev_only` refuses holdout rows and season-less rows (2026-09-28, hardened 2026-09-29)
+- [x] **Residual seal bypass closed in code** (2026-10-01). `open_holdout` pushes the marker before returning any label, and a failed push releases nothing while leaving the marker committed locally, so the next attempt refuses. `marker_on_remote` reads `<upstream>:HOLDOUT_OPENED.json` after a fetch and `is_open` consults it; an unreachable remote **raises**, because "cannot tell" is not "not opened". Tests pin the reproduction, a fresh clone of the tip, a failed push, and an unreachable remote
+- [ ] **Branch protection on `main`, blocking force-pushes — a GitHub setting, the user's.** The last link code cannot close: a force-push can still remove the pushed marker. Stated in `holdout.py`'s docstring so the seal is never read as airtight without it
+- [x] Seal scope written down (2026-10-01, uncommitted): pre-game inputs from EARLIER 2025-26 results (feature win rates, the 2025-26 Elo walk) are features guarded by the two canaries; the seal guards scoring → [notes/week7-neutral-and-holdout.md](../notes/week7-neutral-and-holdout.md)
+- [x] **Home advantage decided and recorded as the third reading of 5b** (2026-10-01). The model takes `ratings.MODEL_COVARIATE` (`rating_diff_strength`, H excluded) and owns home advantage entirely; `rating_diff` keeps the bonus only for `p_home_elo`, which the grid was tuned on. `H × 1[not neutral]` is constant across **2,531 of 2,542 dev games** — 2024-25 has only 11 neutral-site games — so carrying H into the covariate is collinear with the model's own home term on 99.57% of the sample. Pre-stated consequence: the neutral adjustment is identified by 11 games and will be reported as shrunk toward its prior
+
+**Left for week 8, in order** (handed to the dev agent 2026-10-01) — **items 1-5 done 2026-10-01**:
+
+1. [x] Review fixes and the seal-scope note committed (`334b09c`)
+2. [x] Home-advantage decision, recorded as the third reading of 5b (`0a75bc0`)
+3. [x] Brier-primary decision in PLAN.md, with the reason (`0a75bc0`)
+4. [x] Residual seal bypass closed, plus its tests (`0a75bc0`). Branch protection is the user's
+5. [x] TODOS: seal bypass recorded and resolved; NHL back-to-back closed on Amendment 5a; heartbeat-owner P1 closed on the 2026-10-01 decision (`0a75bc0`)
+6. [ ] **Push `334b09c` and `0a75bc0`** (`d66671c`, the freeze, is already public)
+
+940 tests pass, lint clean.
 
 The model:
 
-- [ ] Deterministic pre-game rating module, JAX-free, with its own point-in-time canary
+- [x] **Deterministic pre-game rating, frozen** (`d66671c`, 2026-10-01, **local, unpushed by choice**): NBA K=20 H=50 c=0.6 (log loss 0.60781), NHL K=16 H=50 c=0.9 (0.66618); both optima on a grid edge, disclosed, not widened; all 245 grid points published → [notes/week8-ratings.md](../notes/week8-ratings.md)
+- [x] 2023-24 burn-in fetched in full (1,230 NBA, 1,312 NHL), Arizona carried into Utah
+- [x] Review fixes (2026-10-01, uncommitted): delay override honoured; frozen values pinned by a CI golden test and a real-data recompute; the rating's own point-in-time canary with a must-fail form; NBA neutral override moved inside the walk. 928 tests pass
+- [x] **Freeze pushed** (`d66671c` on `origin/main`, 2026-10-01), before any 2025-26 rating was computed
+- [ ] 2025-26 ratings computed with the frozen constants, unchanged
 - [ ] Hierarchical logistic in `numpyro`, deterministic pre-game ratings as a fixed covariate
 - [ ] MCMC diagnostics as hard failures (T5)
 - [ ] Hyperprior sensitivity analysis
@@ -128,12 +154,10 @@ Detail and reasoning live in [TODOS.md](../TODOS.md).
 
 | Priority | Item | Deadline |
 |---|---|---|
-| P1 | Uncomment the collector cron | 2026-09-29 |
-| P1 | Heartbeat owner if the collector runs off Actions | Before the first off-Actions run |
+| P1 | Hand-dispatch the collector each game night, 19:55Z (16:55 ADT), until the new schedule covers a night alone | **Tonight** |
+| P1 | Branch protection on `main` (blocks force-pushing the holdout marker) — a GitHub setting | Before week 9 |
+| P1 | NBA upcoming enumeration for the collector | **2026-10-20** |
 | P1 | SSRN 5910522 unverified (403 to automated access; needs a human) | Before v2 |
-| P2 | NBA `neutral_site` has no source (decided: vendored overlay) | Before the first fit |
-| P2 | NHL back-to-back is partly a road dummy (decided: interaction term) | Before the first fit |
-| P2 | Wheatcroft ranks the log score above Brier (decided: keep Brier, write the reason) | Before the first fit |
 | P3 | Verify `last_trade_price` is market-level before anything reads it | Unscheduled |
 | P2 | Cache sizing, store hardening, test-fixture consolidation | Unscheduled |
 | P3 | CI actions on deprecated Node 20; Ubuntu 26 migration | 2026-10-19 |
@@ -141,7 +165,8 @@ Detail and reasoning live in [TODOS.md](../TODOS.md).
 
 ## Standing rules that are not tasks
 
-- The **2025-26 season is sealed** until the model is frozen. It gets one pass.
+- The **2025-26 season is sealed** until the model is frozen. It gets one pass. The seal
+  guards scoring; inputs built from earlier results are features, guarded by the canaries.
 - **Nothing availability-derived** enters the historical feature set.
 - The **market price is banned** from the headline model; it exists only for the nested test.
 - Every published number is rounded **from `headline2.json`**, never from a note's
