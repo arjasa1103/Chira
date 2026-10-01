@@ -43,6 +43,7 @@ import math
 from heapq import heappop, heappush
 
 from .features import RESULT_DELAY_SECONDS
+from .venues import is_neutral_site
 
 ELO_START = 1500.0
 
@@ -131,10 +132,26 @@ def carry_over(rating: float, c: float) -> float:
     return ELO_START + c * (rating - ELO_START)
 
 
-def _delay_for(sport: str) -> int:
+def _delay_for(sport: str, delays: dict[str, int] | None = None) -> int:
     """An unknown sport gets the LONGEST configured delay, never zero, the
     same rule `features._delay_case` uses and for the same reason."""
-    return RESULT_DELAY_SECONDS.get(sport, max(RESULT_DELAY_SECONDS.values()))
+    delays = delays or RESULT_DELAY_SECONDS
+    return delays.get(sport, max(delays.values()))
+
+
+def is_neutral(g: dict) -> bool:
+    """The league's flag OR the vendored NBA neutral-site table.
+
+    **Applied here, inside the walk, so no caller can forget it.** It used to
+    live in `scripts/run_ratings.py`, and the burn-in parquet stores the NBA's
+    own flag, which is False for all 1,230 2023-24 games (`schedule.nba_games`
+    carries no neutral-site field at all). A rating walk built anywhere else --
+    week 9's 2025-26 walk is the next one -- would have scored a Paris game
+    with a home bonus, and that wrong update persists for the rest of the
+    season. The same OR `features.py` applies in SQL.
+    """
+    return bool(g.get("neutral_site")) or is_neutral_site(
+        g["sport"], g["season"], str(g["game_id"]))
 
 
 def run_ratings(games: list[dict], *, k: float, h: float, c: float,
@@ -187,7 +204,8 @@ def run_ratings(games: list[dict], *, k: float, h: float, c: float,
                 rating[team] = carry_over(rating[team], c)
                 season_of[team] = season
 
-        hb = 0.0 if g.get("neutral_site") else float(h)
+        neutral = is_neutral(g)
+        hb = 0.0 if neutral else float(h)
         r_home, r_away = rating[home], rating[away]
         p_home = expected_home(r_home, r_away, hb)
         y = 1.0 if g["winner"] == "home" else 0.0
@@ -199,7 +217,10 @@ def run_ratings(games: list[dict], *, k: float, h: float, c: float,
             edge = (r_home - r_away) if y else (r_away - r_home)
         delta = float(k) * margin_multiplier(mov, edge) * (y - p_home)
 
-        available_at = g["start_t"] + _delay_for(sport)
+        # The merged table, not the module constant: `result_delay` used to be
+        # accepted and silently ignored, so a delay sensitivity run would
+        # have reported the default walk under another name.
+        available_at = g["start_t"] + _delay_for(sport, delays)
         heappush(pending, (available_at, seq, home, delta))
         heappush(pending, (available_at, seq + 1, away, -delta))
         seq += 2
@@ -213,7 +234,7 @@ def run_ratings(games: list[dict], *, k: float, h: float, c: float,
             "rating_diff": r_home + hb - r_away,
             "p_home_elo": p_home, "y": y,
             "mov": mov, "delta": delta,
-            "neutral_site": bool(g.get("neutral_site")),
+            "neutral_site": neutral,
         })
 
     apply_due(2 ** 62)   # settle everything, so final ratings are complete

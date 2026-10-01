@@ -97,5 +97,16 @@ published in week 6 before any model existed. Treating the seal as global would 
 published result; treating it as looser than it is would give a false sense that the
 model is sealed when it is not.
 
+**Pre-game inputs from *earlier* 2025-26 results are not labels either** (added
+2026-10-01, before week 9). The feature store already holds 2025-26 rows with prior wins
+and win rates, and week 9's Elo walk through 2025-26 needs the scores and start times of
+the games before each one. Both read outcomes of games that were over before the game
+being predicted started, which is what a point-in-time input is. They are kept honest by
+the availability rule (`features.RESULT_DELAY_SECONDS`) and the two canaries that prove
+it, `TestTheLeakageCanary` for features and `TestTheRatingCanary` for the rating, not by
+this seal. **The seal guards scoring:** a 2025-26 game's *own* outcome entering any fit,
+tune or evaluation goes only through `open_holdout`. That is why `open_holdout` releases
+outcomes rather than scores, and why the 2025-26 rating walk reads the store directly.
+
 A test in `tests/test_holdout.py` asserts this repository has **no** `HOLDOUT_OPENED.json`.
 When that test fails, either week 9 happened or something opened the seal by accident.

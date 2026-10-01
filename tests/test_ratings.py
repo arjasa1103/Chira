@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -271,3 +272,209 @@ class TestTheFrozenChoice:
             assert (best["k"], best["h"], best["c"]) == (
                 CHOSEN[sport]["k"], CHOSEN[sport]["h"], CHOSEN[sport]["c"])
             assert round(best["log_loss"], 5) == CHOSEN_LOG_LOSS[sport]
+
+
+class TestTheDelayOverride:
+    """`result_delay` was accepted and silently ignored: `run_ratings` built
+    the merged table and then read the module constant. A delay sensitivity
+    run would have reported the default walk under another name."""
+
+    def test_an_override_changes_what_a_later_game_can_see(self):
+        games = [g(1, T0, "bos", "nyk", 100, 130),
+                 g(2, T0 + 3600, "nyk", "phi", 100, 110)]
+        default = run_ratings(games, k=20, h=50, c=0.6)
+        assert default[1]["r_away_pre"] == ELO_START
+        instant = run_ratings(games, k=20, h=50, c=0.6, result_delay={"nba": 0})
+        assert instant[1]["r_away_pre"] > ELO_START
+
+    def test_the_grid_passes_the_override_through(self):
+        games = [g(1, T0, "bos", "nyk", 100, 130),
+                 g(2, T0 + 3600, "nyk", "phi", 100, 110)]
+        a = grid_search(games, "nba", criterion_season="2024-25")
+        b = grid_search(games, "nba", criterion_season="2024-25",
+                        result_delay={"nba": 0})
+        assert [r["log_loss"] for r in a] != [r["log_loss"] for r in b]
+
+    def test_omitting_it_is_exactly_the_default_table(self):
+        games = [g(1, T0, "bos", "nyk", 100, 130),
+                 g(2, T0 + 3600, "nyk", "phi", 100, 110)]
+        assert run_ratings(games, k=20, h=50, c=0.6) == run_ratings(
+            games, k=20, h=50, c=0.6, result_delay=dict(RESULT_DELAY_SECONDS))
+
+
+class TestTheNeutralOverrideIsInsideTheWalk:
+    """The NBA's own flag is False for every 2023-24 game in the burn-in, so
+    the vendored table has to be applied by the walk itself, where no caller
+    can forget it."""
+
+    def test_a_vendored_neutral_game_gets_no_bonus_even_unflagged(self):
+        paris = g("0022300527", T0, "bkn", "cle", 100, 110, season="2023-24")
+        assert paris["neutral_site"] is False
+        row = run_ratings([paris], k=20, h=50, c=0.6)[0]
+        assert row["neutral_site"] is True
+        assert row["home_bonus"] == 0.0
+
+    def test_an_ordinary_game_still_gets_the_bonus(self):
+        row = run_ratings([g("0022300001", T0, "bkn", "cle", 100, 110,
+                             season="2023-24")], k=20, h=50, c=0.6)[0]
+        assert row["neutral_site"] is False
+        assert row["home_bonus"] == 50.0
+
+    def test_nhl_keeps_the_leagues_own_flag(self):
+        row = run_ratings([g("x1", T0, "det", "ott", 2, 3, sport="nhl",
+                             neutral=True)], k=16, h=50, c=0.9)[0]
+        assert row["home_bonus"] == 0.0
+
+
+TEAMS = ("aaa", "bbb", "ccc", "ddd", "eee", "fff")
+
+
+def golden_schedule(sport):
+    """Two seasons, six teams, two games a day ONE hour apart (so the
+    availability delay binds), a carry-over, and some neutral sites.
+
+    Built from an inline LCG, not `random`, so the schedule cannot move with
+    a Python release.
+    """
+    state = 20261001
+
+    def nxt(n):
+        nonlocal state
+        state = (state * 6364136223846793005 + 1442695040888963407) % 2**64
+        return (state >> 33) % n
+
+    lo, span = (90, 36) if sport == "nba" else (0, 7)
+    games = []
+    for si, season in enumerate(("2023-24", "2024-25")):
+        base = T0 + si * 200 * DAY
+        for d in range(40):
+            for slot in range(2):
+                a = nxt(6)
+                h = (a + 1 + nxt(5)) % 6
+                hp, ap = lo + nxt(span), lo + nxt(span)
+                if hp == ap:
+                    hp += 1
+                n = len(games) + 1
+                games.append({"sport": sport, "season": season, "game_id": f"g{n}",
+                              "et_date": None, "away": TEAMS[a], "home": TEAMS[h],
+                              "away_pts": ap, "home_pts": hp,
+                              "winner": "home" if hp > ap else "away",
+                              "neutral_site": n % 37 == 0,
+                              "start_t": base + d * DAY + slot * 3600})
+    return games
+
+
+class TestTheArithmeticIsPinned:
+    """`CHOSEN_LOG_LOSS` was only ever compared with itself, and the one test
+    that compares it with real output reads a gitignored JSON and is skipped in
+    CI. A refactor that changed the walk passed every test. This pins the
+    arithmetic itself, at the frozen constants, on a schedule CI always has."""
+
+    GOLDEN: ClassVar[dict] = {
+        "nba": (0.725306597657, {"aaa": 1538.847508, "bbb": 1485.427142,
+                                 "ccc": 1472.301439, "ddd": 1475.940068,
+                                 "eee": 1504.810807, "fff": 1522.673036}),
+        "nhl": (0.67960968202, {"aaa": 1515.725879, "bbb": 1517.935312,
+                                "ccc": 1529.686679, "ddd": 1464.325003,
+                                "eee": 1503.093139, "fff": 1469.233988}),
+    }
+
+    @pytest.mark.parametrize("sport", ["nba", "nhl"])
+    def test_the_frozen_walk_reproduces_its_golden_values(self, sport):
+        games = golden_schedule(sport)
+        rows = [r for r in run_ratings(games, **CHOSEN[sport])
+                if r["season"] == "2024-25"]
+        want_ll, want_final = self.GOLDEN[sport]
+        assert log_loss(rows) == pytest.approx(want_ll, abs=1e-11)
+        final = final_ratings(games, **CHOSEN[sport])
+        assert {k.split(":")[1]: v for k, v in final.items()} == pytest.approx(
+            want_final, abs=1e-5)
+
+    @pytest.mark.skipif(
+        not (Path("data/burnin/burnin-2023-24.parquet").is_file()
+             and list(Path("data/snapshots").glob("census-*"))),
+        reason="needs the snapshot and the burn-in, neither of which is in git")
+    @pytest.mark.parametrize("sport", ["nba", "nhl"])
+    def test_the_real_data_reproduces_the_pinned_criterion(self, sport):
+        """Recomputed from the data, not read back from a written grid."""
+        import importlib.util
+
+        from chira.analysis import open_frame
+
+        spec = importlib.util.spec_from_file_location(
+            "run_ratings_under_test", Path("scripts/run_ratings.py"))
+        rr = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rr)
+        snap = sorted(Path("data/snapshots").glob("census-*"))[-1]
+        burn, dev = rr.load_games(open_frame(str(snap), verify=False),
+                                  rr.BURNIN, sport)
+        rows = [r for r in run_ratings(burn + dev, **CHOSEN[sport])
+                if r["season"] == "2024-25"]
+        assert round(log_loss(rows), 5) == CHOSEN_LOG_LOSS[sport]
+        assert round(brier(rows), 5) == CHOSEN_BRIER[sport]
+
+
+class TestTheRatingCanary:
+    """The rating's own point-in-time canary, the analogue of E5 for features.
+
+    A game's pre-game rating may depend only on results that were PUBLIC when
+    it started: games that started at least `RESULT_DELAY_SECONDS` earlier.
+    So flipping every result that was NOT yet public -- the game itself, every
+    later game, and any earlier game still being played -- must leave that
+    game's pre-game ratings untouched. The must-fail form runs a walk that
+    treats results as public at tipoff and proves the canary catches it.
+    """
+
+    @staticmethod
+    def _flip(game):
+        out = dict(game)
+        out["home_pts"], out["away_pts"] = game["away_pts"], game["home_pts"]
+        out["winner"] = "away" if game["winner"] == "home" else "home"
+        return out
+
+    @classmethod
+    def _unseen_flipped(cls, games, n):
+        """Flip every result that was not public when game n started."""
+        t_n = games[n]["start_t"]
+        delay = RESULT_DELAY_SECONDS[games[n]["sport"]]
+        return [cls._flip(x) if x["start_t"] + delay > t_n else x for x in games]
+
+    @staticmethod
+    def _pre(row):
+        return (row["game_id"], row["r_home_pre"], row["r_away_pre"])
+
+    @staticmethod
+    def _overlapping(games):
+        """Games that share a team with a game one hour earlier: the case where
+        the delay binds, so the case a leak would show up in."""
+        out = []
+        for i in range(1, len(games)):
+            a, b = games[i - 1], games[i]
+            if (0 < b["start_t"] - a["start_t"] < RESULT_DELAY_SECONDS[b["sport"]]
+                    and {a["away"], a["home"]} & {b["away"], b["home"]}):
+                out.append(i)
+        return out
+
+    @pytest.mark.parametrize("sport", ["nba", "nhl"])
+    def test_no_unpublished_result_reaches_a_pre_game_rating(self, sport):
+        games = golden_schedule(sport)
+        base = run_ratings(games, **CHOSEN[sport])
+        probes = [*self._overlapping(games)[:6], 0, 1, 79, 80, 159]
+        assert len(probes) > 6, "the schedule must exercise the binding case"
+        for n in probes:
+            alt = run_ratings(self._unseen_flipped(games, n), **CHOSEN[sport])
+            assert self._pre(base[n]) == self._pre(alt[n]), n
+
+    def test_the_canary_can_die(self):
+        """A walk that makes every result public at tipoff leaks the earlier
+        game of an evening into the later one. The canary must catch it, or it
+        is not testing anything."""
+        games = golden_schedule("nba")
+        leaky = {"nba": 0}
+        caught = 0
+        for n in self._overlapping(games):
+            base = run_ratings(games, **CHOSEN["nba"], result_delay=leaky)
+            alt = run_ratings(self._unseen_flipped(games, n), **CHOSEN["nba"],
+                              result_delay=leaky)
+            caught += self._pre(base[n]) != self._pre(alt[n])
+        assert caught > 0

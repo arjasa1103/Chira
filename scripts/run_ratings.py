@@ -33,10 +33,10 @@ from chira.ratings import (
     GRID_SIZE,
     brier,
     grid_search,
+    is_neutral,
     log_loss,
     on_grid_edge,
 )
-from chira.venues import is_neutral_site
 
 BURNIN = "data/burnin/burnin-2023-24.parquet"
 OUT_DIR = "data/ratings"
@@ -66,23 +66,27 @@ def rows(cur) -> list[dict]:
     return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
 
 
-def with_neutral_override(games: list[dict]) -> list[dict]:
-    """OR the vendored NBA neutral-site table into the league flag.
-
-    The same override `features.py` applies. It matters more here than there:
-    a neutral game scored with a home bonus is a wrong expectation, which
-    feeds a wrong update, which persists in the rating for the rest of the
-    season.
-    """
-    n = 0
-    for g in games:
-        if not g["neutral_site"] and is_neutral_site(
-                g["sport"], g["season"], str(g["game_id"])):
-            g["neutral_site"] = True
-            n += 1
+def report_neutral_override(games: list[dict]) -> int:
+    """How many games the vendored NBA table makes neutral that the league's
+    flag does not. Reporting only: the override itself is applied inside
+    `ratings.run_ratings` (`ratings.is_neutral`), so every walk gets it."""
+    n = sum(1 for g in games if is_neutral(g) and not g["neutral_site"])
     if n:
-        print(f"    neutral-site override applied to {n} game(s)")
-    return games
+        print(f"    neutral-site override applies to {n} game(s)")
+    return n
+
+
+def load_games(con, burnin: str, sport: str) -> tuple[list[dict], list[dict]]:
+    """The burn-in and criterion games for one sport, as the grid sees them.
+
+    Both sets pass `holdout.assert_dev_only` here, so the guard sits on the
+    loader itself and not on one caller of it.
+    """
+    burn = rows(con.execute(_BURNIN_SQL, [burnin, sport]))
+    dev = rows(con.execute(_GAMES_SQL, [DEV_SEASON, sport]))
+    assert_dev_only(dev, what=f"{sport} criterion games")
+    assert_dev_only(burn, what=f"{sport} burn-in games")
+    return burn, dev
 
 
 def baselines(games: list[dict]) -> dict:
@@ -123,13 +127,8 @@ def main() -> int:
     for sport in args.sports:
         print(f"\n=== {sport.upper()} "
               f"({GRID_SIZE[sport]} grid points) ===")
-        burn = with_neutral_override(
-            rows(con.execute(_BURNIN_SQL, [args.burnin, sport])))
-        dev = with_neutral_override(
-            rows(con.execute(_GAMES_SQL, [DEV_SEASON, sport])))
-        # The guard, on the set the grid is actually scored on.
-        assert_dev_only(dev, what=f"{sport} criterion games")
-        assert_dev_only(burn, what=f"{sport} burn-in games")
+        burn, dev = load_games(con, args.burnin, sport)
+        report_neutral_override(burn + dev)
         print(f"  burn-in {BURNIN_SEASON}: {len(burn):,} games"
               f" | criterion {DEV_SEASON}: {len(dev):,} games")
 

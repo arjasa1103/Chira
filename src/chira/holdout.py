@@ -28,6 +28,21 @@ section 8 to stratify *within* season, and it was published in week 6 before
 any model existed. Confusing the two would either void a published result or
 give a false sense that the model is sealed when it is not. `assert_dev_only`
 is the guard for the model side.
+
+**Pre-game inputs built from EARLIER 2025-26 results are not labels either.**
+The feature store's prior wins and win rates, and the Elo walk through 2025-26
+(Amendment 5b), read the outcomes of games that were over before the game
+being predicted started. That is what a point-in-time input is; every live
+prediction works the same way. What keeps them honest is not this seal but
+the availability rule (`features.RESULT_DELAY_SECONDS`) and the two canaries
+that prove it: `TestTheLeakageCanary` in tests/test_features.py and
+`TestTheRatingCanary` in tests/test_ratings.py. What this seal guards is
+SCORING: a 2025-26 game's OWN outcome entering a fit, a tune or an evaluation
+of any model, which happens only through `open_holdout`. This is why
+`open_holdout` releases outcomes and not scores or start times, and why the
+2025-26 rating walk reads the store directly. Written down 2026-10-01, before
+week 9, because the feature table already held 2025-26 rows and nothing said
+why that was allowed.
 """
 
 from __future__ import annotations
