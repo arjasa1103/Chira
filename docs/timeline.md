@@ -17,7 +17,7 @@ cannot move. Companion to [checklist.md](checklist.md), which tracks the work it
 | Days to deadline | 60 |
 | Binding constraint | Fixed dates, not effort |
 | Collector | **Live since 2026-09-28.** Opening night fully captured by hand dispatch. Schedule rebuilt 2026-10-01 for the 3-6 h cron lag; the new schedule has not fired yet |
-| Unpushed | Three commits: the rating review fixes and seal-scope note (`334b09c`), the week-8 decisions and the seal's rewind bypass (`0a75bc0`), and the checklist (`f42bd0b`). The freeze itself (`d66671c`) is public since 2026-10-01 |
+| Unpushed | Nothing. Week 8's decisions, the rating review fixes, the seal's rewind bypass and its failed-push fix are public since 2026-10-01 |
 
 ---
 
@@ -101,31 +101,22 @@ day before any 2025-26 rating existed ([notes/week8-ratings.md](../notes/week8-r
   Both optima sit on a grid edge, which is disclosed, and the grid was not widened.
 - **2023-24 warm-up season fetched in full.** Utah's 2023-24 schedule had to be fetched
   as Arizona, because the league returns zero Utah games for that season.
-- **Review fixes, uncommitted:**
-  - a delay override that was silently ignored now works;
-  - the frozen log losses are now actually pinned, by a CI golden test plus a recompute
-    from the real data;
-  - the rating has its own leakage canary, with a must-fail form;
-  - the NBA neutral-site fix now lives inside the rating walk;
-  - the holdout seal's scope is written down: inputs from earlier results are features,
-    and the seal guards scoring.
+- **Review fixes** (`334b09c`): a silently ignored delay override now works; the frozen
+  log losses are pinned by a CI golden test and a real-data recompute; the rating has its
+  own leakage canary with a must-fail form; the NBA neutral-site fix lives inside the
+  walk; the seal's scope is written down (earlier results are features, the seal guards
+  scoring).
+- **Decisions before the first fit, done** (`0a75bc0`): the model takes
+  `rating_diff_strength` and owns home advantage itself (third reading of 5b); Brier stays
+  primary, with the reason in PLAN.md. The missing-travel fill lands with the model.
+- **The seal, finished in code** (`0a75bc0` plus the review fix): the marker is pushed
+  before any label, `is_open` reads the remote, and a push that does not land rolls back
+  instead of spending the holdout with nothing released. What is left is branch
+  protection on `main`, blocking force-pushes only, which is a GitHub setting and yours.
 
-**Before the first model fit:**
-
-- Decide which term carries home advantage. The rating difference includes the home
-  bonus, and the model plan has its own home term.
-- Brier as the primary score, with the reason.
-- The missing-travel fill.
-
-**Before week 9 opens the holdout:**
-
-- **Close the residual seal bypass.** Reproduced 2026-10-01: after one open,
-  `git reset --hard HEAD~1` deletes the local marker commit and a second open returns the
-  labels again, leaving nothing on GitHub. The fix pushes the marker before any label is
-  returned, makes `is_open` check the remote, and needs branch protection against
-  force-pushes.
-
-The dev agent has week 8's remaining items, in order, in the checklist.
+**Next: the model.** The dev agent starts on the numpyro model and the 2024-25 rolling
+origins. Training uses the census, not the collector's 2026-27 prices, and the 2025-26
+holdout stays sealed until the model is frozen and the dress rehearsal passes.
 
 **Weeks 8-9.** The model, then a full dress rehearsal on 2024-25 producing every table and
 figure, then the 2025-26 holdout opened exactly once. The holdout is a one-way door, and

@@ -110,8 +110,9 @@ Before the first fit (engineering review, 2026-09-27):
 - [ ] Missing travel filled with the dev median, count printed in every fit report (pre-registered in 5d; lands with the model)
 - [x] Holdout seal in code: `open_holdout()` refuses a dirty tree, a second call, and an unpushed HEAD, and commits a marker; `assert_dev_only` refuses holdout rows and season-less rows (2026-09-28, hardened 2026-09-29)
 - [x] **Residual seal bypass closed in code** (2026-10-01). `open_holdout` pushes the marker before returning any label, and a failed push releases nothing while leaving the marker committed locally, so the next attempt refuses. `marker_on_remote` reads `<upstream>:HOLDOUT_OPENED.json` after a fetch and `is_open` consults it; an unreachable remote **raises**, because "cannot tell" is not "not opened". Tests pin the reproduction, a fresh clone of the tip, a failed push, and an unreachable remote
-- [ ] **Branch protection on `main`, blocking force-pushes — a GitHub setting, the user's.** The last link code cannot close: a force-push can still remove the pushed marker. Stated in `holdout.py`'s docstring so the seal is never read as airtight without it
-- [x] Seal scope written down (2026-10-01, uncommitted): pre-game inputs from EARLIER 2025-26 results (feature win rates, the 2025-26 Elo walk) are features guarded by the two canaries; the seal guards scoring → [notes/week7-neutral-and-holdout.md](../notes/week7-neutral-and-holdout.md)
+- [x] **The seal's failed-push dead end, fixed in review** (2026-10-01). The first version kept the marker after a failed push and said "push it yourself, then re-run"; the re-run refused on that local marker, so one network blip spent the holdout with **no label ever released** (reproduced against the real module with an unwritable remote). Now labels are released only once the marker is **confirmed on the remote**; a push that does not land rolls the local marker commit back (`reset --keep`, never over other changes) and a retry opens cleanly; a push that lands but reports failure still releases; an unconfirmable push keeps the marker and a re-run settles it. Re-verified with the real unwritable-remote reproduction. 944 tests pass
+- [ ] **Branch protection on `main`, blocking force-pushes — a GitHub setting, the user's.** The last link code cannot close: a force-push can still remove the pushed marker. Stated in `holdout.py`'s docstring so the seal is never read as airtight without it. **Block force-pushes and deletions only; do NOT require pull requests or status checks on `main`**, because `open_holdout` pushes its marker straight to `main`. A rule that rejects that push no longer spends the seal (it rolls back), but it would stop the holdout from ever opening. Checked 2026-10-01: `main` is not yet protected
+- [x] Seal scope written down (`334b09c`, 2026-10-01): pre-game inputs from EARLIER 2025-26 results (feature win rates, the 2025-26 Elo walk) are features guarded by the two canaries; the seal guards scoring → [notes/week7-neutral-and-holdout.md](../notes/week7-neutral-and-holdout.md)
 - [x] **Home advantage decided and recorded as the third reading of 5b** (2026-10-01). The model takes `ratings.MODEL_COVARIATE` (`rating_diff_strength`, H excluded) and owns home advantage entirely; `rating_diff` keeps the bonus only for `p_home_elo`, which the grid was tuned on. `H × 1[not neutral]` is constant across **2,531 of 2,542 dev games** — 2024-25 has only 11 neutral-site games — so carrying H into the covariate is collinear with the model's own home term on 99.57% of the sample. Pre-stated consequence: the neutral adjustment is identified by 11 games and will be reported as shrunk toward its prior
 
 **Left for week 8, in order** (handed to the dev agent 2026-10-01) — **items 1-5 done 2026-10-01**:
@@ -121,15 +122,13 @@ Before the first fit (engineering review, 2026-09-27):
 3. [x] Brier-primary decision in PLAN.md, with the reason (`0a75bc0`)
 4. [x] Residual seal bypass closed, plus its tests (`0a75bc0`). Branch protection is the user's
 5. [x] TODOS: seal bypass recorded and resolved; NHL back-to-back closed on Amendment 5a; heartbeat-owner P1 closed on the 2026-10-01 decision (`0a75bc0`)
-6. [ ] **Push `334b09c` and `0a75bc0`** (`d66671c`, the freeze, is already public)
-
-940 tests pass, lint clean.
+6. [x] **Pushed** 2026-10-01, with the review's seal fix, after a review of the four commits (944 tests pass, lint clean)
 
 The model:
 
-- [x] **Deterministic pre-game rating, frozen** (`d66671c`, 2026-10-01, **local, unpushed by choice**): NBA K=20 H=50 c=0.6 (log loss 0.60781), NHL K=16 H=50 c=0.9 (0.66618); both optima on a grid edge, disclosed, not widened; all 245 grid points published → [notes/week8-ratings.md](../notes/week8-ratings.md)
+- [x] **Deterministic pre-game rating, frozen** (`d66671c`, 2026-10-01, pushed the same day): NBA K=20 H=50 c=0.6 (log loss 0.60781), NHL K=16 H=50 c=0.9 (0.66618); both optima on a grid edge, disclosed, not widened; all 245 grid points published → [notes/week8-ratings.md](../notes/week8-ratings.md)
 - [x] 2023-24 burn-in fetched in full (1,230 NBA, 1,312 NHL), Arizona carried into Utah
-- [x] Review fixes (2026-10-01, uncommitted): delay override honoured; frozen values pinned by a CI golden test and a real-data recompute; the rating's own point-in-time canary with a must-fail form; NBA neutral override moved inside the walk. 928 tests pass
+- [x] Review fixes (`334b09c`, 2026-10-01): delay override honoured; frozen values pinned by a CI golden test and a real-data recompute; the rating's own point-in-time canary with a must-fail form; NBA neutral override moved inside the walk. 928 tests pass
 - [x] **Freeze pushed** (`d66671c` on `origin/main`, 2026-10-01), before any 2025-26 rating was computed
 - [ ] 2025-26 ratings computed with the frozen constants, unchanged
 - [ ] Hierarchical logistic in `numpyro`, deterministic pre-game ratings as a fixed covariate
