@@ -94,6 +94,18 @@ def steps() -> list[dict]:
          "why": "E9: runs the leakage canary against the real census, then "
                 "assembles rest, back-to-backs, travel and prior results",
          "network": False},
+        {"name": "burn-in season",
+         "cmd": ["scripts/fetch_burnin.py"],
+         "makes": "data/burnin/burnin-2023-24.parquet",
+         "why": "Amendment 5b: 2023-24 results for the Elo burn-in, outside "
+                "the census store. Schedule and scores only, no prices",
+         "network": True},
+        {"name": "Elo grid",
+         "cmd": ["scripts/run_ratings.py"],
+         "makes": "data/ratings/grid-nba.json",
+         "why": "reproduces the 245-point grid behind the frozen K/H/c in "
+                "ratings.CHOSEN; it does not re-choose them",
+         "network": False},
     ]
     return out
 

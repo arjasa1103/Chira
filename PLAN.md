@@ -549,6 +549,17 @@ in `chart-data.json`). Full write-up: notes/week4-charts.md.
 > before each holdout game, and it removes the model-fit leakage path as a side effect.
 > Two independent voices converged on (a). No longer a gate item.
 
+- [x] **The deterministic pre-game rating is built and frozen**
+      (`src/chira/ratings.py`, `scripts/fetch_burnin.py`,
+      `scripts/run_ratings.py`, 2026-10-01). Amendment 5b's Elo, tuned on 2024-25 only
+      with 2023-24 as burn-in: **NBA K=20 H=50 c=0.6** (log loss 0.60781, beating the
+      home base rate by 0.081) and **NHL K=16 H=50 c=0.9** (0.66618, beating it by only
+      0.019). Frozen as `ratings.CHOSEN` and pinned by a test, with all 245 grid points
+      in notes/week8-ratings.md, committed before any 2025-26 rating was computed.
+      **Both optima sit on a grid edge** and the marginal profile is still improving at
+      the boundary -- NBA wants H below 50, NHL wants c above 0.9 -- reported as a
+      limitation and NOT widened. The availability rule binds on 76.4% of NBA games
+      here, where it never bound in the feature store, because Elo is league-wide.
 - [x] **The holdout is sealed by code, before any model exists**
       (`src/chira/holdout.py`, 2026-09-28). Amendment 5e: `open_holdout` refuses a dirty
       tree (`--porcelain`, so untracked files count), refuses a second call, and commits
