@@ -37,12 +37,14 @@ from chira.collector import (
     et_now,
     in_poll_window,
     is_season_active,
+    minutes_until_window,
     next_poll_delay,
     parse_book,
     poll_target,
     quote_row,
     resolve_targets,
     upcoming_targets,
+    window_is_too_far,
     zero_capture_is_a_failure,
 )
 
@@ -649,3 +651,139 @@ class TestTheVendoredAbbreviationMap:
         for sports in doc["seasons"].values():
             for entry in sports.values():
                 assert set(entry) == {"map", "unresolved"}
+
+
+def et(y, m, d, h=0, mi=0):
+    return datetime(y, m, d, h, mi, tzinfo=ET)
+
+
+class TestEachRunDecidesWhetherToWait:
+    """The schedule fires every 30 minutes because GitHub delivers scheduled
+    runs 3-6 hours late (measured 2026-09-28/30). Each run decides for itself:
+    poll, wait briefly for the window, or exit at once."""
+
+    def test_inside_the_window_there_is_nothing_to_wait_for(self):
+        assert minutes_until_window(et(2026, 10, 20, 18, 0)) == 0
+        assert not window_is_too_far(et(2026, 10, 20, 18, 0))
+        assert not window_is_too_far(et(2026, 10, 21, 1, 0))  # past midnight ET
+
+    def test_a_run_just_before_the_window_waits_for_it(self):
+        """The hand dispatch at 15:55 ET lands here, and so should a cron."""
+        assert minutes_until_window(et(2026, 10, 20, 15, 55)) == pytest.approx(5)
+        assert not window_is_too_far(et(2026, 10, 20, 15, 30))
+
+    def test_a_run_far_from_the_window_exits(self):
+        assert minutes_until_window(et(2026, 10, 20, 15, 0)) == pytest.approx(60)
+        assert window_is_too_far(et(2026, 10, 20, 15, 0))
+
+    def test_the_old_second_slot_would_now_exit_instead_of_idling_5h30(self):
+        """`45 1` arrived at 07:26-07:30 UTC on 2026-09-29 and 09-30, polled
+        nothing for 5h30, and pinged success. That run now stops at once."""
+        assert window_is_too_far(utc(2026, 9, 30, 7, 26))
+        assert minutes_until_window(utc(2026, 9, 30, 7, 26)) == pytest.approx(754)
+
+    def test_a_session_ends_when_the_window_closes(self):
+        assert not window_is_too_far(et(2026, 10, 21, 2, 30))
+        assert window_is_too_far(et(2026, 10, 21, 2, 31))
+
+    def test_the_count_is_real_minutes_across_the_dst_change(self):
+        """2026-11-01 03:00 EST to 16:00 EST is 13 hours of real time."""
+        assert minutes_until_window(utc(2026, 11, 1, 8, 0)) == pytest.approx(780)
+
+    def test_the_early_start_margin_is_wider_than_the_cron_spacing(self):
+        """Fired every 30 minutes, some run lands inside the margin whenever
+        the delay is steady across consecutive slots."""
+        from chira.collector import EARLY_START_MINUTES
+        assert EARLY_START_MINUTES > 30
+
+    def test_the_plan_reports_the_wait(self):
+        p = describe_plan(et(2026, 10, 20, 15, 30), WINDOWS)
+        assert p["minutes_until_window"] == pytest.approx(30)
+        assert p["early_start_minutes"] > 30
+
+
+def _load_runner(monkeypatch, tmp_path, *extra_argv):
+    """Import scripts/run_collector.py as a module with argv pointed at tmp."""
+    import importlib.util
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location(
+        "run_collector_under_test", root / "scripts" / "run_collector.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    monkeypatch.setattr(sys, "argv", [
+        "run_collector.py", "--store", str(tmp_path / "live.duckdb"),
+        "--log", str(tmp_path / "collector.jsonl"),
+        "--cache", str(tmp_path / "cache"), *extra_argv])
+    return mod
+
+
+class _NoPing:
+    pings: ClassVar[list] = []
+
+    def __init__(self, *a, **k):
+        self.last_error = None
+
+    def ping(self, *, ok=True, detail=""):
+        _NoPing.pings.append(ok)
+        return True
+
+
+class TestTheRunnerHonoursTheDecision:
+    def test_a_run_far_from_the_window_exits_before_logging_or_pinging(
+            self, monkeypatch, tmp_path):
+        """A run that collected nothing must not satisfy the dead-man's
+        switch, or a night with no real session looks green."""
+        mod = _load_runner(monkeypatch, tmp_path)
+        _NoPing.pings = []
+        monkeypatch.setattr(mod, "is_season_active", lambda *a, **k: True)
+        monkeypatch.setattr(mod, "window_is_too_far", lambda *a, **k: True)
+        monkeypatch.setattr(mod, "Heartbeat", _NoPing)
+        assert mod.main() == 0
+        assert _NoPing.pings == []
+        assert not (tmp_path / "collector.jsonl").exists()
+        assert not (tmp_path / "live.duckdb").exists()
+
+    def test_a_session_stops_at_window_close_and_is_judged_at_its_last_poll(
+            self, monkeypatch, tmp_path):
+        """Sessions now end outside the window. Judged at exit, a session that
+        captured nothing while games were due would pass as a quiet night."""
+        mod = _load_runner(monkeypatch, tmp_path)
+        _NoPing.pings = []
+        def then_hold(*values):
+            it = iter(values)
+            last = [values[-1]]
+            return lambda *a, **k: next(it, last[0])
+
+        window = then_hold(True, False)     # one poll, then the window closes
+        too_far = then_hold(False, True)    # start: stay; after: closed
+        seen = {}
+
+        def judge(captured, **kw):
+            seen.update(kw, captured=captured)
+            return False
+
+        game = {"slug": "nhl-a-b-2026-10-20"}
+        monkeypatch.setattr(mod, "is_season_active", lambda *a, **k: True)
+        monkeypatch.setattr(mod, "in_poll_window", window)
+        monkeypatch.setattr(mod, "window_is_too_far", too_far)
+        monkeypatch.setattr(mod, "Heartbeat", _NoPing)
+        monkeypatch.setattr(mod, "Client", lambda *a, **k: type(
+            "C", (), {"stats": {}})())
+        monkeypatch.setattr(mod, "Cache", lambda *a, **k: None)
+        monkeypatch.setattr(mod, "abbr_map_for", lambda *a, **k: ({}, "2026-27"))
+        monkeypatch.setattr(mod, "map_fingerprint", lambda *a, **k: "x")
+        monkeypatch.setattr(mod, "collect_targets", lambda *a, **k: ([game], []))
+        monkeypatch.setattr(mod, "upcoming_targets", lambda t, **k: list(t))
+        monkeypatch.setattr(mod, "poll_target", lambda *a, **k: [])
+        monkeypatch.setattr(mod.time, "sleep", lambda s: None)
+        monkeypatch.setattr(mod, "zero_capture_is_a_failure", judge)
+
+        assert mod.main() == 0
+        log = (tmp_path / "collector.jsonl").read_text(encoding="utf-8")
+        assert '"window_closed"' in log
+        assert seen["captured"] == 0
+        assert seen["targets_due"] == 1
+        assert seen["now"] is not None, "judged at exit, not at the last poll"
+        assert _NoPing.pings == [True]

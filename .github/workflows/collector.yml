@@ -1,42 +1,39 @@
 name: collector
 
-# The forward prices-only collector (PLAN.md Phase 6).
+# The forward prices-only collector (PLAN.md Phase 6). Live since 2026-09-28.
 #
-# NOT ENABLED YET. The 2026-27 seasons are the target and the code no-ops
-# outside its configured season windows, so until late October 2026 every run
-# exits 0 having done nothing. Turning this on is a deliberate act: it needs the
-# CHIRA_HEARTBEAT_URL secret set first, or the dead-man's switch is not armed
-# and a collector that never starts will report nothing to nobody.
+# WHY IT FIRES EVERY 30 MINUTES. The poll window is 16:00-02:30 ET (20:00-06:30
+# UTC under EDT, 21:00-07:30 under EST). It used to be covered by two crons
+# aimed at the window, `0 20` and `45 1`. GitHub delivered them hours late:
+# measured 2026-09-28/30, 3h22 to 5h45. The first slot started after early
+# puck drops and the second landed wholly outside the window, polled nothing
+# for 5h30 and still pinged success. No fixed cron can aim at a target when
+# the delay is that large and that variable, so the schedule stops aiming:
 #
-# SCHEDULING ARITHMETIC. The poll window is 16:00-02:30 ET, which is
-# 20:00-06:30 UTC under EDT and 21:00-07:30 UTC under EST: a union of
-# 20:00-07:30 UTC, about 11.5 hours. One Actions job is capped at 6 hours and a
-# session stops at 5h30 to leave room to report its own outcome, so TWO chained
-# sessions cover the window. The cron is pinned in UTC because that is all
-# GitHub offers; the real gate is computed in America/New_York inside
-# collector.py, so a DST shift moves the effective window and not the coverage.
+#   - It fires every 30 minutes, at :17 and :47. GitHub's docs name the start
+#     of every hour as the high-load time when scheduled runs are delayed or
+#     dropped, so the minutes are chosen to avoid it.
+#   - Each run decides for itself (chira.collector.window_is_too_far). Inside
+#     the window it polls. Within EARLY_START_MINUTES of the opening it waits.
+#     Further out it exits in about a minute, with no heartbeat, because it
+#     collected nothing.
+#   - A session ends at its 5h30 cap or when the window closes, whichever is
+#     first. The concurrency group below then hands over to the next run.
 #
-# Actions cron is best-effort: commonly delayed 10+ minutes and dropped under
-# load. That is treated as measured, not assumed away -- every row carries its
-# own capture timestamp, and the external monitor is what notices a run that
-# never happened.
-# THE CRON IS COMMENTED OUT ON PURPOSE, and this is not belt-and-braces: a
-# `schedule:` trigger on the default branch is armed by GitHub the moment it
-# lands, with no further action. Leaving it live would start firing twice a day
-# immediately -- burning Actions minutes on a no-op, starting the 60-day
-# auto-disable clock, and, once late October arrives, running the LIVE polling
-# path for the first time unattended with no heartbeat configured.
+# THE HANDOVER IS THE CONCURRENCY GROUP. While a session runs, the next
+# scheduled run waits as pending; a newer one replaces it, and the replaced
+# run shows as "cancelled" in the Actions list. That is expected and not a
+# failure. When the session ends, the pending run starts at once, so the
+# window is covered by a chain of sessions whatever the cron delay is. A hand
+# dispatch joins the same queue.
 #
-# TO ENABLE, in this order:
-#   1. Pick a monitoring provider and set the CHIRA_HEARTBEAT_URL repo secret.
-#   2. Run one real session by hand (workflow_dispatch with dry_run=false, and
-#      once=true so it stops after a cycle instead of holding a runner for
-#      5h30) and read the captured rows.
-#   3. Only then uncomment the two crons below.
+# The real gate is computed in America/New_York inside collector.py, so a DST
+# shift moves the effective window and not the coverage. Every row carries its
+# own capture timestamp, and the external monitor (Healthchecks.io, via the
+# CHIRA_HEARTBEAT_URL secret) is what notices a night with no session at all.
 on:
   schedule:
-    - cron: "0 20 * * *"   # session 1: ~16:00 ET
-    - cron: "45 1 * * *"   # session 2: ~20:45 ET, runs past midnight ET
+    - cron: "17,47 * * * *"   # every 30 min; each run decides whether to poll
   workflow_dispatch:
     inputs:
       dry_run:
@@ -55,9 +52,10 @@ permissions:
   contents: read
 
 concurrency:
-  # Two chained sessions must never overlap at a boundary and double-poll. The
-  # dedup key would collapse the duplicates anyway, but overlapping runs waste
-  # the quota this schedule exists to protect.
+  # One session at a time, and the handover mechanism (see the header): at most
+  # one run in progress and one pending, the pending one replaced by newer
+  # runs. cancel-in-progress stays false, or every 30-minute run would kill
+  # the session it was meant to follow.
   group: collector
   cancel-in-progress: false
 
@@ -80,6 +78,12 @@ jobs:
         run: uv sync --group dev
 
       - name: Report what a session would do
+        # The secret is passed here only so the report states the heartbeat
+        # truthfully; a dry run never pings. Without it this step printed
+        # "no CHIRA_HEARTBEAT_URL set" on every run while the Collect step,
+        # which does have it, delivered the ping.
+        env:
+          CHIRA_HEARTBEAT_URL: ${{ secrets.CHIRA_HEARTBEAT_URL }}
         run: uv run python scripts/run_collector.py --dry-run
 
       - name: Collect

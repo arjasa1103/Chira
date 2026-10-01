@@ -42,6 +42,7 @@ from chira.collector import (
     resolve_targets,
     session_deadline,
     upcoming_targets,
+    window_is_too_far,
     zero_capture_is_a_failure,
 )
 from chira.http import Client
@@ -197,6 +198,16 @@ def main() -> int:
         # failing here would train the reader to ignore red runs.
         print("\noff-season for every configured window: nothing to do")
         return 0
+    if not args.force and window_is_too_far():
+        # The common case now, not an edge: the workflow fires every 30 minutes
+        # because GitHub delivers scheduled runs hours late, and most of those
+        # runs land far from the window. Exit before the telemetry and the
+        # heartbeat: a run that never polled must not tell the monitor a
+        # session happened, or the dead-man's switch goes green on nothing.
+        print(f"\nthe poll window opens in {plan['minutes_until_window']:.0f} "
+              f"min, more than {plan['early_start_minutes']}; exiting so a "
+              f"later run takes it. No heartbeat: nothing was collected.")
+        return 0
     if args.force:
         print("\n--force: polling regardless of the season and window gates. "
               "This is a rehearsal, not a scheduled run.")
@@ -210,7 +221,8 @@ def main() -> int:
     captured = polls = 0
     targets: list[dict] = []
     unresolved: list[dict] = []
-    last_due = 0
+    max_due = 0
+    last_poll_at: datetime | None = None
     enumeration_ok = True
     last_refresh = -TARGET_REFRESH_SECONDS
     note = ""
@@ -225,6 +237,12 @@ def main() -> int:
                 if not in_poll_window() and not args.force:
                     tel.event("outside_window")
                     if args.once:
+                        break
+                    if window_is_too_far():
+                        # The window has closed. The old loop slept on to the
+                        # 5h30 deadline, holding a runner that the next queued
+                        # run was waiting for.
+                        tel.event("window_closed")
                         break
                     time.sleep(min(300, max(0, deadline - time.monotonic())))
                     continue
@@ -245,7 +263,8 @@ def main() -> int:
                 # to the whole enumerated range.
                 due = (upcoming_targets(targets, lookahead_hours=24 * args.lookahead_days)
                        if args.force else upcoming_targets(targets))
-                last_due = len(due)
+                max_due = max(max_due, len(due))
+                last_poll_at = datetime.now(UTC)
                 tel.event("poll", targets=len(targets), due=len(due))
                 polls += 1
                 rows: list[dict] = []
@@ -269,7 +288,12 @@ def main() -> int:
             store.finish_session(rid, captured, polls, note)
             total = store.quote_count()
 
-    failed = zero_capture_is_a_failure(captured, targets_due=last_due,
+    # Judged at the last poll, not at exit: sessions now end when the window
+    # closes, and judged at exit every one of them would look "outside the
+    # window" and pass with nothing captured. `max_due` for the same reason:
+    # by the last poll of the night every game has tipped and nothing is due.
+    failed = zero_capture_is_a_failure(captured, now=last_poll_at,
+                                       targets_due=max_due,
                                        enumeration_ok=enumeration_ok)
     if args.force:
         # A rehearsal must never ping the monitor: the dead-man's switch means
@@ -292,7 +316,7 @@ def main() -> int:
     if failed:
         why = ("enumeration failed, so whether there were games is unknown"
                if not enumeration_ok
-               else f"{last_due} games were due and none were captured")
+               else f"{max_due} games were due and none were captured")
         print(f"FAILING: the season is active, the poll window was open, and "
               f"{why}. This is the outage signal, not a warning.")
         return 1

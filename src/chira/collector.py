@@ -96,6 +96,14 @@ POLL_END_ET = dtime(2, 30)
 SESSION_MAX_SECONDS = 5 * 3600 + 30 * 60
 POLL_INTERVAL_SECONDS = 300
 
+# How close to the window a run may start and still wait for it. Measured
+# 2026-09-28/30: scheduled runs arrive 3h22-5h45 late, so no fixed cron can aim
+# at 16:00 ET. The workflow fires every 30 minutes instead and each run decides
+# for itself: within this many minutes of the window it waits, further out it
+# exits at once, holding no runner and pinging nobody. Above the 30-minute cron
+# spacing so that, lags permitting, some run always lands inside it.
+EARLY_START_MINUTES = 45
+
 # Live midpoints are quoted to the tick, so the two sides sum to 1 only up to
 # rounding; the census's 1e-6 is for settled series, not for a live book.
 COMPLEMENT_LIVE_TOL = 0.02
@@ -192,6 +200,36 @@ def in_poll_window(now: datetime | None = None) -> bool:
     if POLL_START_ET <= POLL_END_ET:
         return POLL_START_ET <= t <= POLL_END_ET
     return t >= POLL_START_ET or t <= POLL_END_ET
+
+
+def minutes_until_window(now: datetime | None = None) -> float:
+    """0 inside the poll window, else minutes until it next opens.
+
+    Measured in UTC, not by subtracting two ET wall-clock times: aware datetimes
+    that share a tzinfo subtract as naive ones, which is an hour wrong across a
+    DST change.
+    """
+    n = et_now(now)
+    if in_poll_window(n):
+        return 0.0
+    # Outside the window it is between POLL_END_ET and POLL_START_ET on the
+    # same ET date, so the next opening is today's.
+    opens = datetime.combine(n.date(), POLL_START_ET, tzinfo=ET)
+    if opens <= n:
+        opens += timedelta(days=1)
+    return (opens.astimezone(UTC) - n.astimezone(UTC)).total_seconds() / 60
+
+
+def window_is_too_far(now: datetime | None = None,
+                      early_minutes: int = EARLY_START_MINUTES) -> bool:
+    """Should a run outside the window stop instead of waiting for it?
+
+    True at a start far from the window (a late cron at 07:30 UTC) and at a
+    session's end once the window has closed. Either way waiting would hold a
+    runner for hours and then ping success for a session that polled nothing,
+    which is what the old `45 1` slot did every night.
+    """
+    return minutes_until_window(now) > early_minutes
 
 
 def dedup_key(sport: str, season: str, token_id: str, captured_at: datetime) -> str:
@@ -557,6 +595,8 @@ def describe_plan(now: datetime | None = None, windows: dict | None = None) -> d
         "season_active": bool(seasons),
         "in_poll_window": in_poll_window(now),
         "would_poll": bool(seasons) and in_poll_window(now),
+        "minutes_until_window": round(minutes_until_window(now), 1),
+        "early_start_minutes": EARLY_START_MINUTES,
         "poll_window_et": f"{POLL_START_ET}-{POLL_END_ET} (spans midnight)",
         "session_max_seconds": SESSION_MAX_SECONDS,
         "poll_interval_seconds": POLL_INTERVAL_SECONDS,
