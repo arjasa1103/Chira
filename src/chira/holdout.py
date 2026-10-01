@@ -21,10 +21,17 @@ can remove the pushed marker. Branch protection on `main` that blocks
 force-pushes is a GitHub setting, not something this module can enforce; it is
 the last link in the chain and it belongs to the repository owner.
 
-**It fails closed.** The marker is written, committed and pushed BEFORE the
-labels are returned. If the commit fails, the function raises and the caller gets
-nothing; the half-written marker then leaves the tree dirty, so the next call
-refuses on the dirty-tree check rather than quietly succeeding.
+**It fails closed, and it does not burn the seal on a network error.** The
+marker is written, committed and pushed BEFORE the labels are returned, and
+labels are released only once the marker is confirmed ON THE REMOTE -- the
+remote's word, not the push's exit status. If the commit fails, the caller
+gets nothing and the half-written marker leaves the tree dirty, so the next
+call refuses. If the push fails and the marker is not on the remote, nothing
+was released and nothing is on the record, so the local marker commit is
+rolled back and a retry opens cleanly. The first version kept that commit and
+told the caller to push it and re-run; the re-run then refused on the local
+marker, so one Wi-Fi blip spent the holdout with no label ever released
+(reproduced 2026-10-01).
 
 **What is NOT sealed.** The seal is on the MODEL's access to 2025-26 outcomes.
 The census, the validation gate and headline 2 read both seasons by design:
@@ -253,17 +260,28 @@ def open_holdout(con, *, reason: str, repo: str | Path = ".") -> list[dict]:
     (reproduced 2026-10-01). `marker_on_remote` now reads the pushed copy, and
     a push that fails releases no labels.
 
+    **A push that does not land does not spend the seal.** Labels are released
+    only once the marker is confirmed on the remote. If it is not there, the
+    local marker commit is rolled back and the call raises; a retry opens
+    cleanly. If the remote cannot be checked at all, the marker stays and the
+    call raises; a re-run resolves it either way.
+
     Raises `HoldoutError` if the reason is empty, the marker already exists
-    locally or on the remote, the remote cannot be consulted, the tree is
-    dirty, HEAD is not on the remote, the store has no holdout games, the push
-    fails, or git is unavailable. Nothing is returned in any of those cases.
+    on the record (locally or on the remote), the remote cannot be consulted,
+    the tree is dirty, HEAD is not on the remote, the store has no holdout
+    games, the push does not land, or git is unavailable. Nothing is returned
+    in any of those cases.
     """
     if not isinstance(reason, str) or not reason.strip():
         raise HoldoutError("reason is required: the marker has to say which "
                            "frozen model this single pass was for")
     repo = Path(repo)
-    # The local marker first: no network, and the most specific message.
-    # The remote copy is checked below, once an upstream is known to exist.
+    # The local marker first: the most specific message. One local marker is
+    # NOT a refusal: an open whose push never reached the remote left its
+    # marker commit here with no label released and nothing on the record.
+    # That one is rolled back and the open proceeds; every other is refused.
+    if marker_path(repo).is_file() and _is_stranded(repo):
+        _roll_back_marker(repo)
     if marker_path(repo).is_file():
         prior = read_marker(repo)
         raise HoldoutError(
@@ -322,23 +340,65 @@ def open_holdout(con, *, reason: str, repo: str | Path = ".") -> list[dict]:
     # old `is_open` saw no marker and a second open succeeded. Pushing puts
     # the record somewhere a local rewind cannot reach, and `marker_on_remote`
     # is what reads it back.
-    #
-    # Every failure here leaves the marker committed locally, so the next
-    # attempt refuses on the local check: the seal fails closed on the
-    # network exactly as it does on git.
     _git(repo, "add", "--", MARKER)
     _git(repo, "commit", "-m",
          f"holdout: opened once on {frozen[:12]} -- {reason.strip()}",
          "-m", f"{len(rows)} {HOLDOUT_SEASON} labels released, "
                f"sha256 {marker['label_sha256'][:16]}.")
     _, remote, branch = _upstream(repo)
+    push_error: HoldoutError | None = None
     try:
         _git(repo, "push", "--quiet", remote, f"HEAD:refs/heads/{branch}")
     except HoldoutError as e:
+        push_error = e
+
+    # Release on the REMOTE's word, not the push's exit status. A push can
+    # report failure after the server accepted it; then the record is public
+    # and the labels are owed. And a push that did not land must not spend the
+    # seal: nothing was released, so the local commit is rolled back.
+    try:
+        published = marker_on_remote(repo)
+    except HoldoutError as e:
         raise HoldoutError(
-            f"the marker is committed locally but could NOT be pushed, so the "
-            f"record of this open exists only on this machine and no label is "
-            f"released: {e}\n"
-            f"Push {MARKER} yourself, then re-run; the local marker makes a "
-            f"second open refuse until you do.") from e
+            f"the marker is committed locally, and whether it reached the "
+            f"remote cannot be checked ({e}). No label is released. Do not "
+            f"delete {MARKER}. Re-run once the remote is reachable: if the "
+            f"record never became public, the marker commit is rolled back and "
+            f"the open proceeds; if it did, the open is on the record and is "
+            f"refused as already opened.") from (push_error or e)
+    if not published:
+        _roll_back_marker(repo)
+        raise HoldoutError(
+            f"the marker could not be pushed ({push_error}), so no label was "
+            f"released and nothing is on the record. The local marker commit "
+            f"was rolled back; the holdout is still sealed and a retry opens "
+            f"it cleanly.") from push_error
     return rows
+
+
+def _is_stranded(repo: Path) -> bool:
+    """Is the local marker an open that never reached the remote?
+
+    True only when ALL hold: HEAD is the commit that added the marker, its
+    parent is the frozen commit the marker names, the tree is otherwise clean,
+    and the remote -- consulted, not assumed -- does not have it. Labels are
+    released only after the remote confirms, so such a marker released none.
+    A remote that cannot be reached RAISES, as everywhere else in the seal.
+    """
+    try:
+        added = _git(repo, "diff-tree", "--no-commit-id", "--name-only",
+                     "-r", "HEAD").split()
+        parent = _git(repo, "rev-parse", "HEAD~1").strip()
+    except HoldoutError:
+        return False
+    if MARKER not in added or parent != read_marker(repo).get("commit"):
+        return False
+    if not is_clean(repo):
+        return False
+    return not marker_on_remote(repo)
+
+
+def _roll_back_marker(repo: Path) -> None:
+    """Undo an unpublished marker commit. `--keep`, not `--hard`: it refuses
+    rather than discard anything else in the working tree."""
+    _git(repo, "reset", "--quiet", "--keep", "HEAD~1")

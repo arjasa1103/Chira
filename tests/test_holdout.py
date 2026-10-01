@@ -327,25 +327,107 @@ class TestTheMarkerReachesTheRemote:
         with pytest.raises(HoldoutError, match="already opened"):
             open_holdout(con, reason="from a clone", repo=clone)
 
-    def test_a_failed_push_releases_nothing_and_fails_closed(
-            self, repo, con, monkeypatch):
-        """The marker stays committed locally, so the next attempt refuses."""
+    @staticmethod
+    def _push_fails(monkeypatch, *, lands=False):
+        """Make `git push` fail. With `lands=True` the push reaches the remote
+        first and THEN reports failure, as a dropped connection can."""
         import chira.holdout as H
         real = H._git
 
-        def refuse_push(repo_path, *args):
+        def flaky(repo_path, *args):
             if args and args[0] == "push":
+                if lands:
+                    real(repo_path, *args)
                 raise H.HoldoutError("push rejected by the test")
             return real(repo_path, *args)
 
-        monkeypatch.setattr(H, "_git", refuse_push)
-        with pytest.raises(HoldoutError, match="could NOT be pushed"):
+        monkeypatch.setattr(H, "_git", flaky)
+
+    def test_a_push_that_does_not_land_releases_nothing_and_spends_nothing(
+            self, repo, con, monkeypatch):
+        """The dead end this replaced: the old code kept the marker and told
+        the caller to push it and re-run, and the re-run refused on that
+        marker. One network blip spent the holdout with no label released."""
+        frozen = head_commit(repo)
+        self._push_fails(monkeypatch)
+        with pytest.raises(HoldoutError, match="no label was released"):
             open_holdout(con, reason="week-9", repo=repo)
         monkeypatch.undo()
-        assert (repo / MARKER).is_file(), "the local marker must survive"
+        assert not (repo / MARKER).exists(), "rolled back, not left behind"
+        assert head_commit(repo) == frozen
+        assert is_clean(repo)
         assert marker_on_remote(repo) is False
+
+    def test_and_then_a_retry_opens_cleanly(self, repo, con, monkeypatch):
+        self._push_fails(monkeypatch)
+        with pytest.raises(HoldoutError):
+            open_holdout(con, reason="week-9", repo=repo)
+        monkeypatch.undo()
+        rows = open_holdout(con, reason="week-9", repo=repo)
+        assert len(rows) == 3
+        assert marker_on_remote(repo) is True
         with pytest.raises(HoldoutError, match="already opened"):
-            open_holdout(con, reason="retry", repo=repo)
+            open_holdout(con, reason="a second look", repo=repo)
+
+    def test_a_push_that_lands_but_reports_failure_still_releases(
+            self, repo, con, monkeypatch):
+        """The record is public, so the labels are owed. Refusing here would
+        spend the seal with nothing to show for it."""
+        self._push_fails(monkeypatch, lands=True)
+        rows = open_holdout(con, reason="week-9", repo=repo)
+        monkeypatch.undo()
+        assert len(rows) == 3
+        assert marker_on_remote(repo) is True
+
+    def test_an_unconfirmable_push_keeps_the_marker_and_releases_nothing(
+            self, repo, con, monkeypatch):
+        """Cannot tell whether the record is public: release nothing, delete
+        nothing. A re-run once the remote answers settles it."""
+        import chira.holdout as H
+        self._push_fails(monkeypatch)
+        real_check = H.marker_on_remote
+        calls = {"n": 0}
+
+        def check_then_go_dark(repo_path="."):
+            calls["n"] += 1
+            if calls["n"] >= 2:          # the post-push confirmation
+                raise H.HoldoutError("fetch failed: network down")
+            return real_check(repo_path)
+
+        monkeypatch.setattr(H, "marker_on_remote", check_then_go_dark)
+        with pytest.raises(HoldoutError, match="cannot be checked"):
+            open_holdout(con, reason="week-9", repo=repo)
+        monkeypatch.undo()
+        assert (repo / MARKER).is_file(), "kept, never deleted on a guess"
+        # The remote answers again and never saw it: the re-run opens cleanly.
+        assert len(open_holdout(con, reason="week-9", repo=repo)) == 3
+        assert marker_on_remote(repo) is True
+
+    def test_a_stranded_marker_is_not_rolled_back_over_other_changes(
+            self, repo, con, monkeypatch):
+        """`--keep`, and the clean-tree condition, mean the rollback never
+        discards work that is not the marker."""
+        import chira.holdout as H
+        self._push_fails(monkeypatch)
+        real_check = H.marker_on_remote
+        calls = {"n": 0}
+
+        def check_then_go_dark(repo_path="."):
+            calls["n"] += 1
+            if calls["n"] >= 2:
+                raise H.HoldoutError("network down")
+            return real_check(repo_path)
+
+        monkeypatch.setattr(H, "marker_on_remote", check_then_go_dark)
+        with pytest.raises(HoldoutError, match="cannot be checked"):
+            open_holdout(con, reason="week-9", repo=repo)
+        monkeypatch.undo()
+        assert (repo / MARKER).is_file(), "the premise: a stranded marker"
+        (repo / "notes.txt").write_text("unsaved work\n", encoding="utf-8")
+        with pytest.raises(HoldoutError, match="already opened"):
+            open_holdout(con, reason="week-9", repo=repo)
+        assert (repo / "notes.txt").read_text(encoding="utf-8") == "unsaved work\n"
+        assert (repo / MARKER).is_file()
 
     def test_an_unconsultable_remote_raises_rather_than_reporting_closed(
             self, repo, con):
