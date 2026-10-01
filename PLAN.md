@@ -120,8 +120,9 @@ trades and finds trade-size compression that is explicitly **not robust on Polym
 which is where this result sits; and Wheatcroft (arXiv:1908.08980, 2019 not 2022)
 **contradicts** this plan's claim that it "recommends Brier/log-loss over RPS" -- it finds
 the log score beats RPS *and* Brier, while PREREGISTRATION section 3 makes Brier primary.
-Both are now stated in docs/prior-art.md. SSRN 5910522 blocks automated access (403) and the
-Wilkens 2026 paper could not be found, so both are marked unverified rather than cited.
+Both are now stated in docs/prior-art.md. SSRN 5910522 blocks automated access (403), so it was read by hand on 2026-10-01: no
+liquidity split, no NBA or NHL, so the contribution stands. The Wilkens 2026 paper could
+not be found and is still marked unverified rather than cited.
 
 **Le's paper also changed the analysis.** It reports that event-clustered errors absorb
 roughly half of raw slope variation, so a date-clustered bootstrap was added beside the
@@ -202,8 +203,10 @@ Portfolio artifact first. The output is a published writeup with charts, not jus
    0.02-0.03 Brier deficit, decomposed and explained.
 2. **Where the market is miscalibrated.** The market's own calibration stratified by
    liquidity, time-to-close, and early season. Published research reports no *general*
-   favorite-longshot bias on Polymarket with the bias **concentrated in specific
-   categories** (arXiv 2602.19520; Reichenbach & Walther, SSRN 5910522), so this question
+   favorite-longshot bias on Polymarket, with the bias **concentrated in specific
+   categories** (arXiv 2602.19520). Reichenbach & Walther (SSRN 5910522), read 2026-10-01,
+   find no market-level bias on tennis and politics, only among individual traders, and do
+   not split by liquidity (docs/prior-art.md section 4), so this question
    has a real chance of a positive answer. The two usable seasons differ 4x in per-game
    liquidity ($500k vs $1.9M), which is a natural experiment already being collected.
 

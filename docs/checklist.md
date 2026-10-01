@@ -156,7 +156,7 @@ Detail and reasoning live in [TODOS.md](../TODOS.md).
 | P1 | Hand-dispatch the collector each game night, 19:55Z (16:55 ADT), until the new schedule covers a night alone | **Tonight** |
 | P1 | Branch protection on `main` (blocks force-pushing the holdout marker) — a GitHub setting | Before week 9 |
 | P1 | NBA upcoming enumeration for the collector | **2026-10-20** |
-| P1 | SSRN 5910522 unverified (403 to automated access; needs a human) | Before v2 |
+| P2 | Wilkens (2026) citation unverified (SSRN 5910522 read 2026-10-01: contribution stands) | Before v2 |
 | P3 | Verify `last_trade_price` is market-level before anything reads it | Unscheduled |
 | P2 | Cache sizing, store hardening, test-fixture consolidation | Unscheduled |
 | P3 | CI actions on deprecated Node 20; Ubuntu 26 migration | 2026-10-19 |

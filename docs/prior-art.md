@@ -1,7 +1,8 @@
 # Prior art, and what this project adds
 
 T12. Four sources were named in the planning documents and none were cited; this is that
-section. Two were read in full, one is blocked to automated access, one could not be found,
+section. Two were read in full, one blocked automated access and was read by hand on
+2026-10-01, one could not be found,
 and **one turns out to contradict a claim this project's own plan made about it.** Each entry
 says which, because a prior-art section whose citations were never opened is worse than none.
 
@@ -94,15 +95,30 @@ distance-sensitivity arguments are weaker.
 
 ## 4. Reichenbach and Walther, "Accuracy, Skill, and Bias on Polymarket" (SSRN 5910522)
 
-**NOT VERIFIED.** `papers.ssrn.com` returned HTTP 403 with a Cloudflare content-protection
-notice for automated access on 2026-09-25. The block was respected rather than worked around,
-so nothing in this project cites a finding from this paper. It is named here because the
-planning documents named it, and it is on its face the most directly comparable work
-(accuracy, skill and bias, on Polymarket specifically).
+**Read by a human, 2026-10-01.** `papers.ssrn.com` refuses automated access (HTTP 403, a
+Cloudflare notice, 2026-09-25), so the project owner read it in a browser. What follows is
+that reading. No number from the paper is quoted here, because none was transcribed.
 
-**Action before v2:** a human should open it and either record its claims here or drop the
-citation. If it already reports a liquidity-conditioned calibration result on Polymarket
-sports markets, that materially changes how this project's contribution should be described.
+**What it does:**
+- It compares Polymarket's accuracy with bookmakers' and finds **Polymarket the more
+  accurate**.
+- It tests for a **favorite-longshot bias** and finds none at the scale of the market. The
+  bias it does find sits with **individual traders**, and much of the paper reports how the
+  top and bottom percentiles of traders perform.
+- Its markets are **tennis and politics**. It covers no NBA or NHL markets.
+
+**What it does not do:**
+- It does not score calibration with Brier, a calibration slope or an intercept. Its question
+  is whether the market is biased, answered on market-wide averages.
+- It does not split anything by liquidity, volume or market size.
+
+**What that means for this project:** the contribution stands as written below. The paper
+answers a different question, bias or no bias, pooled across the market. This project asks
+whether calibration differs between thin and liquid markets. Its finding is also consistent
+with headline 2's picture: on NBA moneylines the pooled market looks well calibrated, because
+thin markets that are too timid and liquid markets that are too extreme pull in opposite
+directions. That consistency is not a confirmation, since the domains differ (tennis and
+politics against NBA and NHL). It is a reason to expect a pooled test to miss the effect.
 
 ## 5. Wilkens (2026), "Can simple models predict football and beat the odds?"
 

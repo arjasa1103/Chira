@@ -273,26 +273,26 @@ airtight without it.
 
 **Still open for the user:** turn on branch protection for `main` (block force-pushes).
 
-## P1 — Two prior-art citations are unverified (before artifact v2)
+## RESOLVED 2026-10-01 — Reichenbach and Walther (SSRN 5910522) read, contribution stands
 
-**What:** A human opens the two sources T12 could not, and either records their claims in
-`docs/prior-art.md` or drops the citation.
+Read in a browser by the project owner, since SSRN refuses automated access. It compares
+Polymarket with bookmakers (Polymarket more accurate), finds no favorite-longshot bias at the
+market level, only among individual traders, and works on tennis and politics. It uses no
+Brier score, calibration slope or intercept, and makes no split by liquidity or volume. So
+artifact v1's "what this project adds" is not overstated. Recorded in `docs/prior-art.md`
+section 4, with no number quoted because none was transcribed.
 
-1. **Reichenbach and Walther, "Accuracy, Skill, and Bias on Polymarket" (SSRN 5910522).**
-   `papers.ssrn.com` returned HTTP 403 (Cloudflare, automated access) on 2026-09-25. The
-   block was respected, so nothing cites it. **This is the one that could move the
-   contribution claim:** it is accuracy, skill and bias on Polymarket specifically, and if
-   it already reports a liquidity-conditioned calibration result on Polymarket sports
-   markets, then artifact v1's "what this project adds" is overstated and needs rewording.
-2. **Wilkens (2026), "Can simple models predict football and beat the odds?"** No arXiv
-   match for title or author (searched 2026-09-25). Likely relevant to headline 1 rather
-   than headline 2, so not load-bearing for v1.
+## P2 — Wilkens (2026) is unverified (before artifact v2)
 
-**Why it is P1 despite being a docs task:** artifact v1 is public and makes a positioning
-claim against work nobody has read. Five minutes in a browser settles item 1.
+**What:** Find "Can simple models predict football and beat the odds?" and record its claims
+in `docs/prior-art.md` section 5, or drop the citation.
 
-**Effort:** S (human ~20min / CC: cannot, both are blocked to automated access).
-**Priority:** P1, before v2.
+**Why:** No arXiv match for the title or author (searched 2026-09-25). It is likely relevant to
+headline 1, a simple model against the market, rather than headline 2, so it moves nothing in
+v1. It was P1 only as the second half of an item whose first half could have moved the
+contribution claim; that half is resolved.
+
+**Effort:** S (human, SSRN or a journal search). **Priority:** P2, before v2.
 
 ## RESOLVED 2026-10-01 — Brier stays primary, and PLAN.md now says why
 
