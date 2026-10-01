@@ -201,6 +201,49 @@ def assert_dev_only(rows, *, what: str = "training rows") -> None:
             f"by holdout.open_holdout, after the model is frozen.")
 
 
+def assert_scorable(rows, *, what: str = "rows", repo: str | Path = ".") -> None:
+    """Raise if these rows may not be SCORED yet.
+
+    Scoring means comparing a forecast against an outcome: a log loss, a
+    Brier, a reliability bin, a Clark-West term. `assert_dev_only` guards
+    what a model is FITTED on; this guards what it is MEASURED on, and they
+    are different leaks. A pre-game rating for a 2025-26 game is a legitimate
+    point-in-time feature (see the module docstring); the log loss of that
+    rating against the 2025-26 result is a holdout score.
+
+    **Why this exists as code and not as care.** On 2026-10-01
+    `scripts/build_ratings.py` printed the Elo's log loss and Brier for
+    2025-26 in a per-season summary table -- 0.69488 and 0.25065 for the NHL.
+    The constants were already frozen and pushed, so the choice could not have
+    been affected, but holdout performance was visible before the seal was
+    broken, which is precisely what the seal is for. It was disclosed rather
+    than quietly dropped, and the scoring path now refuses instead of relying
+    on whoever writes the next summary table.
+
+    Holdout rows become scorable once the seal is formally open, so there is
+    no keyword to relax this: break the seal through `open_holdout` and the
+    marker makes scoring legal. The check is the LOCAL marker only -- it runs
+    inside scoring loops and must not touch the network; `open_holdout` is
+    where the authoritative once-only check lives.
+    """
+    missing = sum(1 for r in rows if not r.get("season"))
+    if missing:
+        raise HoldoutError(
+            f"{missing} {what} carry no season, so this guard cannot tell "
+            f"whether scoring them is a holdout peek. Carry the season column "
+            f"through to whatever is being scored; a missing season is not a "
+            f"dev season.")
+    held = sorted({r["game_id"] for r in rows
+                   if r.get("season") == HOLDOUT_SEASON})
+    if held and not marker_path(repo).is_file():
+        raise HoldoutError(
+            f"{len(held)} {what} are from the sealed holdout season "
+            f"{HOLDOUT_SEASON} (first: {held[0]}), and the seal is not open. "
+            f"Pre-game inputs from 2025-26 are features and are allowed; "
+            f"SCORING a forecast against a 2025-26 outcome is not, until "
+            f"holdout.open_holdout has been called and its marker committed.")
+
+
 def is_pushed(repo: str | Path = ".") -> bool:
     """Is HEAD already on the upstream branch, as the remote sees it NOW?
 

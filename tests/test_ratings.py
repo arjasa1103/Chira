@@ -15,6 +15,7 @@ from typing import ClassVar
 import pytest
 
 from chira.features import RESULT_DELAY_SECONDS
+from chira.holdout import HOLDOUT_SEASON, HoldoutError
 from chira.ratings import (
     CHOSEN,
     CHOSEN_BRIER,
@@ -181,19 +182,44 @@ class TestTheSeasonCarryOver:
         assert rows[1]["r_home_pre"] != ELO_START
 
 
+def scored(p, y, season="2024-25"):
+    """A scorable row. The season is REQUIRED: `holdout.assert_scorable`
+    refuses a row that cannot be told apart from a sealed one, including in a
+    unit test."""
+    return {"p_home_elo": p, "y": y, "season": season, "game_id": "x"}
+
+
 class TestScoring:
     def test_log_loss_of_a_certain_correct_call_is_zero(self):
-        assert log_loss([{"p_home_elo": 1.0, "y": 1.0}]) == pytest.approx(0, abs=1e-12)
+        assert log_loss([scored(1.0, 1.0)]) == pytest.approx(0, abs=1e-12)
 
     def test_log_loss_of_a_coinflip_is_ln_two(self):
-        assert log_loss([{"p_home_elo": 0.5, "y": 1.0}]) == pytest.approx(math.log(2))
+        assert log_loss([scored(0.5, 1.0)]) == pytest.approx(math.log(2))
 
     def test_a_certain_wrong_call_is_clamped_not_infinite(self):
         """One impossible game must not decide the grid."""
-        assert math.isfinite(log_loss([{"p_home_elo": 1.0, "y": 0.0}]))
+        assert math.isfinite(log_loss([scored(1.0, 0.0)]))
 
     def test_brier(self):
-        assert brier([{"p_home_elo": 0.75, "y": 1.0}]) == pytest.approx(0.0625)
+        assert brier([scored(0.75, 1.0)]) == pytest.approx(0.0625)
+
+    def test_scoring_a_sealed_row_is_refused(self):
+        """The leak this guard exists for: build_ratings.py printed the Elo's
+        2025-26 log loss on 2026-10-01 before the seal was open."""
+        for fn in (log_loss, brier):
+            with pytest.raises(HoldoutError, match="sealed holdout"):
+                fn([scored(0.6, 1.0, season=HOLDOUT_SEASON)])
+
+    def test_scoring_a_row_with_no_season_is_refused(self):
+        """A guard that cannot see the season passes by construction."""
+        for fn in (log_loss, brier):
+            with pytest.raises(HoldoutError, match="carry no season"):
+                fn([{"p_home_elo": 0.6, "y": 1.0}])
+
+    def test_a_dev_row_beside_a_sealed_one_still_refuses(self):
+        with pytest.raises(HoldoutError, match="sealed holdout"):
+            log_loss([scored(0.6, 1.0),
+                      scored(0.6, 1.0, season=HOLDOUT_SEASON)])
 
     def test_both_refuse_an_empty_set(self):
         for fn in (log_loss, brier):

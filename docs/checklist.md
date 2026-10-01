@@ -130,7 +130,8 @@ The model:
 - [x] 2023-24 burn-in fetched in full (1,230 NBA, 1,312 NHL), Arizona carried into Utah
 - [x] Review fixes (`334b09c`, 2026-10-01): delay override honoured; frozen values pinned by a CI golden test and a real-data recompute; the rating's own point-in-time canary with a must-fail form; NBA neutral override moved inside the walk. 928 tests pass
 - [x] **Freeze pushed** (`d66671c` on `origin/main`, 2026-10-01), before any 2025-26 rating was computed
-- [ ] 2025-26 ratings computed with the frozen constants, unchanged
+- [x] **2025-26 ratings computed with the frozen constants, unchanged** (`scripts/build_ratings.py`, 2026-10-01): 7,626 rows across three seasons into `data/ratings/ratings.parquet`, constants read from `ratings.CHOSEN` and re-checked. A real-data causality canary truncates the schedule mid-season and requires every surviving row byte-identical, passing for both sports
+- [x] **Disclosed: a holdout score was computed once, before the seal.** The first version of that script's summary table printed the Elo's log loss and Brier per season, which scored the rating against 2025-26 outcomes (NHL 0.69488 / 0.25065). The constants were already frozen and pushed so the choice could not have been affected, but holdout performance was visible before `open_holdout`. Fixed structurally rather than by care: `holdout.assert_scorable` refuses to score a sealed row until the marker exists, `ratings.log_loss` and `ratings.brier` call it, and the table reports 2025-26 inputs only. Recorded in `assert_scorable`'s own docstring
 - [ ] Hierarchical logistic in `numpyro`, deterministic pre-game ratings as a fixed covariate
 - [ ] MCMC diagnostics as hard failures (T5)
 - [ ] Hyperprior sensitivity analysis

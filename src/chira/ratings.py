@@ -46,6 +46,7 @@ import math
 from heapq import heappop, heappush
 
 from .features import RESULT_DELAY_SECONDS
+from .holdout import assert_scorable
 from .venues import is_neutral_site
 
 ELO_START = 1500.0
@@ -286,9 +287,15 @@ def final_ratings(games: list[dict], **kwargs) -> dict[str, float]:
 
 
 def log_loss(rows: list[dict]) -> float:
-    """Mean negative log likelihood of the Elo home-win probability."""
+    """Mean negative log likelihood of the Elo home-win probability.
+
+    Refuses sealed-holdout rows (`holdout.assert_scorable`). Every row must
+    carry its season, including in tests: a score is the one thing that must
+    never reach 2025-26 before the seal is open.
+    """
     if not rows:
         raise ValueError("log loss of an empty set is undefined")
+    assert_scorable(rows, what="scored rows")
     total = 0.0
     for r in rows:
         p = min(max(r["p_home_elo"], LOG_LOSS_EPS), 1.0 - LOG_LOSS_EPS)
@@ -297,8 +304,10 @@ def log_loss(rows: list[dict]) -> float:
 
 
 def brier(rows: list[dict]) -> float:
+    """Mean squared error of the Elo home-win probability. Same guard."""
     if not rows:
         raise ValueError("Brier of an empty set is undefined")
+    assert_scorable(rows, what="scored rows")
     return sum((r["p_home_elo"] - r["y"]) ** 2 for r in rows) / len(rows)
 
 
