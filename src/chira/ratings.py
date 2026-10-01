@@ -31,6 +31,9 @@ both are flagged in the note rather than silently chosen:
 2. The season carry-over is applied at **every** season change, including the
    one into the burn-in's following season, which is what "applied identically
    at every change" requires.
+3. **The model takes `rating_diff_strength`, which EXCLUDES the home bonus**,
+   not `rating_diff`, which includes it. `MODEL_COVARIATE` names the field so
+   the choice is enforced rather than remembered. See that constant.
 
 Nothing here reads a price, and nothing here reads 2025-26. The grid is tuned
 on 2024-25 only; `scripts/run_ratings.py` calls `holdout.assert_dev_only` on
@@ -105,6 +108,30 @@ CHOSEN: dict[str, dict[str, float]] = {
 # changes the arithmetic fails loudly rather than quietly re-rating.
 CHOSEN_LOG_LOSS = {"nba": 0.60781, "nhl": 0.66618}
 CHOSEN_BRIER = {"nba": 0.21044, "nhl": 0.23686}
+
+
+# The field the model may use as its rating covariate (Amendment 5b, third
+# reading, decided 2026-10-01).
+#
+# `rating_diff` is `r_home + H - r_away`: the quantity that produced
+# `p_home_elo`, which the grid was tuned on and which must not change.
+# **It is the wrong input for the model**, because PLAN Phase 4 pools a
+# per-team home-advantage term of its own. Feeding a covariate that already
+# carries H puts home advantage in twice: once fixed at a magnitude chosen by
+# Elo log loss on 1,230 NBA games, once as a pooled parameter.
+#
+# Worse, the two are barely separable. `H * 1[not neutral]` is constant across
+# **2,531 of 2,542 dev games** -- there are only 11 neutral-site games in
+# 2024-25 across both sports -- so the H component is collinear with the
+# model's own home term except on 0.43% of the sample. That is a near-singular
+# design, not a modelling choice.
+#
+# So the model takes the pure strength difference and owns home advantage
+# entirely: the global intercept plus the pooled per-team term, switched off
+# for a neutral-site game exactly as Elo sets H = 0. **The neutral adjustment
+# is therefore weakly identified** -- 11 dev games -- and must be reported as
+# shrunk toward its prior, never as an estimate.
+MODEL_COVARIATE = "rating_diff_strength"
 
 
 def expected_home(r_home: float, r_away: float, h: float) -> float:
@@ -231,7 +258,10 @@ def run_ratings(games: list[dict], *, k: float, h: float, c: float,
             "start_t": g["start_t"],
             "r_home_pre": r_home, "r_away_pre": r_away,
             "home_bonus": hb,
+            # With H: what produced p_home_elo. The grid was tuned on this.
             "rating_diff": r_home + hb - r_away,
+            # Without H: the model's covariate. See MODEL_COVARIATE.
+            "rating_diff_strength": r_home - r_away,
             "p_home_elo": p_home, "y": y,
             "mov": mov, "delta": delta,
             "neutral_site": neutral,

@@ -222,6 +222,16 @@ next attempt refuses.
 existed). A test asserts this repo has no `HOLDOUT_OPENED.json`.
 
 
+## RESOLVED 2026-09-28 — An NHL back-to-back is partly a road dummy
+
+**PREREGISTRATION Amendment 5a.** The NHL model carries **two** global back-to-back
+coefficients, one for the home team's b2b and one for the away team's; the NBA keeps one
+coefficient on the difference, because the NBA is symmetric. One extra parameter, still
+global, still unpooled. Written before any model code existed and decided on schedule
+statistics, not on a fit.
+
+**Original item, kept for the record:**
+
 ## P2 — An NHL back-to-back is partly a road dummy
 
 **What:** Decide, before Phase 4's spec is written, whether the NHL back-to-back term
@@ -235,6 +245,33 @@ is right; it does not say anything about this confound, and a b2b coefficient fi
 without the interaction absorbs part of NHL home advantage.
 
 **Effort:** S to decide. **Priority:** P2, before week 8.
+
+## RESOLVED 2026-10-01 — The holdout seal had a local-rewind bypass
+
+**Reproduced 2026-10-01** in a throwaway repo against the real `chira.holdout`: open the
+seal once, `git reset --hard HEAD~1` to delete the marker commit -- which existed only in
+that clone -- and a second `open_holdout` returned the labels again with nothing on the
+remote to show it. A committed marker is not a record if one command removes it.
+
+**Closed in code, two parts.**
+
+1. `open_holdout` now **pushes the marker before returning any label**. A push that fails
+   releases nothing and leaves the marker committed locally, so the next attempt refuses
+   on the local check: it fails closed on the network exactly as it does on git.
+2. `marker_on_remote` reads `<upstream>:HOLDOUT_OPENED.json` after a fetch, and `is_open`
+   consults it when the local file is absent. A remote that cannot be reached **raises**
+   rather than returning False, because "cannot tell" is not "not opened".
+
+Tests pin the reproduction (rewind then refuse), a fresh clone of the branch tip
+refusing, a failed push releasing nothing, and an unreachable remote raising.
+
+**The residual, and it is NOT code's to fix.** A force-push to `main` can still remove the
+pushed marker. **Branch protection blocking force-pushes is a GitHub setting and belongs
+to the repository owner** -- it is the last link in the chain and the only one this module
+cannot enforce. Stated in `holdout.py`'s own docstring so nobody reads the seal as
+airtight without it.
+
+**Still open for the user:** turn on branch protection for `main` (block force-pushes).
 
 ## P1 — Two prior-art citations are unverified (before artifact v2)
 
@@ -256,6 +293,21 @@ claim against work nobody has read. Five minutes in a browser settles item 1.
 
 **Effort:** S (human ~20min / CC: cannot, both are blocked to automated access).
 **Priority:** P1, before v2.
+
+## RESOLVED 2026-10-01 — Brier stays primary, and PLAN.md now says why
+
+**Decided before the first fit, and written into PLAN.md Phase 5.** The reason is
+section 3's, not the citation's: an unclipped log loss is unbounded, so one mis-joined
+label at an extreme price can move it without limit, while Brier's worst single-game
+contribution is 1. Labels come from a third party, the join is by slug, and this project
+has already found defects there -- week 2's spread markets, and the census's
+`label_agreement` column exists because disagreement is measured and non-zero.
+
+Log loss is still reported for every result, clipped to [0.01, 0.99].
+`docs/prior-art.md` keeps stating that Wheatcroft would rank them the other way. The
+nested test is unaffected: Clark-West is computed on squared error.
+
+**Original item, kept for the record:**
 
 ## P2 — Wheatcroft (2019) ranks the log score above Brier; section 3 makes Brier primary
 
@@ -339,6 +391,18 @@ function — resolve each upcoming game to its market's token ids — and it reu
 worse than no cron: it burns quota and produces silence that nobody is watching for.
 
 **Effort:** M (human ~4h / CC ~40min). **Priority:** P1, deadline-driven (late Oct 2026).
+
+## RESOLVED 2026-10-01 — GitHub Actions owns the heartbeat
+
+**Decided: Actions owns `CHIRA_HEARTBEAT_URL`, and the collector stays on Actions.** Any
+other runner gets its OWN Healthchecks check and its own variable -- the Chira-gamble
+runner uses `CHIRA_GAMBLE_HEARTBEAT_URL` -- so one green check can never hide another
+dead one, which was the failure mode the item was about.
+
+**Reopen only if the collector itself moves off Actions.** Two schedulers sharing one
+check is the thing that is banned, not two schedulers.
+
+**Original item, kept for the record:**
 
 ## P1 — If the collector runs off Actions, decide who owns the heartbeat
 

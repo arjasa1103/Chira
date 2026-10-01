@@ -16,8 +16,13 @@ any label is returned. Whatever is committed at that instant IS the frozen
 model, and git history is the proof of order -- the same argument Amendment
 5b uses for the Elo constants.
 
-**It fails closed.** The marker is written and committed BEFORE the labels are
-returned. If the commit fails, the function raises and the caller gets
+**One hole is NOT closed in code, and cannot be.** A force-push to the branch
+can remove the pushed marker. Branch protection on `main` that blocks
+force-pushes is a GitHub setting, not something this module can enforce; it is
+the last link in the chain and it belongs to the repository owner.
+
+**It fails closed.** The marker is written, committed and pushed BEFORE the
+labels are returned. If the commit fails, the function raises and the caller gets
 nothing; the half-written marker then leaves the tree dirty, so the next call
 refuses on the dirty-tree check rather than quietly succeeding.
 
@@ -107,9 +112,47 @@ def marker_path(repo: str | Path = ".") -> Path:
     return Path(repo) / MARKER
 
 
+def _upstream(repo: Path) -> tuple[str, str, str]:
+    """(full upstream ref, remote name, branch name) for HEAD's upstream."""
+    ref = _git(repo, "rev-parse", "--abbrev-ref",
+               "--symbolic-full-name", "@{u}").strip()
+    remote, branch = ref.split("/", 1)
+    return ref, remote, branch
+
+
+def marker_on_remote(repo: str | Path = ".") -> bool:
+    """Does the marker exist on the upstream branch, as the remote sees it?
+
+    Fetches first. **This is the question that matters**, because the local
+    file is deletable without a trace: `git reset --hard HEAD~1` after an open
+    removes the marker commit, which exists only locally, and the next
+    `open_holdout` used to succeed. Reproduced 2026-10-01 against the real
+    module. The marker is pushed before any label is returned, so the remote
+    is the copy that cannot be quietly rewound.
+
+    Raises `HoldoutError` when the remote cannot be consulted at all -- no
+    upstream, offline, fetch refused. The caller must treat that as "unknown"
+    and refuse, never as "not opened".
+    """
+    repo = Path(repo)
+    ref, remote, _ = _upstream(repo)
+    _git(repo, "fetch", "--quiet", remote)
+    rc = subprocess.run(
+        ["git", "-C", str(repo), "cat-file", "-e", f"{ref}:{MARKER}"],
+        capture_output=True, check=False).returncode
+    return rc == 0
+
+
 def is_open(repo: str | Path = ".") -> bool:
-    """Has the holdout already been opened in this repository?"""
-    return marker_path(repo).is_file()
+    """Has the holdout been opened, locally OR on the remote?
+
+    Local first, because that answer needs no network. A missing local marker
+    is NOT an answer on its own, so the remote is consulted too, and a remote
+    that cannot be reached raises rather than returning False.
+    """
+    if marker_path(repo).is_file():
+        return True
+    return marker_on_remote(repo)
 
 
 def read_marker(repo: str | Path = ".") -> dict:
@@ -204,15 +247,24 @@ def open_holdout(con, *, reason: str, repo: str | Path = ".") -> list[dict]:
     local and expires. For a project whose rule is that the git hash is the
     timestamp, a freeze only the author can see is not a freeze.
 
-    Raises `HoldoutError` if the reason is empty, the marker already exists,
-    the tree is dirty, HEAD is not on the remote, the store has no holdout
-    games, or git is unavailable. Nothing is returned in any of those cases.
+    **The marker is pushed before any label is returned.** A local commit was
+    not enough: `git reset --hard HEAD~1` after an open removed the marker
+    commit and a second call succeeded, with nothing on the remote to show it
+    (reproduced 2026-10-01). `marker_on_remote` now reads the pushed copy, and
+    a push that fails releases no labels.
+
+    Raises `HoldoutError` if the reason is empty, the marker already exists
+    locally or on the remote, the remote cannot be consulted, the tree is
+    dirty, HEAD is not on the remote, the store has no holdout games, the push
+    fails, or git is unavailable. Nothing is returned in any of those cases.
     """
     if not isinstance(reason, str) or not reason.strip():
         raise HoldoutError("reason is required: the marker has to say which "
                            "frozen model this single pass was for")
     repo = Path(repo)
-    if is_open(repo):
+    # The local marker first: no network, and the most specific message.
+    # The remote copy is checked below, once an upstream is known to exist.
+    if marker_path(repo).is_file():
         prior = read_marker(repo)
         raise HoldoutError(
             f"the holdout was already opened at {prior.get('opened_at')} "
@@ -232,6 +284,16 @@ def open_holdout(con, *, reason: str, repo: str | Path = ".") -> list[dict]:
             "HEAD is not on the remote, so the model about to see the holdout "
             "is frozen only on this machine. Push it first; the marker records "
             "a hash anyone can check was public before a label came out.")
+
+    # AFTER is_pushed, which establishes that an upstream exists and can be
+    # reached. Checking the remote marker first made a repo with no remote
+    # report a raw `@{u}` git error instead of "HEAD is not on the remote".
+    if marker_on_remote(repo):
+        raise HoldoutError(
+            f"{MARKER} is on the remote but not in this working tree, so the "
+            f"holdout was opened and the marker commit has been rewound or "
+            f"this is a fresh clone of an older commit. It is opened ONCE. "
+            f"Fetch and reset to the branch tip to see the record.")
 
     frozen = head_commit(repo)
     rows = _rows(con.execute(_LABELS_SQL, [HOLDOUT_SEASON]))
@@ -253,12 +315,30 @@ def open_holdout(con, *, reason: str, repo: str | Path = ".") -> list[dict]:
     marker_path(repo).write_text(
         json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    # Before the labels are handed over, never after. A failure here leaves
-    # the marker on disk and the tree dirty, so the next attempt refuses
-    # rather than silently succeeding.
+    # Commit AND PUSH before the labels are handed over, never after.
+    #
+    # The commit alone was not enough: it lives only in this clone, and
+    # `git reset --hard HEAD~1` removes it without a trace, after which the
+    # old `is_open` saw no marker and a second open succeeded. Pushing puts
+    # the record somewhere a local rewind cannot reach, and `marker_on_remote`
+    # is what reads it back.
+    #
+    # Every failure here leaves the marker committed locally, so the next
+    # attempt refuses on the local check: the seal fails closed on the
+    # network exactly as it does on git.
     _git(repo, "add", "--", MARKER)
     _git(repo, "commit", "-m",
          f"holdout: opened once on {frozen[:12]} -- {reason.strip()}",
          "-m", f"{len(rows)} {HOLDOUT_SEASON} labels released, "
                f"sha256 {marker['label_sha256'][:16]}.")
+    _, remote, branch = _upstream(repo)
+    try:
+        _git(repo, "push", "--quiet", remote, f"HEAD:refs/heads/{branch}")
+    except HoldoutError as e:
+        raise HoldoutError(
+            f"the marker is committed locally but could NOT be pushed, so the "
+            f"record of this open exists only on this machine and no label is "
+            f"released: {e}\n"
+            f"Push {MARKER} yourself, then re-run; the local marker makes a "
+            f"second open refuse until you do.") from e
     return rows

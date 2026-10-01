@@ -322,6 +322,32 @@ every game, computed outside the model and entered as the pre-game rating differ
   rolling-origin evaluation runs, so the dev evaluation is not fully out-of-sample for the
   rating's three numbers. The holdout is.
 
+**5b readings (2026-10-01), recorded where the text of 5b is ambiguous.** All three were
+settled before any model code existed, and none was chosen on a fitted model result.
+
+1. *"the winner's pre-game rating edge"* in the margin multiplier **includes** the home
+   bonus, matching the published FiveThirtyEight form 5b cites, so it is the same quantity
+   that entered the expectation. Measured: both readings select the same grid point for
+   both sports, log-loss gaps of 7e-6 (NBA) and 2.2e-5 (NHL). Immaterial, recorded as
+   `ratings.WINNER_EDGE_INCLUDES_H`.
+2. The season carry-over is applied at **every** season change, which is what "applied
+   identically at every change" requires.
+3. **The model's rating covariate EXCLUDES the home bonus.** 5b defines the rating
+   difference as `r_home + H - r_away`, and section 5 separately pools a per-team home
+   advantage, so feeding the model that difference puts home advantage in twice: once
+   fixed at a magnitude chosen by Elo log loss on 1,230 NBA games, once as a pooled
+   parameter. The two are also barely separable -- `H * 1[not neutral]` is constant across
+   **2,531 of the 2,542 dev games**, since 2024-25 holds only 11 neutral-site games across
+   both sports -- so the H component is collinear with the model's own home term except on
+   0.43% of the sample. That is a near-singular design rather than a modelling choice.
+   The model therefore takes `ratings.MODEL_COVARIATE` (`rating_diff_strength`,
+   `r_home - r_away`) and owns home advantage entirely: the global intercept plus the
+   pooled per-team term, switched off at a neutral site exactly as the rating sets H = 0.
+   `rating_diff` keeps the bonus and is kept only for `p_home_elo`, which the grid was
+   tuned on and which must not change.
+   **Consequence, pre-stated:** the neutral-site adjustment is identified by 11 dev games
+   and will be reported as shrunk toward its prior, never as an estimate.
+
 **5c. Rolling origin on dev is monthly.** Origins are the first day of each month from
 2024-11-01 to 2025-04-01. Each fit uses every 2024-25 game that started before the origin and
 predicts the games up to the next origin. October 2024 games are training data only.

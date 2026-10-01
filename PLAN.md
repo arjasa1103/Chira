@@ -585,6 +585,26 @@ in `chart-data.json`). Full write-up: notes/week4-charts.md.
 
 ## Phase 5 — Scoring and the nested test
 
+**Brier stays primary. Decided 2026-10-01, with the reason, before the first fit.**
+This closes the P2 that `docs/prior-art.md` opened: Wheatcroft (arXiv:1908.08980, 2019)
+finds the ignorance (log) score beats the RPS *and* Brier, and PREREGISTRATION section 3
+makes Brier primary. The citation is not the argument, and the primary metric is not
+being changed to match one.
+
+Section 3's argument is about a specific failure mode in **this** pipeline, not about
+which rule is better in general. An unclipped log loss is unbounded, so a single
+mis-joined label at an extreme price can move it without limit while Brier's worst
+single-game contribution is 1. Labels here come from a third party and the join is by
+slug, which is exactly where this project has already found defects: week 2 found spread
+markets resolving against the wrong outcome, and the census carries a `label_agreement`
+column because disagreement is a measured, non-zero condition. A headline decided by one
+bad row is a worse outcome than a headline on a slightly less sharp rule.
+
+What does not change: **log loss is reported for every result**, clipped to [0.01, 0.99]
+as Phase 2 already specifies, `docs/prior-art.md` keeps stating plainly that the cited
+paper would rank them the other way, and the nested test is unaffected -- Clark-West is
+computed on squared error, so it was never a choice between the two.
+
 - [ ] Headline: price-free model Brier and log loss beside the market's on the sealed
       holdout, reliability diagrams for both. **Pass condition: a deficit inside the
       pre-stated 0.02-0.03 Brier band, decomposed and explained.** A materially wider gap

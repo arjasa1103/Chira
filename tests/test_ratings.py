@@ -22,6 +22,7 @@ from chira.ratings import (
     ELO_START,
     GRID,
     GRID_SIZE,
+    MODEL_COVARIATE,
     brier,
     carry_over,
     expected_home,
@@ -478,3 +479,39 @@ class TestTheRatingCanary:
                               result_delay=leaky)
             caught += self._pre(base[n]) != self._pre(alt[n])
         assert caught > 0
+
+
+class TestTheModelCovariate:
+    """Amendment 5b, third reading: the model takes the strength difference,
+    not the one carrying the home bonus."""
+
+    def test_the_named_field_exists_on_every_row(self):
+        rows = run_ratings([g(1, T0, "bos", "nyk", 100, 110)],
+                           k=20, h=50, c=0.6)
+        assert MODEL_COVARIATE in rows[0]
+
+    def test_it_excludes_the_home_bonus(self):
+        rows = run_ratings([g(1, T0, "bos", "nyk", 100, 110)],
+                           k=20, h=50, c=0.6)
+        r = rows[0]
+        assert r["rating_diff_strength"] == r["r_home_pre"] - r["r_away_pre"]
+        assert r["rating_diff"] == r["rating_diff_strength"] + r["home_bonus"]
+
+    def test_the_two_differ_by_exactly_h_on_an_ordinary_game(self):
+        rows = run_ratings([g(1, T0, "bos", "nyk", 100, 110)],
+                           k=25, h=125, c=0.6)
+        assert rows[0]["rating_diff"] - rows[0]["rating_diff_strength"] == 125
+
+    def test_they_agree_at_a_neutral_site(self):
+        rows = run_ratings([g(1, T0, "bos", "nyk", 100, 110, neutral=True)],
+                           k=20, h=50, c=0.6)
+        assert rows[0]["rating_diff"] == rows[0]["rating_diff_strength"]
+
+    def test_the_elo_probability_still_uses_the_bonus(self):
+        """The grid was tuned on p_home_elo; stripping H from the covariate
+        must not touch it."""
+        rows = run_ratings([g(1, T0, "bos", "nyk", 100, 110)],
+                           k=20, h=50, c=0.6)
+        assert rows[0]["p_home_elo"] == expected_home(
+            rows[0]["r_home_pre"], rows[0]["r_away_pre"], 50)
+        assert rows[0]["p_home_elo"] > 0.5

@@ -23,6 +23,7 @@ from chira.holdout import (
     head_commit,
     is_clean,
     is_open,
+    marker_on_remote,
     open_holdout,
     read_marker,
 )
@@ -285,3 +286,75 @@ def test_this_repository_has_not_had_its_holdout_opened():
     happened or something opened the seal by accident."""
     from pathlib import Path
     assert not (Path(__file__).resolve().parent.parent / MARKER).exists()
+
+
+class TestTheMarkerReachesTheRemote:
+    """The residual bypass, closed 2026-10-01.
+
+    A committed marker lives only in one clone. `git reset --hard HEAD~1`
+    after an open removed it with no trace, `is_open` then saw nothing, and a
+    second open returned the labels again. These pin the fix: the marker is
+    pushed before any label comes out, and the remote copy is what is read.
+    """
+
+    def test_the_marker_is_on_the_remote_after_an_open(self, repo, con):
+        open_holdout(con, reason="week-9 frozen model", repo=repo)
+        assert marker_on_remote(repo) is True
+        origin = repo.parent / "origin.git"
+        assert MARKER in git(origin, "ls-tree", "--name-only", "main")
+
+    def test_rewinding_the_marker_commit_no_longer_grants_a_second_look(
+            self, repo, con):
+        """The exact reproduction, now refused."""
+        first = open_holdout(con, reason="the one pass", repo=repo)
+        git(repo, "reset", "--hard", "HEAD~1")
+        assert not (repo / MARKER).exists(), "the premise: locally gone"
+        with pytest.raises(HoldoutError, match="on the remote"):
+            open_holdout(con, reason="a second look", repo=repo)
+        assert len(first) == 3
+
+    def test_is_open_sees_the_remote_copy_after_a_rewind(self, repo, con):
+        open_holdout(con, reason="the one pass", repo=repo)
+        git(repo, "reset", "--hard", "HEAD~1")
+        assert is_open(repo) is True
+
+    def test_a_fresh_clone_of_the_branch_tip_refuses(self, repo, con, tmp_path):
+        open_holdout(con, reason="the one pass", repo=repo)
+        clone = tmp_path / "clone"
+        git(tmp_path, "clone", "-q", str(repo.parent / "origin.git"), str(clone))
+        git(clone, "config", "user.email", "t@example.com")
+        git(clone, "config", "user.name", "T")
+        with pytest.raises(HoldoutError, match="already opened"):
+            open_holdout(con, reason="from a clone", repo=clone)
+
+    def test_a_failed_push_releases_nothing_and_fails_closed(
+            self, repo, con, monkeypatch):
+        """The marker stays committed locally, so the next attempt refuses."""
+        import chira.holdout as H
+        real = H._git
+
+        def refuse_push(repo_path, *args):
+            if args and args[0] == "push":
+                raise H.HoldoutError("push rejected by the test")
+            return real(repo_path, *args)
+
+        monkeypatch.setattr(H, "_git", refuse_push)
+        with pytest.raises(HoldoutError, match="could NOT be pushed"):
+            open_holdout(con, reason="week-9", repo=repo)
+        monkeypatch.undo()
+        assert (repo / MARKER).is_file(), "the local marker must survive"
+        assert marker_on_remote(repo) is False
+        with pytest.raises(HoldoutError, match="already opened"):
+            open_holdout(con, reason="retry", repo=repo)
+
+    def test_an_unconsultable_remote_raises_rather_than_reporting_closed(
+            self, repo, con):
+        """'Cannot tell' is not 'not opened'."""
+        open_holdout(con, reason="the one pass", repo=repo)
+        git(repo, "reset", "--hard", "HEAD~1")
+        (repo.parent / "origin.git").rename(repo.parent / "origin.gone")
+        with pytest.raises(HoldoutError):
+            is_open(repo)
+
+    def test_marker_on_remote_is_false_before_any_open(self, repo):
+        assert marker_on_remote(repo) is False
