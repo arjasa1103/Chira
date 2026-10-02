@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .holdout import DEV_SEASON, assert_dev_only
+from .holdout import DEV_SEASON, HoldoutError, assert_dev_only
 from .ratings import MODEL_COVARIATE
 
 SPORTS = ("nba", "nhl")
@@ -362,8 +362,12 @@ def diagnostics(mcmc) -> Diagnostics:
         if name == "logits":
             continue
         arr = np.asarray(draws)
-        rhat = np.asarray(nd.gelman_rubin(arr))
-        ess = np.asarray(nd.effective_sample_size(arr))
+        # A NaN R-hat is "could not be checked", and NaN > MAX_RHAT is False,
+        # so it would pass the gate silently. Count it as infinitely bad.
+        rhat = np.nan_to_num(np.asarray(nd.gelman_rubin(arr), dtype=float),
+                             nan=np.inf)
+        ess = np.nan_to_num(np.asarray(nd.effective_sample_size(arr),
+                                       dtype=float), nan=0.0)
         if float(np.max(rhat)) > max_rhat:
             max_rhat, worst = float(np.max(rhat)), name
         if float(np.min(ess)) < min_ess:
@@ -427,6 +431,15 @@ def fit(rows: list[dict], *, sport: str, seed: int = 0,
 
     assert_fit_is_dev_only(rows)
     design = design or build_design(rows, sport=sport)
+    # The DESIGN is what gets sampled, so the design is what is checked. The
+    # first version checked only `rows`, and a prebuilt design from 2025-26
+    # passed in beside harmless dev rows was fitted with every guard green.
+    stray = [s for s in design.seasons if s != DEV_SEASON]
+    if stray:
+        raise HoldoutError(
+            f"the design to be fitted carries season(s) {stray}, not only "
+            f"{DEV_SEASON}. fit() samples the design, whatever rows come with "
+            f"it, so the design is what must be dev-only.")
     # Best effort: numpyro only honours this before jax initialises, so a
     # caller that has already touched jax gets sequential chains and a
     # warning. Correctness is unaffected -- it is a wall-clock matter -- and a

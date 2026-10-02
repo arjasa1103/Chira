@@ -33,7 +33,7 @@ sys.path.insert(0, "src")
 import duckdb
 
 from chira.analysis import open_frame
-from chira.holdout import HOLDOUT_SEASON
+from chira.holdout import DEV_SEASON
 from chira.ratings import (
     BURNIN_SEASON,
     CHOSEN,
@@ -158,15 +158,16 @@ def main() -> int:
         FROM ratings GROUP BY 1, 2 ORDER BY 1, 2""").fetchall():
         print("  {:<5} {:<8} {:>5}  {:>9}  {:>7}".format(*row))
 
-    print("\n  Elo log loss and Brier, DEV AND BURN-IN ONLY "
-          "(2025-26 is sealed until open_holdout):")
+    # DEV only. Not 2025-26, which is sealed, and not the 2023-24 burn-in,
+    # which Amendment 5b says is "never a model row and never scored" -- the
+    # first version of this block scored it and then printed that line.
+    print(f"\n  Elo log loss and Brier, {DEV_SEASON} ONLY "
+          f"(2025-26 sealed; {BURNIN_SEASON} is burn-in, never scored):")
     for sport in ("nba", "nhl"):
-        scored = [r for r in out
-                  if r["sport"] == sport and r["season"] != HOLDOUT_SEASON]
-        for season in sorted({r["season"] for r in scored}):
-            part = [r for r in scored if r["season"] == season]
-            print(f"    {sport} {season}: log loss {log_loss(part):.5f}, "
-                  f"Brier {brier(part):.5f}, n={len(part):,}")
+        part = [r for r in out
+                if r["sport"] == sport and r["season"] == DEV_SEASON]
+        print(f"    {sport} {DEV_SEASON}: log loss {log_loss(part):.5f}, "
+              f"Brier {brier(part):.5f}, n={len(part):,}")
 
     print(f"\n  {MODEL_COVARIATE} is the model's covariate; `rating_diff` "
           f"carries the home\n  bonus and exists only for p_home_elo "

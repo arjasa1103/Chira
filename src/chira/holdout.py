@@ -212,8 +212,10 @@ def assert_scorable(rows, *, what: str = "rows", repo: str | Path = ".") -> None
     rating against the 2025-26 result is a holdout score.
 
     **Why this exists as code and not as care.** On 2026-10-01
-    `scripts/build_ratings.py` printed the Elo's log loss and Brier for
-    2025-26 in a per-season summary table -- 0.69488 and 0.25065 for the NHL.
+    `scripts/build_ratings.py` printed the Elo's log loss, Brier and the
+    home-win rate for 2025-26 in a per-season summary table, for BOTH sports
+    -- 0.69488 and 0.25065 for the NHL; the NBA values were not transcribed.
+    PREREGISTRATION.md records it as Deviation 1.
     The constants were already frozen and pushed, so the choice could not have
     been affected, but holdout performance was visible before the seal was
     broken, which is precisely what the seal is for. It was disclosed rather

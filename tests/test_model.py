@@ -222,6 +222,18 @@ class TestTheFitRefusesTheHoldout:
         with pytest.raises(HoldoutError, match="carry no season"):
             fit([*frame(8), bad], sport="nba", warmup=2, samples=2, chains=2)
 
+    def test_a_prebuilt_holdout_design_cannot_ride_in_on_dev_rows(self):
+        """The first `fit` checked `rows` and then sampled whatever `design`
+        it was handed, so harmless dev rows plus a design built from 2025-26
+        fitted the holdout with every guard green. Rolling-origin folds pass
+        prebuilt designs, which is exactly where this path gets used."""
+        sealed = build_design(frame(8, season=HOLDOUT_SEASON), sport="nba",
+                              dev_rows=frame(8))
+        assert sealed.seasons == (HOLDOUT_SEASON,), "the premise"
+        with pytest.raises(HoldoutError, match="design"):
+            fit(frame(8), sport="nba", design=sealed,
+                warmup=2, samples=2, chains=2)
+
 
 def test_a_single_chain_run_cannot_pass_the_rhat_gate():
     """R-hat is a between-chain statistic; one chain would give NaN, and NaN
@@ -239,3 +251,22 @@ def test_the_sampler_actually_runs_and_returns_probabilities():
     assert (p > 0).all() and (p < 1).all()
     assert f.diag.divergences >= 0
     assert set(f.priors) == set(PRIORS)
+
+
+def test_a_nan_rhat_fails_the_gate_instead_of_passing_it():
+    """`gelman_rubin` returns NaN for a draw with no variance, and NaN > 1.01
+    is False, so the first version let an uncheckable parameter through."""
+    from chira.model import DiagnosticsError, assert_diagnostics, diagnostics
+
+    class FakeMCMC:
+        def get_samples(self, group_by_chain=False):
+            return {"alpha": np.random.default_rng(0).normal(size=(4, 200)),
+                    "stuck": np.ones((4, 200))}
+
+        def get_extra_fields(self):
+            return {"diverging": np.zeros((4, 200), dtype=bool)}
+
+    d = diagnostics(FakeMCMC())
+    assert d.worst_param == "stuck"
+    with pytest.raises(DiagnosticsError, match="R-hat"):
+        assert_diagnostics(d)

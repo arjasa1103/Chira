@@ -360,6 +360,44 @@ reports how many values were filled.
 single function that refuses a dirty tree, refuses a second call, and commits a marker with
 the frozen commit hash and time.
 
+### Deviation 1 (2026-10-01): holdout scores seen before the seal was opened
+
+**What happened.** At 21:04 UTC on 2026-10-01 the first version of `scripts/build_ratings.py`,
+which walks the frozen Elo through 2025-26 to produce that season's pre-game ratings, printed
+a per-season summary table with three outcome columns: the Elo's log loss, its Brier score and
+the home-win rate. The table had **2025-26 rows for both sports**, so all six of those holdout
+numbers were on screen before `open_holdout` had been called. Only the NHL pair (log loss
+0.69488, Brier 0.25065) was later quoted in the commit that fixed it (`e20d495`); the NBA pair
+and both home-win rates were not transcribed and are not reproduced here.
+
+**What it could and could not have affected.**
+- **Could not:** the Elo constants. K, H and c were chosen on 2024-25 only and frozen by a
+  public commit (`d66671c`) before this script existed.
+- **Probably not, and stated rather than proven:** the model's specification. Section 5 and
+  Amendment 5 fixed its terms before this run. The model commit (`f447287`) landed at 21:15
+  UTC, eleven minutes after the table; its three recorded readings are structural (one fit
+  per sport, the median fill extended to rest and time-zone shift, no prior-win-rate term),
+  none concerns how the Elo performs, and none cites a holdout number. Timing alone cannot
+  rule out influence, so this is recorded as a claim, not a proof.
+- **Could:** any choice made after 21:04 UTC on 2026-10-01 that a person might steer with
+  knowledge of how the Elo did on 2025-26. The NHL figure is worse than a coin flip (log loss
+  0.69315), which is the kind of knowledge that could tempt a later NHL-specific change. So
+  **from here to the holdout pass, no model change may be justified by holdout behaviour**,
+  and every change made after this date is listed in the dress-rehearsal report with its
+  reason, which must cite dev evidence.
+
+**What stops it recurring.** Scoring is now refused in code rather than by care:
+`holdout.assert_scorable` rejects any row from the sealed season, and any row without a
+season, until the holdout marker exists; `ratings.log_loss` and `ratings.brier` call it. The
+model's fit guard was tightened the same day so that a prebuilt 2025-26 design cannot be
+fitted alongside dev rows.
+
+**Effect on the headline claims.** No model has been scored on 2025-26; the holdout pass,
+including the NBA primary test, has not happened. What was seen is how well the model's main
+input, the Elo, did on the holdout, which says something about what the model will score.
+That is why the no-holdout-justified-changes rule above exists. Artifact v2's limitations
+section will cite this deviation.
+
 ## 7. Nested test
 
 - **Model A:** market price only. **Model B:** market price + features.
