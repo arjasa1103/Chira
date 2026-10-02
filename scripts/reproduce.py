@@ -106,6 +106,19 @@ def steps() -> list[dict]:
          "why": "reproduces the 245-point grid behind the frozen K/H/c in "
                 "ratings.CHOSEN; it does not re-choose them",
          "network": False},
+        {"name": "Elo walk",
+         "cmd": ["scripts/build_ratings.py"],
+         "makes": "data/ratings/ratings.parquet",
+         "why": "walks all three seasons with the frozen constants, with a "
+                "causality canary that truncates the schedule and compares",
+         "network": False},
+        {"name": "dress rehearsal",
+         "cmd": ["scripts/run_dress_rehearsal.py"],
+         "makes": "data/rehearsal/dress-rehearsal.json",
+         "why": "every table the writeup needs, on DEV only: rolling origin, "
+                "the GBM ceiling, hyperprior sensitivity, risk tiers and the "
+                "nested test. ~6 min",
+         "network": False},
     ]
     return out
 

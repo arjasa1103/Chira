@@ -33,6 +33,11 @@ store = [
 model = [
     "numpyro>=0.15",
     "jax>=0.4.30",
+    # T17 only: the GBM is a measured CEILING, never shipped. A hand-rolled
+    # booster would have been one fewer dependency and a worse measurement --
+    # an under-powered ceiling makes interpretability look free, which is
+    # exactly the assertion T17 exists to replace with a number.
+    "scikit-learn>=1.5",
 ]
 
 [dependency-groups]

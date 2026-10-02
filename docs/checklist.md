@@ -138,9 +138,15 @@ The model:
 - [x] **Fit guard checks the design it samples** (review fix 2026-10-01): `fit()` used to check only `rows`, so a prebuilt 2025-26 design passed in beside dev rows was sampled with every guard green (proven by a test that fails on the old code)
 - [ ] **Rolling-origin runner** (Amendment 5c): monthly origins 2024-11-01 to 2025-04-01 on 2024-25, each fold fitted on games before its origin with dev-frozen medians and scaler, predicting the month after; Brier primary, log loss beside it; fill counts and diagnostics in every fold's report. No script exists yet: the in-sample numbers above came from ad hoc runs
 - [ ] **Holdout prediction path:** 2025-26 team-seasons have no dev estimate, so a holdout prediction must integrate the team-season effects out (draw them from the fitted `tau`), never reuse dev indices. `Fit.p_home()` only covers fitted rows today
-- [ ] Hyperprior sensitivity analysis
-- [ ] GBM fitted as a reported benchmark ceiling (T17)
-- [ ] Full dress rehearsal on 2024-25, producing every table and figure
+- [x] **Hyperprior sensitivity analysis** (section 5, 2026-10-02): each variance prior scaled ×½ and ×2, twelve refits. No parameter tracks its prior; the sharpest is NBA `tau_home`, whose posterior moves 1.58× against a 4× prior change (~20%, under the 25% threshold but worth stating). `b_rating` is stable to four decimals throughout
+- [x] **GBM ceiling (T17)** (`src/chira/ceiling.py`, 2026-10-02), same folds and same covariates: the black box is **worse** in both sports (NBA Brier 0.23055 vs the model's 0.21250; NHL 0.24891 vs 0.23954), so the cost of interpretability is **negative**. A strong ceiling was used on purpose -- an under-powered one would have manufactured that result. Reported, never shipped
+- [x] **Full dress rehearsal on 2024-25** (`scripts/run_dress_rehearsal.py`, 2026-10-02): rolling origin per fold and pooled, model vs Elo vs base rate vs ceiling, sensitivity, risk tiers, and the nested test under both nulls and both closing constructions → [notes/week8-model.md](../notes/week8-model.md), JSON in `data/rehearsal/`
+- [x] **Rolling origin (Amendment 5c)**: six monthly origins, October training-only, scaler and fill medians refitted per fold. All twelve fits converged, worst R-hat 1.0042
+- [x] **Nested-test code (section 7)**: Clark-West with the MSPE adjustment, both nulls with B literally nesting the recalibration, stationary bootstrap over calendar dates, risk tiers — all behind `assert_scorable`
+- [ ] Reliability diagrams for model and market side by side — the one figure the rehearsal does not cut yet
+- [ ] **Decide headline 1's framing before the holdout pass.** Out of sample the model does **not** beat the Elo it is built on (NBA Brier 0.21250 vs 0.20968; NHL 0.23954 vs 0.23685), and its calibration is worse too (ECE 0.0301 vs 0.0175). Amendment 5b's disclosed overlap biases that comparison toward the rating by an unmeasured amount; refitting K/H/c inside each fold would settle it and is dev-only work
+- [ ] **NHL [0.35, 0.45) risk bucket is miscalibrated**: 185 games, mean p 0.4069, actual 0.5243, 95% CI [0.4595, 0.5892] excluding the forecast. The NHL's busiest region, going into a pass that cannot be repeated
+- [x] **The NHL nested test splits on the null, as section 7 anticipated**: B beats the raw price (CW +2.650, bootstrap p 0.0015) but not a recalibrated one (CW +1.495, p 0.0815). Almost all of the apparent edge is fixing the market's tilt — headline 2 arriving from another direction
 - [ ] **The 2025-26 holdout opened exactly once**, after the model is frozen by commit
 - [ ] Nested test: Clark-West against both nulls, under both closing-price constructions
 

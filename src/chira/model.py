@@ -655,3 +655,89 @@ def pooled(folds: list[Fold]) -> tuple[np.ndarray, np.ndarray, list[str]]:
     y = np.concatenate([f.y for f in folds])
     ids = [g for f in folds for g in f.game_ids]
     return p, y, ids
+
+
+# --- hyperprior sensitivity -----------------------------------------------
+
+# PREREGISTRATION section 5: *"Hyperprior sensitivity analysis is mandatory
+# and reported. On hierarchical variance parameters the prior can be the
+# result."* These are the variance parameters; the multipliers bracket the
+# adopted scale by a factor of two each way.
+SENSITIVITY_PARAMS = ("tau_team", "tau_home")
+SENSITIVITY_MULTIPLIERS = (0.5, 1.0, 2.0)
+
+
+@dataclass
+class SensitivityRow:
+    param: str
+    multiplier: float
+    scale: float
+    posterior_mean: float
+    posterior_sd: float
+    b_rating_mean: float
+    diag: Diagnostics
+
+    def line(self) -> str:
+        return (f"  {self.param:<9} x{self.multiplier:<4} "
+                f"(scale {self.scale:.3f})  posterior mean "
+                f"{self.posterior_mean:.4f} (sd {self.posterior_sd:.4f})  "
+                f"b_rating {self.b_rating_mean:+.4f}  "
+                f"R-hat {self.diag.max_rhat:.4f}")
+
+
+def hyperprior_sensitivity(rows: list[dict], *, sport: str,
+                           params: tuple[str, ...] = SENSITIVITY_PARAMS,
+                           multipliers: tuple[float, ...] =
+                           SENSITIVITY_MULTIPLIERS,
+                           seed: int = 0, **fit_kw) -> list[SensitivityRow]:
+    """Refit with each variance prior scaled, and report what moved.
+
+    **Reported, never used to re-choose.** The adopted priors are the x1.0
+    rows; the others exist so a reader can see whether the hierarchical
+    variances are data-driven or prior-driven. A posterior that tracks its
+    prior is the finding section 5 warns about, and the honest response is to
+    say so, not to pick the prior that gives the nicest answer.
+    """
+    out: list[SensitivityRow] = []
+    for i, param in enumerate(params):
+        for j, mult in enumerate(multipliers):
+            scale = PRIORS[param] * mult
+            f = fit(rows, sport=sport, priors={param: scale},
+                    seed=seed + 10 * i + j, **fit_kw)
+            draws = np.asarray(f.mcmc.get_samples()[param])
+            out.append(SensitivityRow(
+                param=param, multiplier=mult, scale=scale,
+                posterior_mean=float(draws.mean()),
+                posterior_sd=float(draws.std()),
+                b_rating_mean=float(
+                    np.asarray(f.mcmc.get_samples()["b_rating"]).mean()),
+                diag=f.diag))
+    return out
+
+
+def prior_driven(rows: list[SensitivityRow], *, tol: float = 0.25) -> list[str]:
+    """Which variance parameters move with their prior rather than the data.
+
+    A posterior mean that scales roughly with the prior scale is the symptom.
+    `tol` is how much of the prior's change may show up in the posterior
+    before it is called prior-driven.
+    """
+    flagged = []
+    for param in sorted({r.param for r in rows}):
+        block = sorted((r for r in rows if r.param == param),
+                       key=lambda r: r.multiplier)
+        lo, hi = block[0], block[-1]
+        if lo.posterior_mean <= 0:
+            continue
+        prior_ratio = hi.scale / lo.scale
+        post_ratio = hi.posterior_mean / lo.posterior_mean
+        # 1.0 means the posterior tracked the prior exactly; 0.0 means it
+        # ignored it.
+        tracked = (post_ratio - 1.0) / (prior_ratio - 1.0) if prior_ratio > 1 \
+            else 0.0
+        if tracked > tol:
+            flagged.append(
+                f"{param}: posterior mean moved {post_ratio:.2f}x while its "
+                f"prior moved {prior_ratio:.2f}x ({tracked:.0%} of the "
+                f"prior's change) -- prior-driven")
+    return flagged

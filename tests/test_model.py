@@ -25,8 +25,11 @@ from chira.model import (
     MAX_RHAT,
     PRIORS,
     ROLLING_ORIGINS,
+    SENSITIVITY_MULTIPLIERS,
+    SENSITIVITY_PARAMS,
     Diagnostics,
     DiagnosticsError,
+    SensitivityRow,
     assert_diagnostics,
     build_design,
     derive_terms,
@@ -35,6 +38,7 @@ from chira.model import (
     fit,
     fold_slices,
     predict,
+    prior_driven,
     rolling_origin,
     standardise,
 )
@@ -374,3 +378,44 @@ def test_rolling_origin_refuses_holdout_rows():
         r.setdefault("start_t", 0)
     with pytest.raises(HoldoutError, match="sealed holdout"):
         rolling_origin(rows, sport="nba")
+
+
+class TestHyperpriorSensitivity:
+    """PREREGISTRATION section 5: mandatory, reported, never used to
+    re-choose. On hierarchical variance parameters the prior can be the
+    result, so the point is to show whether it is."""
+
+    def test_prior_driven_flags_a_posterior_that_tracks_its_prior(self):
+        rows = [SensitivityRow("tau_team", m, 0.5 * m, 0.1 * m, 0.05, 0.9,
+                               Diagnostics(0, 1.0, "a", 900, "a"))
+                for m in (0.5, 1.0, 2.0)]
+        flagged = prior_driven(rows)
+        assert flagged and "prior-driven" in flagged[0]
+
+    def test_a_posterior_that_ignores_its_prior_is_not_flagged(self):
+        rows = [SensitivityRow("tau_team", m, 0.5 * m, 0.11, 0.05, 0.9,
+                               Diagnostics(0, 1.0, "a", 900, "a"))
+                for m in (0.5, 1.0, 2.0)]
+        assert prior_driven(rows) == []
+
+    def test_the_tolerance_is_what_decides(self):
+        rows = [SensitivityRow("tau_home", m, 0.25 * m, 0.1 + 0.02 * m, 0.05,
+                               0.9, Diagnostics(0, 1.0, "a", 900, "a"))
+                for m in (0.5, 1.0, 2.0)]
+        assert prior_driven(rows, tol=0.5) == []
+        assert prior_driven(rows, tol=0.001) != []
+
+    def test_the_grid_brackets_the_adopted_scale_both_ways(self):
+        assert min(SENSITIVITY_MULTIPLIERS) < 1.0 < max(SENSITIVITY_MULTIPLIERS)
+        assert 1.0 in SENSITIVITY_MULTIPLIERS
+        assert set(SENSITIVITY_PARAMS) <= set(PRIORS)
+
+    def test_only_variance_parameters_are_varied(self):
+        """Section 5 is specifically about hierarchical variances."""
+        assert all(p.startswith("tau_") for p in SENSITIVITY_PARAMS)
+
+    def test_a_zero_posterior_mean_does_not_divide_by_zero(self):
+        rows = [SensitivityRow("tau_team", m, 0.5 * m, 0.0, 0.0, 0.9,
+                               Diagnostics(0, 1.0, "a", 900, "a"))
+                for m in (0.5, 1.0, 2.0)]
+        assert prior_driven(rows) == []
