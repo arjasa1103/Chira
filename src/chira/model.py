@@ -168,6 +168,7 @@ class Design:
     sport: str
     seasons: tuple[str, ...]
     game_ids: list[str]
+    row_seasons: list[str]        # per row; scoring guards need it
     y: np.ndarray                 # home win, 0/1
     rating: np.ndarray            # standardised MODEL_COVARIATE
     features: np.ndarray          # (n, k) standardised
@@ -242,6 +243,7 @@ def build_design(rows: list[dict], *, sport: str,
         sport=sport,
         seasons=tuple(sorted({r["season"] for r in rows})),
         game_ids=[r["game_id"] for r in rows],
+        row_seasons=[r["season"] for r in rows],
         y=np.array([float(r["y"]) for r in rows]),
         rating=rating,
         features=np.column_stack(cols) if cols else np.zeros((len(rows), 0)),
@@ -454,3 +456,202 @@ def fit(rows: list[dict], *, sport: str, seed: int = 0,
     assert_diagnostics(d)
     return Fit(sport=sport, design=design, mcmc=mcmc, diag=d,
                priors={**PRIORS, **(priors or {})})
+
+
+# --- prediction ------------------------------------------------------------
+
+
+@dataclass
+class Prediction:
+    """Posterior predictive probabilities for a design the fit did not see."""
+    p: np.ndarray                 # posterior mean P(home wins), per game
+    draws: np.ndarray             # (n_draws, n_games)
+    game_ids: list[str]
+    seasons: list[str]            # per row, so a score can be guarded
+    unseen_team_seasons: tuple[str, ...]
+    n_unseen_rows: int
+
+    def lines(self) -> list[str]:
+        out = [f"predicted {len(self.p):,} games from "
+               f"{self.draws.shape[0]:,} posterior draws"]
+        if self.unseen_team_seasons:
+            out.append(f"  {len(self.unseen_team_seasons)} team-season(s) not "
+                       f"in the fit, affecting {self.n_unseen_rows:,} rows; "
+                       f"their residual effect is drawn from the fitted "
+                       f"hyperprior, not set to zero")
+        return out
+
+
+def _samples(fit: Fit) -> dict[str, np.ndarray]:
+    return {k: np.asarray(v) for k, v in fit.mcmc.get_samples().items()}
+
+
+def predict(fit: Fit, design: Design, *, seed: int = 0) -> Prediction:
+    """Posterior predictive probabilities, marginalising unseen team-seasons.
+
+    **A team-season the fit never saw is drawn from the hyperprior, not set
+    to zero.** The two differ: the link is non-linear, so integrating over
+    `e ~ Normal(0, 1)` is not the same as plugging in its mean, and setting it
+    to zero would also understate predictive spread. This is the mechanism A4
+    pre-committed to -- a holdout-season team effect comes from the Elo, which
+    is a covariate, while the *residual* team effect is genuinely unknown and
+    is marginalised rather than invented.
+
+    The design must have been built with the FIT's scaler and medians. That is
+    checked, not trusted: standardising a later season with its own mean and
+    standard deviation is the classic way to leak, and it leaves no trace in
+    the output.
+    """
+    for key, stats in fit.design.scaler.items():
+        other = design.scaler.get(key)
+        if other is not None and other != stats:
+            raise ValueError(
+                f"the design was standardised with its own statistics for "
+                f"{key!r} ({other}) instead of the fit's ({stats}). Pass "
+                f"scaler=fit.design.scaler and medians from the dev rows; "
+                f"rescaling a later season with its own mean is a leak that "
+                f"leaves no trace in the output.")
+
+    s = _samples(fit)
+    n_draws = s["alpha"].shape[0]
+    known = {k: i for i, k in enumerate(fit.design.team_seasons)}
+    rng = np.random.default_rng(seed)
+
+    n_ts = design.n_team_seasons
+    e_team = np.empty((n_draws, n_ts))
+    e_home = np.empty((n_draws, n_ts))
+    unseen = []
+    for j, key in enumerate(design.team_seasons):
+        i = known.get(key)
+        if i is None:
+            unseen.append(key)
+            e_team[:, j] = rng.standard_normal(n_draws)
+            e_home[:, j] = rng.standard_normal(n_draws)
+        else:
+            e_team[:, j] = s["e_team"][:, i]
+            e_home[:, j] = s["e_home"][:, i]
+
+    unseen_set = set(unseen)
+    n_unseen_rows = sum(
+        1 for h, a in zip(design.home_idx, design.away_idx, strict=True)
+        if design.team_seasons[h] in unseen_set
+        or design.team_seasons[a] in unseen_set)
+
+    strength = (s["tau_team"][:, None]
+                * (e_team[:, design.home_idx] - e_team[:, design.away_idx]))
+    home_adv = ((s["mu_home"][:, None]
+                 + s["tau_home"][:, None] * e_home[:, design.home_idx])
+                * design.not_neutral[None, :])
+    logits = (s["alpha"][:, None]
+              + s["b_rating"][:, None] * design.rating[None, :]
+              + s["b_feature"] @ design.features.T
+              + strength + home_adv)
+    draws = 1.0 / (1.0 + np.exp(-logits))
+    return Prediction(p=draws.mean(axis=0), draws=draws,
+                      game_ids=list(design.game_ids),
+                      seasons=list(design.row_seasons),
+                      unseen_team_seasons=tuple(sorted(unseen)),
+                      n_unseen_rows=n_unseen_rows)
+
+
+# --- rolling origin (PREREGISTRATION Amendment 5c) -------------------------
+
+# "Origins are the first day of each month from 2024-11-01 to 2025-04-01.
+# Each fit uses every 2024-25 game that started before the origin and predicts
+# the games up to the next origin. October 2024 games are training data only."
+ROLLING_ORIGINS: tuple[str, ...] = (
+    "2024-11-01", "2024-12-01", "2025-01-01", "2025-02-01",
+    "2025-03-01", "2025-04-01",
+)
+
+
+def fold_slices(rows: list[dict], origins: tuple[str, ...], *,
+                sport: str = "") -> list[tuple[str, str | None,
+                                               list[dict], list[dict]]]:
+    """(origin, end, train, test) per fold. Pure, so the slicing is testable
+    without paying for six MCMC runs.
+
+    Train is every game that had STARTED before the origin; test is every
+    game from the origin up to the next one, and the last fold runs to the
+    end of the season.
+    """
+    bounds = [*origins, None]
+    out = []
+    for i, origin in enumerate(origins):
+        lo = _epoch(origin)
+        hi = _epoch(bounds[i + 1]) if bounds[i + 1] else None
+        train = [r for r in rows if r["start_t"] < lo]
+        test = [r for r in rows
+                if r["start_t"] >= lo and (hi is None or r["start_t"] < hi)]
+        if not train or not test:
+            raise ValueError(
+                f"{sport or 'this'} origin {origin}: {len(train)} training "
+                f"and {len(test)} test games. A fold with an empty side is "
+                f"not a fold; check the origins against the season's dates.")
+        out.append((origin, bounds[i + 1], train, test))
+    return out
+
+
+@dataclass
+class Fold:
+    origin: str
+    end: str | None               # None on the last fold: to the season's end
+    n_train: int
+    n_test: int
+    game_ids: list[str]
+    p: np.ndarray
+    y: np.ndarray
+    diag: Diagnostics
+    unseen_team_seasons: tuple[str, ...]
+
+
+def _epoch(day: str) -> int:
+    from datetime import UTC, datetime
+    return int(datetime.fromisoformat(f"{day}T00:00:00+00:00")
+               .astimezone(UTC).timestamp())
+
+
+def rolling_origin(rows: list[dict], *, sport: str,
+                   origins: tuple[str, ...] = ROLLING_ORIGINS,
+                   seed: int = 0, **fit_kw) -> list[Fold]:
+    """Fit at each origin on everything before it; predict the next block.
+
+    Honestly out of sample in the only way one dev season allows: each fold's
+    parameters, scaler and fill medians come from games that had already
+    STARTED at the origin, and nothing from the block being predicted.
+
+    **The scaler and the medians are refitted per fold, on that fold's
+    training games only.** Using dev-wide statistics would quietly carry
+    April's games into November's fit.
+
+    A team that has not yet played by an origin is unseen, and `predict`
+    marginalises it over the hyperprior rather than zeroing it. Early origins
+    have more of those; the fold reports how many.
+    """
+    rows = [r for r in rows if r["sport"] == sport]
+    if not rows:
+        raise ValueError(f"no {sport} rows")
+    assert_fit_is_dev_only(rows)
+    folds: list[Fold] = []
+    for i, (origin, end, train, test) in enumerate(fold_slices(rows, origins,
+                                                              sport=sport)):
+        med = dev_medians(train)
+        d_train = build_design(train, sport=sport, medians=med)
+        f = fit(train, sport=sport, design=d_train, seed=seed + i, **fit_kw)
+        d_test = build_design(test, sport=sport, scaler=d_train.scaler,
+                              medians=med)
+        pred = predict(f, d_test, seed=seed + i)
+        folds.append(Fold(
+            origin=origin, end=end, n_train=len(train),
+            n_test=len(test), game_ids=list(d_test.game_ids), p=pred.p,
+            y=d_test.y, diag=f.diag,
+            unseen_team_seasons=pred.unseen_team_seasons))
+    return folds
+
+
+def pooled(folds: list[Fold]) -> tuple[np.ndarray, np.ndarray, list[str]]:
+    """Every fold's out-of-sample predictions, concatenated in fold order."""
+    p = np.concatenate([f.p for f in folds])
+    y = np.concatenate([f.y for f in folds])
+    ids = [g for f in folds for g in f.game_ids]
+    return p, y, ids

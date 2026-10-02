@@ -24,6 +24,7 @@ from chira.model import (
     FILLED,
     MAX_RHAT,
     PRIORS,
+    ROLLING_ORIGINS,
     Diagnostics,
     DiagnosticsError,
     assert_diagnostics,
@@ -32,6 +33,9 @@ from chira.model import (
     dev_medians,
     fill_missing,
     fit,
+    fold_slices,
+    predict,
+    rolling_origin,
     standardise,
 )
 from chira.ratings import MODEL_COVARIATE
@@ -270,3 +274,103 @@ def test_a_nan_rhat_fails_the_gate_instead_of_passing_it():
     assert d.worst_param == "stuck"
     with pytest.raises(DiagnosticsError, match="R-hat"):
         assert_diagnostics(d)
+
+
+class TestPredictingAnUnseenSeason:
+    def _fitted(self):
+        dev = frame(80)
+        d = build_design(dev, sport="nba")
+        return fit(dev, sport="nba", warmup=300, samples=300, chains=2,
+                   design=d), d, dev
+
+    def test_an_unseen_team_season_is_marginalised_not_zeroed(self):
+        f, d_dev, dev = self._fitted()
+        new = frame(40, season=HOLDOUT_SEASON)
+        d_new = build_design(new, sport="nba", scaler=d_dev.scaler,
+                             medians=dev_medians(dev))
+        pr = predict(f, d_new, seed=3)
+        assert len(pr.unseen_team_seasons) == 4
+        assert pr.n_unseen_rows == 40
+        # Marginalising an unknown effect must WIDEN the predictive spread.
+        assert pr.draws.std(axis=0).mean() > \
+            predict(f, d_dev, seed=3).draws.std(axis=0).mean()
+
+    def test_a_seen_team_season_reuses_the_fitted_effect(self):
+        f, d_dev, _ = self._fitted()
+        assert predict(f, d_dev, seed=1).unseen_team_seasons == ()
+        a = predict(f, d_dev, seed=1).p
+        b = predict(f, d_dev, seed=2).p
+        np.testing.assert_allclose(a, b)   # no randomness when nothing is new
+
+    def test_rescaling_with_the_new_seasons_own_statistics_is_refused(self):
+        """The classic leak, and it leaves no trace in the output. The
+        medians are passed correctly here so that the SCALER is the only
+        thing wrong, which is what the guard is for."""
+        f, _, dev = self._fitted()
+        own = build_design(frame(40, season=HOLDOUT_SEASON), sport="nba",
+                           medians=dev_medians(dev))
+        with pytest.raises(ValueError, match="its own statistics"):
+            predict(f, own)
+
+    def test_the_report_names_the_unseen_team_seasons(self):
+        f, d_dev, dev = self._fitted()
+        d_new = build_design(frame(40, season=HOLDOUT_SEASON), sport="nba",
+                             scaler=d_dev.scaler, medians=dev_medians(dev))
+        assert any("not in the fit" in x
+                   for x in predict(f, d_new, seed=0).lines())
+
+
+class TestTheRollingOriginSlices:
+    """Pure slicing, so the contract is checked without six MCMC runs."""
+
+    def rows(self):
+        import datetime as dt
+
+        def ep(d):
+            return int(dt.datetime.fromisoformat(f"{d}T00:00:00+00:00")
+                       .timestamp())
+        days = ["2024-10-15", "2024-11-15", "2024-12-15", "2025-01-15",
+                "2025-02-15", "2025-03-15", "2025-04-15"]
+        return [{"start_t": ep(d), "game_id": f"g{i}"}
+                for i, d in enumerate(days)]
+
+    def test_train_grows_and_test_blocks_are_disjoint(self):
+        folds = fold_slices(self.rows(), ROLLING_ORIGINS)
+        assert len(folds) == len(ROLLING_ORIGINS)
+        sizes = [len(tr) for _, _, tr, _ in folds]
+        assert sizes == sorted(sizes) and sizes[0] == 1
+        seen = [g["game_id"] for _, _, _, te in folds for g in te]
+        assert len(seen) == len(set(seen))
+
+    def test_october_is_training_only(self):
+        """Amendment 5c says so explicitly."""
+        folds = fold_slices(self.rows(), ROLLING_ORIGINS)
+        tested = {g["game_id"] for _, _, _, te in folds for g in te}
+        assert "g0" not in tested
+        assert "g0" in {g["game_id"] for _, _, tr, _ in folds for g in tr}
+
+    def test_the_last_fold_runs_to_the_end_of_the_season(self):
+        assert fold_slices(self.rows(), ROLLING_ORIGINS)[-1][1] is None
+
+    def test_no_test_game_starts_before_its_origin(self):
+        import datetime as dt
+        for origin, _, _, test in fold_slices(self.rows(), ROLLING_ORIGINS):
+            lo = int(dt.datetime.fromisoformat(f"{origin}T00:00:00+00:00")
+                     .timestamp())
+            assert all(g["start_t"] >= lo for g in test)
+
+    def test_an_empty_side_refuses(self):
+        with pytest.raises(ValueError, match="not a fold"):
+            fold_slices(self.rows(), ("2024-09-01",))
+
+    def test_the_origins_are_the_pre_registered_ones(self):
+        assert ROLLING_ORIGINS == ("2024-11-01", "2024-12-01", "2025-01-01",
+                                   "2025-02-01", "2025-03-01", "2025-04-01")
+
+
+def test_rolling_origin_refuses_holdout_rows():
+    rows = [*frame(8), row(99, "bos", "nyk", season=HOLDOUT_SEASON)]
+    for r in rows:
+        r.setdefault("start_t", 0)
+    with pytest.raises(HoldoutError, match="sealed holdout"):
+        rolling_origin(rows, sport="nba")
