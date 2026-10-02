@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import date, datetime, timedelta
+from datetime import time as dtime
 from pathlib import Path
 from typing import ClassVar
 from zoneinfo import ZoneInfo
@@ -45,6 +46,7 @@ from chira.collector import (
     resolve_targets,
     upcoming_targets,
     window_is_too_far,
+    window_start_for,
     zero_capture_is_a_failure,
 )
 
@@ -787,3 +789,101 @@ class TestTheRunnerHonoursTheDecision:
         assert seen["targets_due"] == 1
         assert seen["now"] is not None, "judged at exit, not at the last poll"
         assert _NoPing.pings == [True]
+
+
+class TestTheWindowOpensForTheFirstGame:
+    """A fixed 16:00 ET opening never polled a weekend matinee: WPG@DET at
+    13:00 ET on 2026-10-04 and three 2026-10-10 games before 16:00 ET would
+    have been captured from nothing. Each day now opens at the earlier of
+    16:00 ET and the first puck drop minus three hours."""
+
+    def test_a_matinee_opens_the_window_three_hours_early(self):
+        assert window_start_for(et(2026, 10, 4, 13, 0)) == dtime(10, 0)
+
+    def test_a_mid_afternoon_start_moves_it_too(self):
+        """VAN@NJD, 15:30 ET on 2026-10-10."""
+        assert window_start_for(et(2026, 10, 10, 15, 30)) == dtime(12, 30)
+
+    def test_an_evening_slate_keeps_the_old_opening(self):
+        assert window_start_for(et(2026, 10, 3, 19, 0)) == dtime(16, 0)
+
+    def test_tonights_1830_start_gets_its_full_three_hours(self):
+        """NYR@DET, 18:30 ET on 2026-10-02: 15:30, half an hour earlier."""
+        assert window_start_for(et(2026, 10, 2, 18, 30)) == dtime(15, 30)
+
+    def test_no_games_or_no_schedule_is_the_old_opening(self):
+        """A failed read can only make the window as late as it always was."""
+        assert window_start_for(None) == dtime(16, 0)
+
+    def test_it_never_opens_before_the_floor(self):
+        assert window_start_for(et(2026, 10, 4, 11, 0)) == dtime(9, 0)
+
+    def test_a_naive_time_is_refused(self):
+        with pytest.raises(ValueError):
+            window_start_for(datetime(2026, 10, 4, 13, 0))
+
+    def test_the_moved_window_is_open_at_eleven_and_closed_before_ten(self):
+        start = dtime(10, 0)
+        assert in_poll_window(et(2026, 10, 4, 11, 0), start=start)
+        assert not in_poll_window(et(2026, 10, 4, 9, 59), start=start)
+        assert in_poll_window(et(2026, 10, 5, 1, 0), start=start)
+        assert not in_poll_window(et(2026, 10, 4, 11, 0))   # the old fixed one
+
+    def test_a_morning_run_waits_or_exits_against_the_moved_opening(self):
+        start = dtime(10, 0)
+        assert minutes_until_window(et(2026, 10, 4, 9, 30), start=start) == \
+            pytest.approx(30)
+        assert not window_is_too_far(et(2026, 10, 4, 9, 30), start=start)
+        assert window_is_too_far(et(2026, 10, 4, 8, 0), start=start)
+
+    def test_an_empty_matinee_session_still_counts_as_a_failure(self):
+        """Judged against the day's real window, not the old 16:00 one."""
+        at = et(2026, 12, 6, 11, 0)
+        assert zero_capture_is_a_failure(0, now=at, windows=WINDOWS,
+                                         targets_due=1, start=dtime(10, 0))
+        assert not zero_capture_is_a_failure(0, now=at, windows=WINDOWS,
+                                             targets_due=1)
+
+
+class TestTheRunnerReadsTodaysSchedule:
+    def test_the_first_start_is_todays_earliest(self, monkeypatch, tmp_path):
+        mod = _load_runner(monkeypatch, tmp_path)
+        games = [{"et_date": date(2026, 10, 4), "start_time_utc": "2026-10-04T22:00:00Z"},
+                 {"et_date": date(2026, 10, 4), "start_time_utc": "2026-10-04T17:00:00Z"},
+                 {"et_date": date(2026, 10, 5), "start_time_utc": "2026-10-05T16:00:00Z"}]
+        monkeypatch.setattr(mod, "Client", lambda *a, **k: None)
+        monkeypatch.setattr(mod, "nhl_upcoming", lambda *a, **k: games)
+        monkeypatch.setattr(mod, "active_seasons", lambda *a, **k: [("nhl", "2026-27")])
+        tip, note = mod.first_tip_today(et(2026, 10, 4, 8, 0))
+        assert tip == datetime(2026, 10, 4, 17, 0, tzinfo=UTC)
+        assert "first start" in note
+
+    def test_an_unreadable_schedule_falls_back_to_the_old_window(
+            self, monkeypatch, tmp_path):
+        mod = _load_runner(monkeypatch, tmp_path)
+
+        def boom(*a, **k):
+            raise RuntimeError("schedule down")
+
+        monkeypatch.setattr(mod, "Client", lambda *a, **k: None)
+        monkeypatch.setattr(mod, "nhl_upcoming", boom)
+        tip, note = mod.first_tip_today(et(2026, 10, 4, 8, 0))
+        assert tip is None and "16:00" in note
+
+    def test_the_exit_decision_uses_the_schedules_opening(
+            self, monkeypatch, tmp_path):
+        """A matinee morning must not send its runs away against 16:00."""
+        mod = _load_runner(monkeypatch, tmp_path)
+        seen = {}
+
+        def too_far(*a, start=None, **k):
+            seen["start"] = start
+            return True
+
+        monkeypatch.setattr(mod, "is_season_active", lambda *a, **k: True)
+        monkeypatch.setattr(mod, "first_tip_today", lambda *a, **k: (
+            datetime(2026, 10, 4, 17, 0, tzinfo=UTC), "first start today"))
+        monkeypatch.setattr(mod, "window_is_too_far", too_far)
+        monkeypatch.setattr(mod, "Heartbeat", _NoPing)
+        assert mod.main() == 0
+        assert seen["start"] == dtime(10, 0)

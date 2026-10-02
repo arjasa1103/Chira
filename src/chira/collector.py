@@ -90,6 +90,16 @@ MEASURED_FIRST_GAME = {("nhl", "2026-27"): date(2026, 9, 29),
 POLL_START_ET = dtime(16, 0)
 POLL_END_ET = dtime(2, 30)
 
+# The window does NOT always open at 16:00 ET. A fixed opening never polled a
+# weekend matinee at all: WPG@DET at 13:00 ET on 2026-10-04, and three games
+# before 16:00 ET on 2026-10-10, would have been captured from nothing or from
+# puck drop. So each ET day opens at the EARLIER of 16:00 ET and the day's first
+# puck drop minus `EARLY_GAME_LEAD`, never earlier than `EARLIEST_START_ET`.
+# 16:00 stays the latest it ever opens, so no evening is covered less than
+# before. See `window_start_for`.
+EARLY_GAME_LEAD = timedelta(hours=3)
+EARLIEST_START_ET = dtime(9, 0)
+
 # One GitHub Actions job is capped at 6 hours. A session stops short of that on
 # purpose: a job killed at the cap loses its final writes and, worse, never runs
 # its own failure reporting, so the run looks like a success that captured less.
@@ -194,15 +204,40 @@ def is_season_active(now: datetime | None = None, windows: dict | None = None) -
     return bool(active_seasons(now, windows))
 
 
-def in_poll_window(now: datetime | None = None) -> bool:
-    """True inside the ET evening window, which spans midnight."""
+def window_start_for(first_tip: datetime | None) -> dtime:
+    """When today's window opens, given today's first puck drop (or tipoff).
+
+    The earlier of 16:00 ET and `first_tip - EARLY_GAME_LEAD`, floored at
+    `EARLIEST_START_ET`. `None` -- no games today, or the schedule could not be
+    read -- is 16:00 ET, the old fixed opening, so a failure can only make the
+    window as late as it always was, never later.
+    """
+    if first_tip is None:
+        return POLL_START_ET
+    if first_tip.tzinfo is None:
+        raise ValueError("refusing a naive first-tip time; pass an aware one")
+    opens = (first_tip.astimezone(ET) - EARLY_GAME_LEAD).timetz().replace(
+        tzinfo=None)
+    # A tip before 03:00 ET would wrap past midnight; the floor catches it too.
+    return max(EARLIEST_START_ET, min(POLL_START_ET, opens.replace(
+        second=0, microsecond=0)))
+
+
+def in_poll_window(now: datetime | None = None, *,
+                   start: dtime = POLL_START_ET) -> bool:
+    """True inside the ET window, which spans midnight.
+
+    `start` is today's opening (`window_start_for`); it defaults to 16:00 ET.
+    It is always after `POLL_END_ET`, so the window always spans midnight.
+    """
     t = et_now(now).timetz().replace(tzinfo=None)
-    if POLL_START_ET <= POLL_END_ET:
-        return POLL_START_ET <= t <= POLL_END_ET
-    return t >= POLL_START_ET or t <= POLL_END_ET
+    if start <= POLL_END_ET:
+        return start <= t <= POLL_END_ET
+    return t >= start or t <= POLL_END_ET
 
 
-def minutes_until_window(now: datetime | None = None) -> float:
+def minutes_until_window(now: datetime | None = None, *,
+                         start: dtime = POLL_START_ET) -> float:
     """0 inside the poll window, else minutes until it next opens.
 
     Measured in UTC, not by subtracting two ET wall-clock times: aware datetimes
@@ -210,18 +245,19 @@ def minutes_until_window(now: datetime | None = None) -> float:
     DST change.
     """
     n = et_now(now)
-    if in_poll_window(n):
+    if in_poll_window(n, start=start):
         return 0.0
-    # Outside the window it is between POLL_END_ET and POLL_START_ET on the
+    # Outside the window it is between POLL_END_ET and today's opening on the
     # same ET date, so the next opening is today's.
-    opens = datetime.combine(n.date(), POLL_START_ET, tzinfo=ET)
+    opens = datetime.combine(n.date(), start, tzinfo=ET)
     if opens <= n:
         opens += timedelta(days=1)
     return (opens.astimezone(UTC) - n.astimezone(UTC)).total_seconds() / 60
 
 
 def window_is_too_far(now: datetime | None = None,
-                      early_minutes: int = EARLY_START_MINUTES) -> bool:
+                      early_minutes: int = EARLY_START_MINUTES, *,
+                      start: dtime = POLL_START_ET) -> bool:
     """Should a run outside the window stop instead of waiting for it?
 
     True at a start far from the window (a late cron at 07:30 UTC) and at a
@@ -229,7 +265,7 @@ def window_is_too_far(now: datetime | None = None,
     runner for hours and then ping success for a session that polled nothing,
     which is what the old `45 1` slot did every night.
     """
-    return minutes_until_window(now) > early_minutes
+    return minutes_until_window(now, start=start) > early_minutes
 
 
 def dedup_key(sport: str, season: str, token_id: str, captured_at: datetime) -> str:
@@ -536,7 +572,8 @@ class Heartbeat:
 def zero_capture_is_a_failure(captured: int, *, now: datetime | None = None,
                               windows: dict | None = None,
                               targets_due: int | None = None,
-                              enumeration_ok: bool = True) -> bool:
+                              enumeration_ok: bool = True,
+                              start: dtime = POLL_START_ET) -> bool:
     """A zero-capture run fails ONLY when it should have captured something.
 
     Off-season and outside the poll window, zero is the correct answer and
@@ -558,7 +595,7 @@ def zero_capture_is_a_failure(captured: int, *, now: datetime | None = None,
     """
     if captured > 0:
         return False
-    if not (is_season_active(now, windows) and in_poll_window(now)):
+    if not (is_season_active(now, windows) and in_poll_window(now, start=start)):
         return False
     if not enumeration_ok:
         return True

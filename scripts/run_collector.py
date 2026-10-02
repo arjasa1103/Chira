@@ -35,19 +35,22 @@ from chira.collector import (
     active_seasons,
     complement_check,
     describe_plan,
+    et_now,
     in_poll_window,
     is_season_active,
+    minutes_until_window,
     next_poll_delay,
     poll_target,
     resolve_targets,
     session_deadline,
     upcoming_targets,
     window_is_too_far,
+    window_start_for,
     zero_capture_is_a_failure,
 )
 from chira.http import Client
 from chira.telemetry import Telemetry, run_id
-from chira.upcoming import nhl_upcoming
+from chira.upcoming import nhl_upcoming, parse_start
 
 ABBR = "data/abbr_map_resolved.json"
 
@@ -105,6 +108,41 @@ def abbr_map_for(sport: str, season: str) -> tuple[dict, str]:
         # reading the gitignored path here reproduced the original crash even
         # after the lookup above was fixed.
         return load_abbr_map(path, prior, sport), prior
+
+
+# Every schedule state, not only games still to come: a run that arrives while
+# the day's matinee is being played must compute the SAME opening as one that
+# arrived before it, or the window would jump back to 16:00 mid-afternoon.
+ALL_GAME_STATES = ("FUT", "PRE", "LIVE", "CRIT", "OFF", "FINAL")
+
+
+def first_tip_today(now=None) -> tuple:
+    """(today's first start in UTC or None, a note saying where it came from).
+
+    One schedule read per run, before anything is logged, because it decides
+    whether this run polls at all. Any failure is None, which `window_start_for`
+    turns into the old 16:00 ET opening: a broken schedule read can make the
+    window as late as it always was, never later. NBA enumeration is not wired
+    yet, so NBA afternoon games do not move the opening until it is.
+    """
+    today = et_now(now).date()
+    try:
+        client = Client()
+        tips = []
+        for sport, _season in (active_seasons() or [("nhl", "2026-27")]):
+            if sport != "nhl":
+                continue
+            for g in nhl_upcoming(client, today, days=1, states=ALL_GAME_STATES):
+                if str(g.get("et_date")) == str(today):
+                    t = parse_start(g.get("start_time_utc"))
+                    if t is not None:
+                        tips.append(t)
+    # Broad by intent: the fallback is the old fixed window, which is safe.
+    except Exception as e:
+        return None, f"schedule unreadable ({type(e).__name__}), so 16:00 ET"
+    if not tips:
+        return None, "no games today, so 16:00 ET"
+    return min(tips), "first start today"
 
 
 def collect_targets(client, tel, days: int = LOOKAHEAD_DAYS
@@ -198,13 +236,21 @@ def main() -> int:
         # failing here would train the reader to ignore red runs.
         print("\noff-season for every configured window: nothing to do")
         return 0
-    if not args.force and window_is_too_far():
+    # Today's opening, from the league schedule: the earlier of 16:00 ET and
+    # the first puck drop minus three hours. Computed before the exit check,
+    # because a matinee day must not send its morning runs away.
+    first_tip, tip_note = first_tip_today()
+    start = window_start_for(first_tip)
+    tip_et = first_tip.astimezone(ET).strftime("%H:%M ET") if first_tip else "-"
+    print(f"\npoll window today opens {start.strftime('%H:%M')} ET "
+          f"({tip_note}: {tip_et})")
+    if not args.force and window_is_too_far(start=start):
         # The common case now, not an edge: the workflow fires every 30 minutes
         # because GitHub delivers scheduled runs hours late, and most of those
         # runs land far from the window. Exit before the telemetry and the
         # heartbeat: a run that never polled must not tell the monitor a
         # session happened, or the dead-man's switch goes green on nothing.
-        print(f"\nthe poll window opens in {plan['minutes_until_window']:.0f} "
+        print(f"the poll window opens in {minutes_until_window(start=start):.0f} "
               f"min, more than {plan['early_start_minutes']}; exiting so a "
               f"later run takes it. No heartbeat: nothing was collected.")
         return 0
@@ -234,11 +280,11 @@ def main() -> int:
         started = time.monotonic()
         try:
             while time.monotonic() < deadline:
-                if not in_poll_window() and not args.force:
+                if not in_poll_window(start=start) and not args.force:
                     tel.event("outside_window")
                     if args.once:
                         break
-                    if window_is_too_far():
+                    if window_is_too_far(start=start):
                         # The window has closed. The old loop slept on to the
                         # 5h30 deadline, holding a runner that the next queued
                         # run was waiting for.
@@ -294,7 +340,8 @@ def main() -> int:
     # by the last poll of the night every game has tipped and nothing is due.
     failed = zero_capture_is_a_failure(captured, now=last_poll_at,
                                        targets_due=max_due,
-                                       enumeration_ok=enumeration_ok)
+                                       enumeration_ok=enumeration_ok,
+                                       start=start)
     if args.force:
         # A rehearsal must never ping the monitor: the dead-man's switch means
         # "a scheduled session ran", and a hand-run one satisfying it would
@@ -323,7 +370,7 @@ def main() -> int:
     if captured == 0:
         print("captured nothing, correctly: "
               + ("off-season or outside the poll window"
-                 if not (is_season_active() and in_poll_window())
+                 if not (is_season_active() and in_poll_window(start=start))
                  else "no games were scheduled in the window"))
     return 0
 

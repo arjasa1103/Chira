@@ -2,8 +2,11 @@ name: collector
 
 # The forward prices-only collector (PLAN.md Phase 6). Live since 2026-09-28.
 #
-# WHY IT FIRES EVERY 30 MINUTES. The poll window is 16:00-02:30 ET (20:00-06:30
-# UTC under EDT, 21:00-07:30 under EST). It used to be covered by two crons
+# WHY IT FIRES EVERY 30 MINUTES. The poll window runs to 02:30 ET and opens at
+# 16:00 ET, or earlier on a matinee day: each run reads the league schedule and
+# opens the window at the first puck drop minus three hours, never later than
+# 16:00 and never before 09:00 ET (chira.collector.window_start_for). On an
+# evening slate that is 20:00-06:30 UTC under EDT, 21:00-07:30 under EST. It used to be covered by two crons
 # aimed at the window, `0 20` and `45 1`. GitHub delivered them hours late:
 # measured 2026-09-28/30, 3h22 to 5h45. The first slot started after early
 # puck drops and the second landed wholly outside the window, polled nothing
