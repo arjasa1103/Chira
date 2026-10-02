@@ -11,13 +11,13 @@ cannot move. Companion to [checklist.md](checklist.md), which tracks the work it
 
 | | |
 |---|---|
-| Plan weeks complete | 7 of 11. Week 8 in progress: the Elo rating is frozen (2026-10-01), the model is not started |
+| Plan weeks complete | 7 of 11. Week 8 in progress: Elo frozen and 2025-26 ratings built, the model fitted in-sample on dev (2026-10-01); rolling-origin evaluation next |
 | Calendar position | Week 8 starts on the plan's calendar 2026-11-03 |
 | Slack | About 5 weeks ahead |
 | Days to deadline | 60 |
 | Binding constraint | Fixed dates, not effort |
 | Collector | **Live since 2026-09-28.** Opening night fully captured by hand dispatch. Schedule rebuilt 2026-10-01 for the 3-6 h cron lag; the new schedule has not fired yet |
-| Unpushed | Nothing. Week 8's decisions, the rating review fixes, the seal's rewind bypass and its failed-push fix are public since 2026-10-01 |
+| Unpushed | The 2025-26 ratings (`e20d495`), the model (`f447287`) and this review's fixes and Deviation 1. Push when you're ready |
 
 ---
 
@@ -35,7 +35,7 @@ landed ahead of its window.
 | 5 | Oct 13-26 | **2026-09-21** | 35 days | Headline 2, the primary test, Amendments 3 and 4 |
 | 6 | Oct 13-26 | **2026-09-25** | 31 days | Artifact v1 published, prior art, reproduction path |
 | 7 | Oct 27-Nov 2 | **2026-09-27** | 30 days | Collector live path (09-26); feature store, `game_prices`, venue table, leakage canary (09-27) |
-| 8-9 | Nov 3-16 | **in progress** | — | Preconditions 09-28/29 (Amendment 5, neutral sites, holdout seal). **Elo rating frozen and pushed 10-01** (`d66671c`). Next: the model, the dress rehearsal, the holdout opened once |
+| 8-9 | Nov 3-16 | **in progress** | — | Preconditions 09-28/29. **Elo frozen 10-01** (`d66671c`), 2025-26 ratings built, **model fitted on dev** (`f447287`, converges both sports). **Deviation 1**: 2025-26 Elo scores seen before the seal. Next: rolling origins, sensitivity, GBM, dress rehearsal, holdout opened once |
 | 10-11 | Nov 17-30 | not started | — | Headline 1 added as artifact v2 |
 
 ---
@@ -70,7 +70,8 @@ and hand over through the concurrency group.
 | 09-29 | `45 1` | 07:26Z | 5h41 | 0 polls |
 | 09-30 | `0 20` (no dispatch) | 23:23Z | 3h23 | 98 quotes. **PIT@PHI and NYI@TOR got 7 minutes of pre-game data**; T-6h and T-1h lost for good. LAK@COL fine |
 | 09-30 | `45 1` | 07:47Z | 6h02 | 0 polls |
-| 10-01 | **new schedule, first run** | 19:35Z | — | Created inside the 45-min wait margin, so it waited for the 20:00Z opening and polls tonight's 8 games. No hand dispatch on record. Confirm coverage from its artifact |
+| 10-01 | **new schedule, no dispatch** | 19:35Z | — | **All 8 games from 20:00Z to puck drop, 928 quotes.** Waited for the opening, ran to its cap at 01:05:57Z; the queued run took over at 01:06:07Z and stopped at window close (06:31Z). Two later runs exited in seconds, no ping. Only 4 of ~46 slots delivered in 23 h |
+| 10-02 | window opening from the schedule | — | — | Shipped: the opening moves to first puck drop minus 3 h (never later than 16:00 ET). Tonight opens 15:30 ET for NYR@DET 18:30. **Sun 10-04 opens 10:00 ET for WPG@DET 13:00**, the first matinee; check it was polled |
 
 Every artifact is copied to `data/collector-archive/` (gitignored): Actions keeps them 90
 days and runs do not accumulate. Re-run the download loop after each game night.
@@ -117,9 +118,14 @@ day before any 2025-26 rating existed ([notes/week8-ratings.md](../notes/week8-r
 - **Prior art:** SSRN 5910522 read by hand 2026-10-01. No liquidity split, no NBA or NHL,
   so the contribution stands. v1's one stale line is corrected when v2 publishes.
 
-**Next: the model.** The dev agent starts on the numpyro model and the 2024-25 rolling
-origins. Training uses the census, not the collector's 2026-27 prices, and the 2025-26
-holdout stays sealed until the model is frozen and the dress rehearsal passes.
+**The model, 2026-10-01.** The hierarchical logistic is built and converges on dev for both
+sports (`f447287`), in-sample only so far. **Deviation 1** (PREREGISTRATION.md): the first
+2025-26 ratings run printed the Elo's 2025-26 log loss, Brier and home-win rate for both
+sports before the seal was open. Scoring the sealed season is now refused in code, and from
+here no model change may be justified by holdout behaviour. **Next:** the rolling-origin
+runner on 2024-25 (Amendment 5c), the holdout prediction path, hyperprior sensitivity, the
+GBM benchmark, then the dress rehearsal. Training uses the census, never the collector's
+2026-27 prices.
 
 **Weeks 8-9.** The model, then a full dress rehearsal on 2024-25 producing every table and
 figure, then the 2025-26 holdout opened exactly once. The holdout is a one-way door, and
