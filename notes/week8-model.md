@@ -108,6 +108,12 @@ The GBM is reported and **not shipped**: nothing downstream imports a prediction
 *"On hierarchical variance parameters the prior can be the result."* Each variance prior
 was scaled by ½ and 2 and the model refitted.
 
+**When these choices were made.** Section 5 makes the analysis mandatory but names no
+alternative priors and no threshold. The ×½ / ×2 multipliers and the 25% "prior-driven"
+cut (`model.prior_driven`) were chosen in the same commit as these results (`a925fad`),
+not written down beforehand. Everything here is dev, so the seal is not involved, but the
+25% figure is a reading aid set alongside the numbers, not a pre-registered threshold.
+
 ### NBA
 | parameter | prior scale | posterior mean (sd) | b_rating |
 |---|---|---|---|
@@ -130,98 +136,113 @@ was scaled by ½ and 2 and the model refitted.
 
 **No variance parameter tracks its prior.** The sharpest case is NBA `tau_home`, whose
 posterior mean moves 0.0981 → 0.1554 (a factor of 1.58) while its prior scale moves by a
-factor of 4 -- about 20% of the prior's change, under the 25% threshold but not nothing,
+factor of 4 -- about 20% of the prior's change, under the 25% reading aid but not nothing,
 and worth stating rather than rounding to "clean". `tau_team` barely moves at all
 (0.1026 → 0.1214 against the same 4× prior change). `b_rating` is stable to the fourth
 decimal throughout, so the rating coefficient -- the thing the model is actually for --
 does not depend on these priors.
 
-## 5. Risk tiers
+## 5. Risk tiers (section 9), and reliability by probability bucket
 
-Pre-registered buckets, model predictions, out of sample, with game-level bootstrap
-intervals.
+**Corrected on review, 2026-10-04.** The first version of this section printed five
+buckets on the model's own probability and called them the pre-registered risk tiers.
+Section 9 defines something else: three tiers on the edge `|p_model − p_market|` at the
+close, games under 0.02 left untiered, each tier's hit rate being how often the outcome
+went the way the model leaned relative to the market. Those are now computed below; the
+probability buckets survive as an exploratory reliability table.
 
-### NBA
-| bucket | n | share | mean p | actual | 95% CI |
-|---|---|---|---|---|---|
-| [0.00, 0.35) | 241 | 20.7% | 0.2461 | 0.2905 | [0.2324, 0.3485] |
-| [0.35, 0.45) | 146 | 12.6% | 0.3987 | 0.4315 | [0.3560, 0.5137] |
-| [0.45, 0.55) | 178 | 15.3% | 0.5024 | 0.5056 | [0.4326, 0.5787] |
-| [0.55, 0.65) | 194 | 16.7% | 0.5998 | 0.5361 | [0.4639, 0.6031] |
-| [0.65, 1.00) | 404 | 34.7% | 0.7727 | 0.7624 | [0.7228, 0.8020] |
+### Section 9's tiers, out of sample
 
-### NHL
-| bucket | n | share | mean p | actual | 95% CI |
-|---|---|---|---|---|---|
-| [0.00, 0.35) | 79 | 6.9% | 0.2786 | 0.3291 | [0.2278, 0.4304] |
-| [0.35, 0.45) | 185 | 16.1% | 0.4069 | 0.5243 | [0.4486, 0.5946] |
-| [0.45, 0.55) | 330 | 28.7% | 0.5034 | 0.5182 | [0.4636, 0.5727] |
-| [0.55, 0.65) | 301 | 26.2% | 0.5976 | 0.6080 | [0.5515, 0.6645] |
-| [0.65, 1.00) | 253 | 22.0% | 0.7163 | 0.6877 | [0.6285, 0.7391] |
+**NBA** (n=1,163 priced; 187 under the 0.02 floor, not tiered)
 
-**The NBA top tier holds up**: 34.7% of games at mean p 0.773 against an actual 0.762.
-The expected top-tier shrinkage was stated up front and it is mild.
+| tier | edge | n | share | mean edge | hit rate | 95% CI | home won / model / market |
+|---|---|---|---|---|---|---|---|
+| T1 | [0.02, 0.05) | 281 | 24.2% | 0.0342 | 0.4555 | [0.4021, 0.5125] | 0.5587 / 0.5752 / 0.5769 |
+| T2 | [0.05, 0.10) | 280 | 24.1% | 0.0734 | 0.4536 | [0.3964, 0.5107] | 0.5571 / 0.5537 / 0.5616 |
+| T3 | >= 0.10 | 415 | 35.7% | 0.1785 | **0.3542** | [0.3084, 0.4000] | 0.5108 / 0.5161 / 0.5261 |
 
-**One NHL bucket is genuinely broken.** [0.35, 0.45) holds 185 games at mean p 0.4069
-against an actual **0.5243**, and the interval [0.4595, 0.5892] **excludes** the
-forecast. The model calls those games a 41% home win and they come in at 52%. That is a
-real miscalibration in the NHL's most common region, and it is where the ECE above comes
-from.
+**NHL** (n=896 priced; 203 under the floor)
 
-## 6. The nested test, rehearsed (section 7)
+| tier | edge | n | share | mean edge | hit rate | 95% CI | home won / model / market |
+|---|---|---|---|---|---|---|---|
+| T1 | [0.02, 0.05) | 260 | 29.0% | 0.0348 | 0.4308 | [0.3692, 0.4962] | 0.5769 / 0.5452 / 0.5479 |
+| T2 | [0.05, 0.10) | 276 | 30.8% | 0.0715 | 0.4710 | [0.4130, 0.5326] | 0.5725 / 0.5395 / 0.5359 |
+| T3 | >= 0.10 | 157 | 17.5% | 0.1424 | 0.4713 | [0.3949, 0.5478] | 0.5478 / 0.5468 / 0.5143 |
 
-Model A is the market price, Model B is the market price plus features, with B literally
-nesting `a + b·logit(p)` so Clark-West applies. Both nulls, both closing-price
-constructions, stationary bootstrap over calendar dates.
+**When the model disagrees with the market, the market is usually right.** No tier's hit
+rate reaches 0.5 in either sport. The NBA's T3 is the sharpest: on the 36% of games where
+the model sits 10 points or more away from the close, the outcome went the model's way
+only 35% of the time, and the interval [0.308, 0.400] excludes a coin flip. Section 9
+pre-stated that the top tier's edge would shrink out of sample; here it does worse than
+shrink. T3 is not empty, so section 9's "may be empty" outcome does not arise. Per-tier
+results are exploratory under section 7's family-wise policy.
 
-### NBA
+### Reliability by model-probability bucket (exploratory, NOT section 9)
+
+| bucket | NBA n | NBA mean p / actual | NHL n | NHL mean p / actual [95% CI] |
+|---|---|---|---|---|
+| [0.00, 0.35) | 241 | 0.2461 / 0.2905 | 79 | 0.2786 / 0.3291 |
+| [0.35, 0.45) | 146 | 0.3987 / 0.4315 | 185 | 0.4069 / **0.5243** [0.4486, 0.5946] |
+| [0.45, 0.55) | 178 | 0.5024 / 0.5056 | 330 | 0.5034 / 0.5182 |
+| [0.55, 0.65) | 194 | 0.5998 / 0.5361 | 301 | 0.5976 / 0.6080 |
+| [0.65, 1.00) | 404 | 0.7727 / 0.7624 | 253 | 0.7163 / 0.6877 |
+
+The NHL's [0.35, 0.45) bucket is where its ECE comes from: 185 games forecast at 41% won
+52% of the time, an interval excluding the forecast. It is a reliability observation, not
+a pre-registered tier, and no model change is made in response.
+
+## 6. The nested test, rehearsed out of sample (section 7)
+
+**Corrected on review, 2026-10-04.** The first version fitted Model B and the
+recalibration null on the same dev games it then scored, so every Clark-West number in it
+was in-sample and tilted toward B, the larger model. It also gave B only the Elo and rest
+difference, unscaled, with missing rest filled as 0. Both are fixed (PREREGISTRATION,
+section 7 readings 1 and 3): B now carries the price-free model's own covariates, scaled
+and median-filled as the model is, and B and the null are fitted per rolling-origin fold
+on that fold's training games and scored on the month after.
+
+### NBA (6 folds)
 | closing price | null | CW | p (normal) | p (date bootstrap) | n |
 |---|---|---|---|---|---|
-| close | identity | +1.533 | 0.0626 | 0.0485 | 1,163 |
-| close | recalibrated | +1.515 | 0.0649 | 0.0380 | 1,163 |
-| t1h | identity | +1.577 | 0.0573 | 0.0475 | 1,162 |
-| t1h | recalibrated | +1.545 | 0.0611 | 0.0410 | 1,162 |
+| close | identity | -0.334 | 0.6309 | 0.6165 | 1,163 |
+| close | **recalibrated (primary)** | **-0.072** | 0.5286 | 0.5105 | 1,163 |
+| t1h | identity | -0.368 | 0.6436 | 0.6370 | 1,162 |
+| t1h | recalibrated | -0.113 | 0.5449 | 0.5235 | 1,162 |
 
-### NHL
+### NHL (4 folds; 2024-11-01 and 2024-12-01 skipped, no priced games before December)
 | closing price | null | CW | p (normal) | p (date bootstrap) | n |
 |---|---|---|---|---|---|
-| close | identity | +2.650 | 0.0040 | 0.0015 | 896 |
-| close | recalibrated | +1.495 | 0.0675 | 0.0815 | 896 |
-| t1h | identity | +2.597 | 0.0047 | 0.0025 | 896 |
-| t1h | recalibrated | +1.432 | 0.0761 | 0.1075 | 896 |
+| close | identity | -0.055 | 0.5220 | 0.5370 | 717 |
+| close | recalibrated | -0.027 | 0.5109 | 0.5265 | 717 |
+| t1h | identity | -0.057 | 0.5226 | 0.5395 | 717 |
+| t1h | recalibrated | +0.005 | 0.4980 | 0.5075 | 717 |
 
-**The two nulls say different things in the NHL, which is exactly why there are two.**
-Against the raw price, B is strong (CW +2.65, p 0.004 normal / 0.0015 bootstrap).
-Against a *recalibrated* price it is not significant (CW +1.50, p 0.068 / 0.082). Section
-7 pre-stated the reading: *"Winning only against the identity null is a recalibration
-finding about a public tilt, not evidence of private information."* So almost all of B's
-apparent advantage over the NHL market is fixing the market's calibration tilt -- which
-is headline 2's result arriving from a different direction.
+**Out of sample, Model B adds nothing over the market in either sport, against either
+null.** Every CW statistic sits within a few tenths of zero. The first rehearsal's
+headline, that the NHL split on the null with B beating the raw price at p 0.0015, was an
+in-sample artefact and is withdrawn. On this evidence the pre-registered primary test (B
+against the recalibration null, NBA, close, Brier) is expected to find nothing on the
+holdout; the holdout is still the only pass that counts.
 
-The NBA is weaker and more uniform: CW +1.5 against both nulls, p around 0.06 analytic
-and 0.04 bootstrapped, i.e. nothing to lean on.
-
-**The analytic and bootstrap p-values disagree** (NBA: 0.0649 against 0.0380 on the
-recalibration null), and section 7 asked for both precisely so that disagreement is
-visible. The bootstrap is the one to quote: it carries the date clustering.
-
-**This is a rehearsal, not the test.** The pre-registered nested test is one pass over
-the sealed holdout, after the model is frozen by commit. These dev numbers exist so that
-pass has nothing left to decide.
+**This is a rehearsal, not the test.** The pre-registered nested test is one fit on all of
+dev and one pass over the sealed holdout, after the model is frozen by commit.
 
 ## What the holdout pass still has to fill
 
-- Every table above, recomputed once on 2025-26 through `holdout.open_holdout`.
-- Reliability diagrams for the model and the market side by side (the figure is not cut
-  yet; the binned curve machinery is `calibration.binned_curve`, already used by chart 2).
+- Every table above, recomputed once on 2025-26 through `holdout.open_holdout`, by a
+  holdout script that does not exist yet and must be written, reviewed and pushed first.
+- Reliability diagrams for the model and the market side by side. Section 6 asks for every
+  table **and figure** on dev first, so this figure is cut on dev before the freeze.
 - The headline-1 verdict against its pre-stated band: a 0.02-0.03 Brier deficit against
   the market, decomposed and explained.
 
-## Open, and worth deciding before week 9
+## Decided before week 9 (2026-10-04)
 
-1. **The Elo overlap is unquantified.** Refitting K/H/c inside each rolling-origin fold
-   would make the model-versus-rating comparison fair. Dev-only, legitimate, not done.
-2. **The NHL [0.35, 0.45) bucket.** A known miscalibration in the busiest region of the
-   NHL's distribution, going into a holdout pass that cannot be repeated.
-3. **Headline 1's framing.** On current evidence it is "a schedule-and-rating model
-   matches its own rating and both trail the market", not "the model beats the line".
+1. **The model is frozen as it is.** It loses to its own Elo on dev and is worse
+   calibrated, and that is reported, not fixed: the pre-registration fixed its form, the dev
+   comparison is tilted toward the Elo (Amendment 5b's overlap), and the holdout, where
+   the constants were never tuned, is where the comparison becomes fair. After Deviation 1,
+   a change now would read as steered.
+2. **Headline 1's framing follows the evidence:** on dev, a schedule-and-rating model
+   roughly matches its own rating, both trail the market, and adding the model's features
+   to the market price adds nothing out of sample.
