@@ -511,6 +511,16 @@ def predict(fit: Fit, design: Design, *, seed: int = 0) -> Prediction:
                 f"scaler=fit.design.scaler and medians from the dev rows; "
                 f"rescaling a later season with its own mean is a leak that "
                 f"leaves no trace in the output.")
+    # The docstring promised this and the first version did not do it: a
+    # season filled with its own medians leaks exactly as a season
+    # standardised with its own mean does.
+    for col, med in fit.design.fill.medians.items():
+        other = design.fill.medians.get(col)
+        if other is not None and other != med:
+            raise ValueError(
+                f"the design was filled with its own median for {col!r} "
+                f"({other}) instead of the fit's ({med}). Pass the fit's "
+                f"medians; a later season's own median is a leak too.")
 
     s = _samples(fit)
     n_draws = s["alpha"].shape[0]

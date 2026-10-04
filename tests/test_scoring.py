@@ -9,8 +9,10 @@ import pytest
 
 from chira.holdout import DEV_SEASON, HOLDOUT_SEASON, HoldoutError
 from chira.scoring import (
+    EDGE_FLOOR,
+    EDGE_TIERS,
     LOG_LOSS_CLIP,
-    RISK_TIERS,
+    RELIABILITY_BUCKETS,
     apply_nested,
     clark_west,
     clipped_log_loss,
@@ -19,8 +21,11 @@ from chira.scoring import (
     inv_logit,
     logistic_mle,
     logit,
+    pooled_nested,
     recalibration_null,
+    reliability_buckets,
     risk_tiers,
+    rolling_nested,
     score_set,
     stationary_bootstrap_dates,
 )
@@ -210,35 +215,157 @@ class TestTheTwoNulls:
         assert any("logit_price" in x for x in nf.lines())
 
 
-class TestRiskTiers:
+class TestReliabilityBuckets:
+    """The probability buckets the first version called risk tiers. Kept as an
+    exploratory reliability table; section 9's tiers are on the edge."""
+
     def test_shares_sum_to_one_and_cover_every_game(self):
         rng = np.random.default_rng(9)
         p = rng.uniform(0.05, 0.95, size=900)
         y = (rng.uniform(size=900) < p).astype(float)
-        got = risk_tiers(p, y, reps=100)
+        got = reliability_buckets(p, y, reps=100)
         assert sum(t.n for t in got) == 900
         assert sum(t.share for t in got) == pytest.approx(1.0)
 
-    def test_an_empty_tier_does_not_crash(self):
-        p = np.full(50, 0.5)
-        y = np.ones(50)
-        got = risk_tiers(p, y, reps=50)
-        assert any(t.n == 0 for t in got)
-        assert any(t.n == 50 for t in got)
+    def test_an_empty_bucket_does_not_crash(self):
+        got = reliability_buckets(np.full(50, 0.5), np.ones(50), reps=50)
+        assert any(t.n == 0 for t in got) and any(t.n == 50 for t in got)
+
+    def test_the_buckets_are_contiguous_and_cover_zero_to_one(self):
+        assert RELIABILITY_BUCKETS[0][0] == 0.0 and RELIABILITY_BUCKETS[-1][1] == 1.0
+        for (_, hi), (lo, _) in pairwise(RELIABILITY_BUCKETS):
+            assert hi == lo
+
+
+class TestRiskTiersAreSectionNine:
+    """PREREGISTRATION section 9: three tiers on |p_model - p_market|."""
+
+    def test_the_bands_are_the_pre_registered_ones(self):
+        assert EDGE_FLOOR == 0.02
+        assert [(n, lo, hi) for n, lo, hi in EDGE_TIERS] == [
+            ("T1", 0.02, 0.05), ("T2", 0.05, 0.10), ("T3", 0.10, None)]
+
+    def test_games_under_the_floor_are_not_tiered(self):
+        pm = np.array([0.50, 0.51, 0.53, 0.58, 0.70])
+        pk = np.array([0.50, 0.50, 0.50, 0.50, 0.50])
+        tiers, untiered = risk_tiers(pm, pk, np.ones(5), reps=20)
+        assert untiered == 2
+        assert [t.n for t in tiers] == [1, 1, 1]
+
+    def test_the_hit_follows_the_models_side_of_the_disagreement(self):
+        """Model above market and home wins: a hit. Model below market and
+        home loses: also a hit."""
+        pm = np.array([0.65, 0.35, 0.65, 0.35])   # edge 0.15: clear of float
+        pk = np.array([0.50, 0.50, 0.50, 0.50])   # rounding at the 0.10 edge
+        y = np.array([1.0, 0.0, 0.0, 1.0])
+        tiers, _ = risk_tiers(pm, pk, y, reps=20)
+        t3 = tiers[2]
+        assert t3.n == 4 and t3.hit_rate == pytest.approx(0.5)
+        tiers, _ = risk_tiers(pm[:2], pk[:2], y[:2], reps=20)
+        assert tiers[2].hit_rate == 1.0
+
+    def test_an_empty_top_tier_is_a_valid_result(self):
+        tiers, _ = risk_tiers(np.full(30, 0.53), np.full(30, 0.50),
+                              np.ones(30), reps=20)
+        assert tiers[2].n == 0 and "empty" in tiers[2].line()
 
     def test_the_interval_brackets_the_hit_rate(self):
         rng = np.random.default_rng(10)
-        p = rng.uniform(0.66, 0.95, size=400)
-        y = (rng.uniform(size=400) < p).astype(float)
-        tier = next(t for t in risk_tiers(p, y, reps=400) if t.n)
-        assert tier.ci[0] <= tier.hit_rate <= tier.ci[1]
+        pm = rng.uniform(0.55, 0.60, size=400)
+        y = (rng.uniform(size=400) < 0.55).astype(float)
+        tiers, _ = risk_tiers(pm, np.full(400, 0.50), y, reps=400)
+        t = tiers[1]                              # edges 0.05-0.10: T2
+        assert t.ci[0] <= t.hit_rate <= t.ci[1]
 
-    def test_the_tiers_are_contiguous_and_cover_zero_to_one(self):
-        assert RISK_TIERS[0][0] == 0.0 and RISK_TIERS[-1][1] == 1.0
-        for (_, hi), (lo, _) in pairwise(RISK_TIERS):
-            assert hi == lo
+
+def _nested_rows(n_days=180, per_day=3, seed=5):
+    """Synthetic dev games spanning 2024-10 to 2025-04, with the columns
+    build_design needs and a market price that knows the truth a little."""
+    from datetime import UTC, datetime, timedelta
+
+    from chira.ratings import MODEL_COVARIATE
+    rng = np.random.default_rng(seed)
+    teams = ["a", "b", "c", "d", "e", "f"]
+    t0 = datetime(2024, 10, 20, 23, 0, tzinfo=UTC)
+    rows, prices = [], {}
+    for d in range(n_days):
+        for k in range(per_day):
+            gid = f"g{d}-{k}"
+            away, home = rng.choice(teams, size=2, replace=False)
+            strength = float(rng.normal())
+            y = float(rng.uniform() < inv_logit(0.2 + 0.8 * strength))
+            rows.append({
+                "sport": "nba", "season": DEV_SEASON, "game_id": gid,
+                "away": str(away), "home": str(home), "y": y,
+                "start_t": int((t0 + timedelta(days=d)).timestamp()),
+                "away_rest_days": 2, "home_rest_days": int(rng.integers(1, 4)),
+                "away_b2b": False, "home_b2b": False,
+                "away_travel_km": 800.0, "home_travel_km": 600.0,
+                "away_tz_shift": 0.0, "home_tz_shift": 0.0,
+                MODEL_COVARIATE: 100.0 * strength, "neutral_site": False})
+            prices[gid] = float(np.clip(inv_logit(0.2 + 0.5 * strength), 0.05, 0.95))
+    return rows, prices
+
+
+class TestTheNestedTestRunsOutOfSample:
+    def test_each_fold_is_scored_only_on_games_after_its_origin(self):
+        rows, prices = _nested_rows()
+        folds, skipped = rolling_nested(rows, prices, sport="nba")
+        assert skipped == []
+        start = {r["game_id"]: r["start_t"] for r in rows}
+        from chira.model import _epoch
+        for f in folds:
+            assert all(start[g] >= _epoch(f.origin) for g in f.game_ids)
+            assert f.n_train > 0 and f.n_test == len(f.game_ids)
+
+    def test_b_gets_the_models_own_covariates(self):
+        from chira.model import FEATURE_TERMS, build_design
+        from chira.scoring import nested_design
+        rows, _ = _nested_rows(n_days=30)
+        x, names = nested_design(build_design(rows, sport="nba"))
+        assert names[1:] == FEATURE_TERMS["nba"] and x.shape[1] == len(names)
+
+    def test_pooling_keeps_every_prediction_aligned(self):
+        rows, prices = _nested_rows()
+        preds, y, gids = pooled_nested(rolling_nested(rows, prices, sport="nba")[0])
+        assert {k: v.size for k, v in preds.items()} == {
+            "identity": y.size, "recalibrated": y.size, "b": y.size}
+        assert len(gids) == y.size
+
+    def test_a_fold_with_no_priced_games_is_skipped_and_named(self):
+        """NHL 2024-25 had no market before December: the first origins
+        cannot run, and they are reported, not merged into the next fold."""
+        rows, prices = _nested_rows()
+        from chira.model import _epoch
+        cut = _epoch("2024-12-01")
+        prices = {g: v for g, v in prices.items()
+                  if next(r for r in rows if r["game_id"] == g)["start_t"] >= cut}
+        folds, skipped = rolling_nested(rows, prices, sport="nba")
+        assert skipped == ["2024-11-01", "2024-12-01"]
+        assert folds[0].origin == "2025-01-01"
+
+    def test_a_holdout_row_is_refused(self):
+        rows, prices = _nested_rows(n_days=40)
+        rows[0]["season"] = HOLDOUT_SEASON
+        with pytest.raises(HoldoutError):
+            rolling_nested(rows, prices, sport="nba")
 
 
 def test_logit_round_trips():
     p = np.array([0.1, 0.5, 0.9])
     assert np.allclose(inv_logit(logit(p)), p)
+
+
+def test_an_unconverged_logistic_fit_raises_instead_of_posing_as_the_mle(
+        monkeypatch):
+    """Model B and the recalibration null decide the primary test; the first
+    version returned the last iterate when it ran out of iterations."""
+    import chira.scoring as S
+
+    rng = np.random.default_rng(3)
+    x = np.column_stack([np.ones(400), rng.normal(size=400)])
+    y = (rng.random(400) < S.inv_logit(0.3 + 1.2 * x[:, 1])).astype(float)
+    assert np.isfinite(S.logistic_mle(x, y)).all(), "the premise: it converges"
+    monkeypatch.setattr(S, "NEWTON_MAX_ITER", 1)
+    with pytest.raises(ValueError, match="did not converge"):
+        S.logistic_mle(x, y)

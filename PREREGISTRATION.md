@@ -417,6 +417,34 @@ section will cite this deviation.
   exploratory. Without this, 2 nulls x 2 sports x 2 constructions x per-tier reporting has
   no family-wise control.
 
+**Section 7 and 9 readings (2026-10-04), recorded where the text leaves a choice.** Written
+before the holdout was opened, and on dev evidence only. Each one corrects or completes the
+first implementation, which the review of the dress rehearsal found had made these choices
+silently.
+
+1. **Model B's features are the price-free model's own covariates.** "Market price +
+   features" never listed them. `f(x)` is the Elo difference without the home bonus (5b's
+   third reading) plus the sport's schedule terms (rest, back-to-back with 5a's split for the
+   NHL, travel, time-zone shift), standardised with the training statistics and filled with
+   the training medians (5d), exactly as the model is. The first rehearsal gave B only the
+   Elo and rest difference, unscaled, with missing rest filled as 0.
+2. **The primary test uses the close**, section 2's construction (the last price at or
+   before the league's tipoff). The T-1h construction is the second construction section 7
+   requires and is exploratory, like every other comparison.
+3. **The dev rehearsal of the nested test is out of sample.** B and the recalibration null are
+   fitted per rolling-origin fold (5c) and scored on the month after, as the model is. The
+   first rehearsal fitted them on the same games it scored, so its Clark-West figures were
+   in-sample and tilted toward B. On the holdout the scheme is as stated above: one fit on all
+   of dev, one pass over 2025-26. A dev fold with no priced game on either side is skipped
+   and named: NHL 2024-25 had no Polymarket market before December, so its 2024-11-01 and
+   2024-12-01 origins cannot run in the rehearsal. The holdout is unaffected (2025-26 NHL is
+   99.8% priced).
+4. **Risk tiers are implemented as section 9 defines them**, on the edge
+   `|p_model − p_market|` at the close. The first implementation bucketed the model's own
+   probability into five ranges and labelled them pre-registered; those buckets are kept as
+   an exploratory reliability table under that name. A tier's hit rate is how often the
+   outcome went the way the model leaned relative to the market.
+
 ## 8. Headline 2 — stratified market calibration
 
 - **Strata: a pre-registered 2x2** — 2 liquidity levels x 2 season phases. Liquidity is cut

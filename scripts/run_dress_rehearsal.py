@@ -15,9 +15,11 @@ What it produces, in order:
 3. The GBM ceiling (T17): what interpretability costs, as a number.
 4. The hyperprior sensitivity analysis (section 5), and whether any variance
    parameter is prior-driven.
-5. Risk tiers with game-level intervals.
-6. The nested test (section 7) rehearsed on dev: Clark-West against both
-   nulls, under both closing-price constructions.
+5. Section 9's risk tiers on the model-market edge, with game-level
+   intervals, plus an exploratory reliability table by probability bucket.
+6. The nested test (section 7) rehearsed on dev, OUT OF SAMPLE per rolling-
+   origin fold: Clark-West against both nulls, under both closing-price
+   constructions, with Model B on the model's own covariates.
 
 Output lands in `data/rehearsal/` as JSON, so week 9's holdout pass fills the
 same shapes.
@@ -55,10 +57,11 @@ from chira.model import (
 )
 from chira.prices import attach_game_prices
 from chira.scoring import (
-    apply_nested,
     clark_west,
-    fit_nested,
+    pooled_nested,
+    reliability_buckets,
     risk_tiers,
+    rolling_nested,
     score_set,
 )
 
@@ -197,38 +200,46 @@ def main() -> int:
                 "rows": [{k: v for k, v in asdict(r).items() if k != "diag"}
                          for r in sens], "prior_driven": flags}
 
-        # 5. risk tiers
-        print("\n5. RISK TIERS (model, out of sample)")
-        tiers = risk_tiers(p, y, reps=args.reps)
+        # 5. risk tiers, as section 9 defines them: the edge between the
+        # model and the market's closing price (section 2's construction).
+        close = market_prices(con, sport, "close")
+        keep = [i for i, g in enumerate(ids) if g in close]
+        k = np.array(keep)
+        tiers, untiered = risk_tiers(p[k], np.array([close[ids[i]] for i in keep]),
+                                     y[k], reps=args.reps)
+        print(f"\n5. RISK TIERS (section 9: |p_model - p_market| at the close, "
+              f"out of sample, n={len(keep):,}; {untiered:,} under the 0.02 "
+              f"floor, not tiered)")
         for t in tiers:
             print(t.line())
-        s_out["risk_tiers"] = [asdict(t) for t in tiers]
+        buckets = reliability_buckets(p, y, reps=args.reps)
+        print("   reliability by model-probability bucket (exploratory, "
+              "NOT section 9):")
+        for t in buckets:
+            print(t.line())
+        s_out["risk_tiers"] = {"tiers": [asdict(t) for t in tiers],
+                               "untiered": untiered, "n_priced": len(keep)}
+        s_out["reliability_buckets"] = [asdict(t) for t in buckets]
 
-        # 6. the nested test, rehearsed on dev
-        print("\n6. NESTED TEST rehearsed on dev (section 7)")
-        feat_map = {r["game_id"]: r for r in sub}
-        dates = np.array([feat_map[g]["game_date"] for g in ids], dtype=str)
-        x = np.column_stack([
-            np.array([feat_map[g]["rating_diff_strength"] for g in ids]),
-            np.array([float(feat_map[g]["rest_diff"] or 0.0) for g in ids]),
-        ])
+        # 6. the nested test, rehearsed OUT OF SAMPLE: B and the recalibration
+        # null are fitted per fold on that fold's training games, exactly as
+        # the model is, and scored on the month after.
+        print("\n6. NESTED TEST rehearsed on dev (section 7), out of sample "
+              "per fold, Model B on the model's own covariates")
+        date_of = {r["game_id"]: r["game_date"] for r in sub}
         s_out["nested"] = {}
         for horizon in PRICE_LOOKS:
             prices = market_prices(con, sport, horizon)
-            keep = [i for i, g in enumerate(ids) if g in prices]
-            if len(keep) < 100:
-                print(f"   {horizon}: only {len(keep)} priced games; skipped")
-                continue
-            k = np.array(keep)
-            pm = np.array([prices[ids[i]] for i in keep])
-            nf = fit_nested(pm, x[k], y[k],
-                            feature_names=("rating_diff_strength",
-                                           "rest_diff"))
-            got = apply_nested(nf, pm, x[k])
+            nfolds, skipped = rolling_nested(sub, prices, sport=sport)
+            preds, ny, nids = pooled_nested(nfolds)
+            dates = np.array([date_of[g] for g in nids], dtype=str)
             print(f"   --- closing construction: {horizon} "
-                  f"(n={len(keep):,})")
+                  f"(n={len(nids):,} out of sample, {len(nfolds)} folds"
+                  + (f"; skipped {', '.join(skipped)}: no priced games on one "
+                     f"side" if skipped else "") + ")")
+            s_out["nested"].setdefault(horizon, {})["skipped_origins"] = skipped
             for null in ("identity", "recalibrated"):
-                cw = clark_west(y[k], got[null], got["b"], dates=dates[k],
+                cw = clark_west(ny, preds[null], preds["b"], dates=dates,
                                 reps=args.reps)
                 print("   " + cw.lines(f"B vs {null}")[0])
                 s_out["nested"].setdefault(horizon, {})[null] = asdict(cw)

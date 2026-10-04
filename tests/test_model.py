@@ -419,3 +419,23 @@ class TestHyperpriorSensitivity:
                                Diagnostics(0, 1.0, "a", 900, "a"))
                 for m in (0.5, 1.0, 2.0)]
         assert prior_driven(rows) == []
+
+
+def test_predict_refuses_a_design_filled_with_its_own_medians():
+    """The docstring promised the medians were checked; only the scaler was.
+    A later season filled with its own median leaks like one standardised
+    with its own mean."""
+    from types import SimpleNamespace
+
+    from chira.model import predict
+
+    dev = frame(40)
+    for r in dev[:5]:
+        r["away_rest_days"] = None
+    d_fit = build_design(dev, sport="nba")
+    later = frame(40)
+    later[0]["away_rest_days"] = None
+    own = dict(d_fit.fill.medians, away_rest_days=d_fit.fill.medians["away_rest_days"] + 1)
+    d_new = build_design(later, sport="nba", scaler=d_fit.scaler, medians=own)
+    with pytest.raises(ValueError, match="own median"):
+        predict(SimpleNamespace(design=d_fit), d_new)

@@ -34,11 +34,13 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
-      # The `store` extra carries pyarrow and matplotlib, which the snapshot
-      # and chart tests import. `model` (jax/numpyro) is deliberately NOT
-      # installed: weeks 1-7 must not pay for a model stack they do not use.
+      # `store` carries pyarrow and matplotlib, which the snapshot and chart
+      # tests import. `model` carries jax/numpyro and scikit-learn: it was left
+      # out while weeks 1-7 had no model, and once tests/test_model.py landed
+      # (2026-10-01) every run failed to import it, red on all three OSes from
+      # 6ab56c0 until this line changed.
       - name: Install
-        run: uv sync --extra store --group dev
+        run: uv sync --extra store --extra model --group dev
 
       # Lint is OS-independent; once is enough.
       - name: Lint

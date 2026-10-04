@@ -32,7 +32,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .calibration import brier, ece, murphy
-from .holdout import assert_scorable
+from .holdout import assert_dev_only, assert_scorable
 
 # Section 7 / Phase 2: the log loss is reported clipped, so one impossible
 # row cannot dominate a mean that is only a secondary number anyway.
@@ -93,7 +93,7 @@ def logistic_mle(x: np.ndarray, y: np.ndarray) -> np.ndarray:
         mu = inv_logit(x @ beta)
         grad = x.T @ (y - mu)
         if float(np.max(np.abs(grad))) < NEWTON_GRAD_TOL:
-            break
+            return beta
         w = np.clip(mu * (1 - mu), 1e-12, None)
         hess = x.T @ (x * w[:, None]) + NEWTON_RIDGE * np.eye(x.shape[1])
         step = np.linalg.solve(hess, grad)
@@ -103,7 +103,19 @@ def logistic_mle(x: np.ndarray, y: np.ndarray) -> np.ndarray:
                 break
             t *= 0.5
         beta = beta + t * step
-    return beta
+    # Running out of iterations used to return the last iterate as if it were
+    # the MLE. Model B and the recalibration null decide the primary test, so
+    # a fit that is genuinely not at the optimum raises. The test is on the
+    # PER-GAME gradient: the gradient above is a sum over every row, so near
+    # the optimum it stalls at about n x machine precision, and an absolute
+    # 1e-8 rejected a converged NHL fold (1.07e-7 over its training games).
+    grad = x.T @ (y - inv_logit(x @ beta))
+    if float(np.max(np.abs(grad))) / y.size < NEWTON_GRAD_TOL:
+        return beta
+    raise ValueError(
+        f"logistic fit did not converge in {NEWTON_MAX_ITER} iterations "
+        f"(max |gradient| per game {float(np.max(np.abs(grad))) / y.size:.3g});"
+        f" refusing to return a non-optimum as an MLE")
 
 
 @dataclass
@@ -324,12 +336,177 @@ def apply_nested(nf: NestedFit, p_market: np.ndarray, features: np.ndarray
             "b": inv_logit(_design_b(p_market, features) @ nf.coef_b)}
 
 
-# --- risk tiers ------------------------------------------------------------
+# --- Model B's features, and the nested test out of sample -----------------
 
-# Pre-registered buckets on the model's probability. Reported with frequency,
-# hit rate, calibration and a game-level bootstrap interval, and the expected
-# shrinkage of the top tier is stated up front rather than discovered.
-RISK_TIERS: tuple[tuple[float, float], ...] = (
+
+def nested_design(design) -> tuple[np.ndarray, tuple[str, ...]]:
+    """Model B's feature block: the price-free model's OWN covariates.
+
+    Section 7 says "market price + features" without listing them. Read on
+    2026-10-04, before the holdout opened, as the model's covariates: the Elo
+    difference (H excluded) and the sport's schedule terms, standardised with
+    the training statistics and median-filled exactly as the model is. The
+    dress rehearsal had given B only the Elo and rest difference, unscaled,
+    with missing rest filled as 0 -- an undocumented choice that would have
+    decided the primary test.
+    """
+    from .ratings import MODEL_COVARIATE
+    x = np.column_stack([design.rating, design.features])
+    return x, (MODEL_COVARIATE, *design.feature_names)
+
+
+@dataclass
+class NestedFold:
+    origin: str
+    n_train: int
+    n_test: int
+    game_ids: list[str]
+    y: np.ndarray
+    preds: dict[str, np.ndarray]     # identity, recalibrated, b
+
+
+def rolling_nested(rows: list[dict], prices: dict[str, float], *, sport: str,
+                   origins: tuple[str, ...] | None = None
+                   ) -> tuple[list[NestedFold], list[str]]:
+    """B and the recalibration null fitted per rolling-origin fold.
+
+    **Out of sample, like the model.** The first rehearsal fitted B and the
+    null on the same dev games it then scored, so every Clark-West number it
+    printed was in-sample and tilted toward B, the larger model. Here each
+    fold fits on the games that had started before its origin and is scored on
+    the month after, with that fold's scaler and medians.
+
+    Returns (folds, skipped origins). **A fold with no priced game on either
+    side is skipped and named, never silently merged.** NHL 2024-25 had no
+    Polymarket market before December, so its first two origins cannot run;
+    the price-free model's folds are unaffected, and so is the holdout pass,
+    which is one fit on all of dev.
+    """
+    from .model import ROLLING_ORIGINS, _epoch, build_design, dev_medians
+    origins = origins or ROLLING_ORIGINS
+    rows = [r for r in rows if r["sport"] == sport and r["game_id"] in prices]
+    if not rows:
+        raise ValueError(f"no priced {sport} rows")
+    assert_dev_only(rows, what=f"{sport} nested-test rows")
+    bounds = [*origins, None]
+    out, skipped = [], []
+    for i, origin in enumerate(origins):
+        lo = _epoch(origin)
+        hi = _epoch(bounds[i + 1]) if bounds[i + 1] else None
+        train = [r for r in rows if r["start_t"] < lo]
+        test = [r for r in rows
+                if r["start_t"] >= lo and (hi is None or r["start_t"] < hi)]
+        if not train or not test:
+            skipped.append(origin)
+            continue
+        med = dev_medians(train)
+        d_tr = build_design(train, sport=sport, medians=med)
+        d_te = build_design(test, sport=sport, scaler=d_tr.scaler, medians=med)
+        x_tr, names = nested_design(d_tr)
+        x_te, _ = nested_design(d_te)
+        nf = fit_nested(np.array([prices[g] for g in d_tr.game_ids]), x_tr,
+                        d_tr.y, feature_names=names)
+        got = apply_nested(nf, np.array([prices[g] for g in d_te.game_ids]),
+                           x_te)
+        out.append(NestedFold(origin=origin, n_train=len(train),
+                              n_test=len(test), game_ids=list(d_te.game_ids),
+                              y=d_te.y, preds=got))
+    if not out:
+        raise ValueError(f"{sport}: every origin skipped, no priced fold to run")
+    return out, skipped
+
+
+def pooled_nested(folds: list[NestedFold]
+                  ) -> tuple[dict[str, np.ndarray], np.ndarray, list[str]]:
+    preds = {k: np.concatenate([f.preds[k] for f in folds])
+             for k in ("identity", "recalibrated", "b")}
+    return (preds, np.concatenate([f.y for f in folds]),
+            [g for f in folds for g in f.game_ids])
+
+
+# --- risk tiers (PREREGISTRATION section 9) -------------------------------
+
+# Section 9, verbatim: three tiers on the absolute edge |p_model - p_market|,
+# home side, one observation per game. Below 0.02 is not tiered: it is inside
+# the closing price's own measurement noise. T3 may be empty, which is a valid
+# published result. The first implementation bucketed the model's OWN
+# probability into five ranges and called them pre-registered; those survive
+# below as `reliability_buckets`, an exploratory reliability table.
+EDGE_FLOOR = 0.02
+EDGE_TIERS: tuple[tuple[str, float, float | None], ...] = (
+    ("T1", 0.02, 0.05), ("T2", 0.05, 0.10), ("T3", 0.10, None),
+)
+
+
+@dataclass
+class EdgeTier:
+    name: str
+    lo: float
+    hi: float | None
+    n: int
+    share: float
+    mean_edge: float
+    hit_rate: float              # the outcome went the model's way vs market
+    ci: tuple[float, float]      # game-level bootstrap, 95%
+    mean_p_model: float
+    mean_p_market: float
+    home_rate: float
+
+    def line(self) -> str:
+        band = f"[{self.lo:.2f}, {self.hi:.2f})" if self.hi is not None \
+            else f">= {self.lo:.2f}"
+        if not self.n:
+            return f"  {self.name} {band:<13} n=    0  (empty)"
+        return (f"  {self.name} {band:<13} n={self.n:>5} "
+                f"({self.share * 100:>5.1f}%)  mean edge {self.mean_edge:.4f}  "
+                f"hit {self.hit_rate:.4f} [{self.ci[0]:.4f}, {self.ci[1]:.4f}]  "
+                f"home won {self.home_rate:.4f} vs model {self.mean_p_model:.4f}"
+                f" / market {self.mean_p_market:.4f}")
+
+
+def risk_tiers(p_model: np.ndarray, p_market: np.ndarray, y: np.ndarray, *,
+               reps: int = BOOTSTRAP_REPS, seed: int = 0
+               ) -> tuple[list[EdgeTier], int]:
+    """Section 9's tiers, and how many games fell under the 0.02 floor.
+
+    The hit rate is how often the outcome went the way the MODEL leaned
+    relative to the market: home won when the model priced home above the
+    market, away won when it priced home below. Calibration is reported as
+    the tier's home-win rate beside both forecasts' mean, and the interval is
+    a game-level bootstrap of the hit rate.
+    """
+    pm = np.asarray(p_model, dtype=float)
+    pk = np.asarray(p_market, dtype=float)
+    y = np.asarray(y, dtype=float)
+    edge = np.abs(pm - pk)
+    hit = np.where(pm > pk, y, 1.0 - y)
+    rng = np.random.default_rng(seed)
+    out = []
+    nan = float("nan")
+    for name, lo, hi in EDGE_TIERS:
+        mask = (edge >= lo) & ((edge < hi) if hi is not None else True)
+        n = int(mask.sum())
+        if n == 0:
+            out.append(EdgeTier(name, lo, hi, 0, 0.0, nan, nan, (nan, nan),
+                                nan, nan, nan))
+            continue
+        h = hit[mask]
+        draws = np.array([float(np.mean(rng.choice(h, size=n, replace=True)))
+                          for _ in range(reps)])
+        out.append(EdgeTier(
+            name=name, lo=lo, hi=hi, n=n, share=n / pm.size,
+            mean_edge=float(np.mean(edge[mask])), hit_rate=float(np.mean(h)),
+            ci=(float(np.quantile(draws, 0.025)),
+                float(np.quantile(draws, 0.975))),
+            mean_p_model=float(np.mean(pm[mask])),
+            mean_p_market=float(np.mean(pk[mask])),
+            home_rate=float(np.mean(y[mask]))))
+    return out, int((edge < EDGE_FLOOR).sum())
+
+
+# --- reliability by probability bucket (exploratory, NOT section 9) -------
+
+RELIABILITY_BUCKETS: tuple[tuple[float, float], ...] = (
     (0.0, 0.35), (0.35, 0.45), (0.45, 0.55), (0.55, 0.65), (0.65, 1.0),
 )
 
@@ -351,10 +528,15 @@ class Tier:
                 f"95% CI [{self.ci[0]:.4f}, {self.ci[1]:.4f}]")
 
 
-def risk_tiers(p: np.ndarray, y: np.ndarray, *,
-               tiers: tuple[tuple[float, float], ...] = RISK_TIERS,
-               reps: int = BOOTSTRAP_REPS, seed: int = 0) -> list[Tier]:
-    """Frequency, hit rate and a game-level bootstrap interval per bucket."""
+def reliability_buckets(p: np.ndarray, y: np.ndarray, *,
+                        tiers: tuple[tuple[float, float], ...] =
+                        RELIABILITY_BUCKETS,
+                        reps: int = BOOTSTRAP_REPS, seed: int = 0) -> list[Tier]:
+    """Frequency, hit rate and a game-level interval per PROBABILITY bucket.
+
+    Exploratory reliability, not section 9's risk tiers (which are on the
+    model-market edge; see `risk_tiers`).
+    """
     p = np.asarray(p, dtype=float)
     y = np.asarray(y, dtype=float)
     rng = np.random.default_rng(seed)
