@@ -109,3 +109,21 @@ def test_the_frozen_constants_are_the_ones_used():
     from chira.ratings import CHOSEN
     assert ps.CHOSEN["nhl"] == CHOSEN["nhl"]
     assert ps.SEASON == "2026-27"
+
+
+class TestTheTargetDay:
+    """The default was the machine's local date, not ET, and any date was
+    accepted, including the sealed season under a 2026-27 label."""
+
+    def test_the_default_is_today_in_et_not_the_machine_date(self):
+        from datetime import UTC, datetime
+        # 02:30 UTC on 10-06 is still 10-05 in ET (22:30 EDT).
+        late = datetime(2026, 10, 6, 2, 30, tzinfo=UTC)
+        assert str(ps.target_day(None, late)) == "2026-10-05"
+
+    def test_a_sealed_season_date_is_refused(self):
+        with pytest.raises(SystemExit, match="sealed holdout"):
+            ps.target_day("2026-03-15")
+
+    def test_a_date_inside_the_season_passes(self):
+        assert str(ps.target_day("2026-10-10")) == "2026-10-10"

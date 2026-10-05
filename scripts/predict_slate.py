@@ -34,6 +34,7 @@ from pathlib import Path
 sys.path.insert(0, "src")
 from chira.analysis import open_frame
 from chira.cache import Cache
+from chira.collector import SEASON_WINDOWS, et_now
 from chira.constants import NHL_API
 from chira.http import Client
 from chira.nhl import NHL_TEAMS, season_code
@@ -107,6 +108,25 @@ def history(con, burnin: str) -> list[dict]:
       FROM read_parquet(?) WHERE sport = 'nhl'""", [burnin])
     cols = [d[0] for d in cur.description]
     return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
+
+
+def target_day(arg: str | None, now: datetime | None = None) -> date:
+    """The ET date to predict, refusing anything outside the 2026-27 window.
+
+    The default is TODAY IN ET, not the machine's local date: the first
+    version used `.astimezone()` with no zone, so a run late in the evening on
+    an Atlantic-time machine, or any run on a UTC box, predicted tomorrow's
+    slate. And a date outside 2026-27 is refused outright: the script labels
+    every game 2026-27 and walks the whole census, so a 2025-26 date would be
+    the sealed season, mislabelled, rated with games from its own future.
+    """
+    day = date.fromisoformat(arg) if arg else et_now(now).date()
+    lo, hi = SEASON_WINDOWS[("nhl", SEASON)]
+    if not lo <= day <= hi:
+        raise SystemExit(f"refusing {day}: outside the NHL {SEASON} window "
+                         f"{lo}..{hi}. This script forecasts the live season "
+                         f"only; 2025-26 is Chira's sealed holdout.")
+    return day
 
 
 def first_blind(lines: list[dict]) -> tuple[dict[str, dict], int]:
@@ -198,8 +218,7 @@ def main() -> int:
     if not snaps and not args.snapshot:
         print("no snapshot found")
         return 2
-    day = (date.fromisoformat(args.date) if args.date
-           else datetime.now(UTC).astimezone().date())
+    day = target_day(args.date)
     client = Client(cache=Cache(".http-cache", abbr_version="predict"))
 
     games = slate(client, day)

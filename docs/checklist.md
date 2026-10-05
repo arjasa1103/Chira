@@ -192,6 +192,10 @@ Detail and reasoning live in [TODOS.md](../TODOS.md).
 
 | Priority | Item | Deadline |
 |---|---|---|
+| P1 | Reliability diagrams, the one rehearsal figure not cut | Before the holdout opens |
+| P1 | Headline 1's framing, decided and written down | Before the holdout opens |
+| P2 | Elo overlap: refit K/H/c inside each rolling-origin fold | Before week 9 |
+| P2 | NHL [0.35, 0.45) risk bucket miscalibration | Before the holdout opens |
 | P2 | Collector: only 4 of ~46 cron slots delivered in 23 h; a late first poll is not caught by the heartbeat. Check each morning's runs; a dispatch is the fallback | Ongoing |
 | P1 | NBA upcoming enumeration for the collector | **2026-10-20** |
 | P2 | Wilkens (2026) citation unverified (SSRN 5910522 read 2026-10-01: contribution stands) | Before v2 |

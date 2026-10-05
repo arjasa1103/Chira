@@ -426,6 +426,103 @@ the open question is only which runner the dead-man's switch listens to.
 **Effort:** S (human ~5min / CC ~3min). **Priority:** P1, before the first off-Actions run.
 **Depends on:** None.
 
+## RESOLVED 2026-10-05 — Chira-gamble Signal L is killed on its first gate
+
+**Stage 1a's proxy fitness gate: rho = 0.2467 against a pre-committed 0.5.** Kill criterion
+1, one day inside the deadline. `scripts/run_stage1a_rho.py`, dev only. Spec:
+notes/profit-stage1-spec.md (committed 2026-10-01, before any number in it was computed).
+Verdict: notes/profit-stage1-verdict.md.
+
+**Why it failed, measured.** The bet-time proxy -- price changes from market open to T-6h --
+tracks how long a market had been LISTED (rho 0.5816) more than twice as well as it tracks
+volume (0.2467), and listing duration is itself nearly unrelated to volume (0.1021). Listed
+hours run 0.0 to 1,823 with a median of 86.6, so the count is mostly calendar. It
+misclassifies **37.6% of 1,216 games** against headline 2's volume strata.
+
+**No second proxy was tried**, as section 3 forbids. Changes per listed hour is the obvious
+repair and one line; testing repairs against the same 1,216 games until one clears 0.5 would
+void the pre-commitment, which was the only thing that made the gate worth writing.
+
+**Headline 2 is untouched.** It remains a descriptive finding conditioned on terminal volume.
+What died is the claim that it is tradeable through this proxy. **Stage 2 vendor spend
+ceiling: $0.**
+
+## P3 — Signal L may only be revisited behind a fresh pre-commitment
+
+**What:** If the liquidity signal is ever picked up again, write a new spec with a different
+bet-time proxy, fixed before it meets data unused by Stage 1a. The only such data is live
+2026-27.
+
+**Why:** The 1,216 NBA 2024-25 games are now burned for this question. Any proxy tested
+against them has been selected on the same sample that killed the first one, and a threshold
+cleared on the Nth attempt carries no evidence. Stage 1a's own framing already says the only
+blind test is live paper trading.
+
+**Do NOT:** try changes-per-hour on the census and report the result as a pass.
+
+**Effort:** S to spec. **Priority:** P3. **Depends on:** live 2026-27 data accumulating.
+
+## P1 — Reliability diagrams are the one rehearsal figure not cut
+
+**What:** Model and market reliability curves side by side, for the writeup.
+
+**Why:** PREREGISTRATION section 6 requires the dress rehearsal to produce **every** table and
+figure the writeup will carry, so that opening the holdout only fills in numbers. Every table
+exists (notes/week8-model.md); this figure does not. A figure first cut during the holdout
+pass is a figure whose design was chosen after seeing holdout data.
+
+**Shape of the fix:** `calibration.binned_curve` and `bootstrap_curve` already do the work for
+chart 2; this is a second panel and a dev-only run.
+
+**Effort:** S (human ~1h / CC ~20min). **Priority:** P1, before the holdout is opened.
+
+## P2 — The Elo overlap makes model-versus-rating an unfair comparison
+
+**What:** Refit K, H and c inside each rolling-origin fold, so the rating is out of sample on
+the same games the model is.
+
+**Why:** The dress rehearsal found the model does not beat the Elo out of sample (NBA Brier
+0.21250 against 0.20968). Amendment 5b disclosed in advance that the Elo's three constants
+were tuned by log loss over all of 2024-25 -- the same season the rolling origin runs on -- so
+the Elo column is in-sample for three parameters while the model column is not. The bias
+favours the rating by an amount nobody has measured, and headline 1's framing turns on it.
+
+**Legitimacy:** dev-only work, so it is allowed. It is NOT a model change justified by holdout
+behaviour (Deviation 1's rule), and must not become one.
+
+**Effort:** M (CC ~1h: 12 folds x 245 grid points). **Priority:** P2, before week 9.
+
+## P1 — Headline 1's framing has to be decided before the holdout opens
+
+**What:** Decide and write down what headline 1 claims, given the dress rehearsal.
+
+**Why:** On current dev evidence the honest claim is "a schedule-and-rating model matches its
+own rating, and both trail the market", not "the model beats the line". The holdout is opened
+once; deciding the framing after seeing it is choosing the story to fit the number, which is
+what the seal exists to prevent. PLAN Phase 5's pass condition (a 0.02-0.03 Brier deficit,
+decomposed) still stands and should be restated or amended explicitly.
+
+**Depends on:** the Elo overlap item above, which may change the comparison.
+
+**Effort:** S to decide. **Priority:** P1, before the holdout is opened.
+
+## P2 — The NHL [0.35, 0.45) risk bucket is miscalibrated
+
+**What:** Decide what to do about it before the holdout pass, or state it as a known
+limitation in the writeup.
+
+**Why, measured on dev out of sample:** 185 games, mean forecast 0.4069, actual 0.5243, 95%
+bootstrap CI [0.4595, 0.5892] **excluding** the forecast. That is the NHL's busiest
+probability region and it is where the model's ECE (0.0540 against the rating's 0.0343) comes
+from. A known miscalibration going into a pass that cannot be repeated is the kind of thing
+a reader will find for themselves if the writeup does not.
+
+**Do NOT:** recalibrate the model on dev to fix the bucket and then present the holdout as
+clean. That is a model change, it would need an amendment, and it would make the holdout a
+second look at a tuned model.
+
+**Effort:** S to decide. **Priority:** P2, before the holdout is opened.
+
 ## P3 — Verify what `last_trade_price` means before anything reads it
 
 **What:** Sample ~20 live markets and confirm whether `last_trade_price` is market-level
@@ -643,6 +740,13 @@ project explicitly contains no bet-placement system and should stay that way.
 
 **Context:** Only revisit if the nested test returns a significant positive result under
 both closing-price constructions. If it returns null, this item is dead, not deferred.
+
+**Update 2026-10-05, not the test:** the dev dress rehearsal is a rehearsal, so it does not
+settle this. For what it is worth, Model B beat the raw price in both sports but did not
+clearly beat a *recalibrated* price (NHL CW +1.495, bootstrap p 0.0815; NBA +1.515, p 0.0380
+bootstrapped against 0.0649 analytic -- the two disagreeing is itself a reason not to lean).
+Separately, Chira-gamble's Signal L was killed on its proxy gate, so the nearest thing to an
+established edge is currently nothing.
 
 **Effort:** S (human) → S (with CC). **Priority:** P3.
 **Depends on:** a positive nested-test result.

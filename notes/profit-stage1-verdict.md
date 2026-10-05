@@ -94,3 +94,10 @@ as if they meant something would be worse than recording the kill:
 The pre-commitment did its job. The gate was fixed on 2026-10-01 with a committed timestamp,
 the proxy was specified before it was computed, the threshold was a number rather than a
 judgement, and the kill took one script and no argument. The cost of finding out was a day.
+
+**What this note does not report, and where it goes.** The spec asked for 2025-26's rho
+"reported beside" 2024-25's. It is not computed here: `run_stage1a_rho.py` refuses
+2025-26 because that is Chira's sealed holdout season, and the gate was decided on 2024-25
+alone as the spec requires. The 2025-26 rho is market-only and belongs with Chira-gamble's
+evaluation half, behind its firewall.
+
