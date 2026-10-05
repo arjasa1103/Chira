@@ -3,7 +3,7 @@
 Living document. Plan calendar against what actually happened, plus the dates ahead that
 cannot move. Companion to [checklist.md](checklist.md), which tracks the work itself.
 
-**Deadline: 2026-11-30.** Last updated 2026-10-01.
+**Deadline: 2026-11-30.** Last updated 2026-10-05.
 
 ---
 
@@ -11,13 +11,13 @@ cannot move. Companion to [checklist.md](checklist.md), which tracks the work it
 
 | | |
 |---|---|
-| Plan weeks complete | 7 of 11. Week 8 in progress: Elo frozen and 2025-26 ratings built, the model fitted in-sample on dev (2026-10-01); rolling-origin evaluation next |
+| Plan weeks complete | 7 of 11. Weeks 8-9: model built and frozen as is (decided 2026-10-04), dress rehearsal on dev done and corrected; reliability diagrams and the holdout script are what remain before the holdout opens |
 | Calendar position | Week 8 starts on the plan's calendar 2026-11-03 |
 | Slack | About 5 weeks ahead |
-| Days to deadline | 60 |
+| Days to deadline | 56 |
 | Binding constraint | Fixed dates, not effort |
-| Collector | **Live since 2026-09-28.** Opening night fully captured by hand dispatch. Schedule rebuilt 2026-10-01 for the 3-6 h cron lag; the new schedule has not fired yet |
-| Unpushed | The 2025-26 ratings (`e20d495`), the model (`f447287`) and this review's fixes and Deviation 1. Push when you're ready |
+| Collector | **Live since 2026-09-28.** Every NHL game from 09-29 to 10-04 has pre-game prices; the window opens 3 h before the first game since 10-02. GitHub's late, sparse delivery is covered by hand-dispatch reminders on early days until the collector moves to the Chira-gamble runner |
+| Unpushed | `2d2cf67` (forecast log), `54ecb12` (Stage 1a kill), `26a0c83` (TODOS), `090f6b3` (review: the corrected prize figure) |
 
 ---
 
@@ -72,6 +72,8 @@ and hand over through the concurrency group.
 | 09-30 | `45 1` | 07:47Z | 6h02 | 0 polls |
 | 10-01 | **new schedule, no dispatch** | 19:35Z | — | **All 8 games from 20:00Z to puck drop, 928 quotes.** Waited for the opening, ran to its cap at 01:05:57Z; the queued run took over at 01:06:07Z and stopped at window close (06:31Z). Two later runs exited in seconds, no ping. Only 4 of ~46 slots delivered in 23 h |
 | 10-02 | window opening from the schedule | — | — | Shipped: the opening moves to first puck drop minus 3 h (never later than 16:00 ET). Tonight opens 15:30 ET for NYR@DET 18:30. **Sun 10-04 opens 10:00 ET for WPG@DET 13:00**, the first matinee; check it was polled |
+| 10-02 to 10-04 | 23 games | — | 77-109 min | All 23 NHL games with pre-game prices to puck drop (3,636 quotes). First runs arrived 77 min (Fri) and 109 min (Sat) after the opening; **Sunday's 13:00 ET matinee was saved by a hand dispatch** (the first scheduled run came 37 min after puck drop) |
+| 10-10 to 10-25 | reminders | — | — | Hand-dispatch reminders on all 8 early-opening days, until the collector moves to the Chira-gamble runner |
 
 Every artifact is copied to `data/collector-archive/` (gitignored): Actions keeps them 90
 days and runs do not accumulate. Re-run the download loop after each game night.
@@ -118,14 +120,24 @@ day before any 2025-26 rating existed ([notes/week8-ratings.md](../notes/week8-r
 - **Prior art:** SSRN 5910522 read by hand 2026-10-01. No liquidity split, no NBA or NHL,
   so the contribution stands. v1's one stale line is corrected when v2 publishes.
 
-**The model, 2026-10-01.** The hierarchical logistic is built and converges on dev for both
-sports (`f447287`), in-sample only so far. **Deviation 1** (PREREGISTRATION.md): the first
-2025-26 ratings run printed the Elo's 2025-26 log loss, Brier and home-win rate for both
-sports before the seal was open. Scoring the sealed season is now refused in code, and from
-here no model change may be justified by holdout behaviour. **Next:** the rolling-origin
-runner on 2024-25 (Amendment 5c), the holdout prediction path, hyperprior sensitivity, the
-GBM benchmark, then the dress rehearsal. Training uses the census, never the collector's
-2026-27 prices.
+**The model and the dress rehearsal (2026-10-01 to 10-04).** The hierarchical logistic converges
+on dev for both sports. **Deviation 1** (PREREGISTRATION.md): the first 2025-26 ratings run
+printed the Elo's 2025-26 scores for both sports before the seal was open; scoring the sealed
+season is now refused in code. The dress rehearsal on 2024-25
+([notes/week8-model.md](../notes/week8-model.md)), as corrected on review 2026-10-04:
+
+- **Out of sample the model loses to its own Elo** (NBA Brier 0.2125 vs 0.2097) and is
+  worse calibrated. Frozen as it is: the pre-registration fixed its form, and the holdout,
+  where the Elo's constants were never tuned, is where the comparison becomes fair.
+- **The black-box benchmark (T17) does worse still**, so interpretability costs nothing here.
+- **Model B adds nothing over the market**, in either sport, against either null, once fitted
+  out of sample per fold on the model's own covariates. The first rehearsal's in-sample
+  "NHL p 0.0015" is withdrawn.
+- **Section 9's risk tiers:** no tier's hit rate reaches 0.5; when the model disagrees with
+  the close by 10 points or more, the market is right about two times in three.
+
+**Before the holdout opens:** reliability diagrams on dev, then `scripts/run_holdout.py`,
+reviewed and pushed. That push is the freeze.
 
 **Weeks 8-9.** The model, then a full dress rehearsal on 2024-25 producing every table and
 figure, then the 2025-26 holdout opened exactly once. The holdout is a one-way door, and
@@ -133,10 +145,12 @@ being ahead of schedule is not a reason to open it before the model is frozen.
 
 **Weeks 10-11.** Headline 1 added to the published artifact as v2.
 
-**The profit track** moved to a private repository, Chira-gamble, on 2026-10-01. It pins
-this repo by commit. Its Stage 1a pre-commitment is public here
-(`notes/profit-stage1-spec.md`, `e2001ca`), and its own rule is that it pauses if this
-semester work misses a gate.
+**The profit track** moved to a private repository, Chira-gamble, on 2026-10-01, pinning this
+repo by commit. **Its Stage 1a gate killed Signal L on 2026-10-05**
+([notes/profit-stage1-verdict.md](../notes/profit-stage1-verdict.md)): the bet-time liquidity
+proxy correlates 0.25 with volume against a pre-committed 0.5, because it mostly measures how
+long a market was listed. Headline 2 stands as a description; what died is trading it through
+that proxy. Vendor spend ceiling: $0.
 
 ---
 

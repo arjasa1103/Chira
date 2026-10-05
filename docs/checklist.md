@@ -7,7 +7,7 @@ Tick a box when the work lands on `main` **and** something written backs it up. 
 completed week below links to its own write-up, so a claim here is always one click from
 its evidence.
 
-Last updated 2026-10-01. Source of truth for task detail stays [PLAN.md](../PLAN.md) and
+Last updated 2026-10-05. Source of truth for task detail stays [PLAN.md](../PLAN.md) and
 [TODOS.md](../TODOS.md); this page is the index over them.
 
 ---
@@ -89,6 +89,7 @@ Collector half, **done 2026-09-26** → [notes/week7-collector.md](../notes/week
 - [x] **The window opens for matinees** (2026-10-02). Each run reads the day's NHL schedule and opens at the earlier of 16:00 ET and the first puck drop minus 3 hours, floored at 09:00 ET; an unreadable schedule falls back to 16:00, never later. Checked live: tonight 18:30 ET opens 15:30; Sun 10-04 (WPG@DET 13:00) and Sat 10-10 (13:00) open 10:00. Before this, WPG@DET and three 10-10 games would have been captured from nothing. **Verify Sunday 10-04:** a run polling WPG@DET from ~14:00Z. NBA matinees move the opening only once NBA enumeration is wired
 - [x] **Coverage through 10-04 measured** (2026-10-05): all 23 NHL games 10-02 to 10-04 have pre-game prices to puck drop, 3,636 quotes archived. First runs arrived 77 min (Fri) and 109 min (Sat) after the opening; Sunday's matinee was saved only by a hand dispatch (the first scheduled run came 37 min after puck drop). Hand-dispatch reminders set for every early-opening day through 10-25: 10-10, 10-11, 10-12, 10-13, 10-17, 10-18, 10-24, 10-25
 - [ ] **Move the collector to the Chira-gamble runner machine** (decided 2026-10-05, user's timing): an always-on timer removes GitHub's delivery lag. When it moves, in one change: comment out the Actions `schedule:` so two schedulers never run, reopen the heartbeat-owner decision (the runner then owns `CHIRA_HEARTBEAT_URL` or its own check), archive runs from the machine instead of Actions artifacts, and delete the remaining dispatch reminders
+- [x] **Live Elo forecast log** (`scripts/predict_slate.py`, 2026-10-05): logs each NHL slate's frozen-Elo odds before puck drop, grades only the first blind record per game, always beside the pick-home baseline. Exploratory, not pre-registered; the frozen constants cannot change because of it. Review fixes: "today" is ET, and dates outside 2026-27 are refused
 - [ ] Wire NBA upcoming enumeration — before 2026-10-20. Source check 2026-10-01: the census's `nba_api` (stats.nba.com) needs a residential IP, so likely fails on Actions; `cdn.nba.com` schedule JSON returned 403 even locally; ESPN's scoreboard API answered locally (3 games on 10-20) but is unproven from Actions, and its 19:00Z BOS@DET looks like a placeholder time. Prove the source with a `once` dispatch before relying on it
 - [x] 2026-27 abbreviation map: **the 2025-26 fallback is accepted** (2026-10-01). It resolved every listed NHL game from the opener on; the only unresolved games were `no_market` (Polymarket had not listed them yet). The fallback is safe because `confirm` checks both team labels against each market's own outcomes, so a drifted code shows up as an unresolved game, never as a wrong market. **Reopen** if any unresolved reason other than `no_market` appears, and re-check NBA once its 2026-27 markets list
 
@@ -183,6 +184,7 @@ Separate track from Chira, behind the holdout firewall. Spec pre-committed 2026-
   no longer exists; the gate existed to make that call before money, not after
 - [x] Headline 2 is **untouched** — it remains a descriptive finding on terminal volume. What
   died is the claim that it is tradeable through this proxy
+- [x] **The verdict's "prize" figure corrected on review** (2026-10-05, `090f6b3`): it came from an uncommitted script that bet at the close. `run_stage1a_rho.py --prize` now computes it at section 4's executable T-1h price: 443 bets, ROI +0.101, 90% CI [+0.0005, +0.206] at the pass/kill cell (was +0.115 over 447 at the close). The kill is unaffected; it rests on rho
 - [ ] If Signal L is ever revisited: a fresh pre-commitment with a different proxy, fixed
   before it meets data unused here. The only such data is live 2026-27
 
@@ -193,9 +195,8 @@ Detail and reasoning live in [TODOS.md](../TODOS.md).
 | Priority | Item | Deadline |
 |---|---|---|
 | P1 | Reliability diagrams, the one rehearsal figure not cut | Before the holdout opens |
-| P1 | Headline 1's framing, decided and written down | Before the holdout opens |
-| P2 | Elo overlap: refit K/H/c inside each rolling-origin fold | Before week 9 |
-| P2 | NHL [0.35, 0.45) risk bucket miscalibration | Before the holdout opens |
+| P1 | `scripts/run_holdout.py`, reviewed and pushed: that push is the freeze | Before the holdout opens |
+| P2 | Chira-gamble docs: Signal L dead, so its runner goes snapshot-only and execution stops at DRY_RUN + SMOKE (its own rule) | In Chira-gamble |
 | P2 | Collector: only 4 of ~46 cron slots delivered in 23 h; a late first poll is not caught by the heartbeat. Check each morning's runs; a dispatch is the fallback | Ongoing |
 | P1 | NBA upcoming enumeration for the collector | **2026-10-20** |
 | P2 | Wilkens (2026) citation unverified (SSRN 5910522 read 2026-10-01: contribution stands) | Before v2 |
