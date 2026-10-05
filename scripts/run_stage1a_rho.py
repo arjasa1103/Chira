@@ -37,7 +37,9 @@ sys.path.insert(0, "src")
 import numpy as np
 
 from chira.analysis import frame, open_frame
+from chira.calibration import cox_slope_intercept
 from chira.holdout import DEV_SEASON, HOLDOUT_SEASON
+from chira.scoring import inv_logit, logit
 from chira.strata import assign_strata
 
 # Section 3: the proxy is measured from market open to T-6h.
@@ -102,6 +104,67 @@ def spearman(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.corrcoef(ra, rb)[0, 1])
 
 
+# Section 4's cost grid and the published sports fee (read 2026-09-29).
+HALF_SPREADS = (0.01, 0.02, 0.03)
+FEE_RATES = (0.0, 0.05)
+PASS_KILL_CELL = (0.02, 0.05)
+
+
+def settle(p_side: np.ndarray, fair_side: np.ndarray, won: np.ndarray, *,
+           half_spread: float, fee_rate: float) -> tuple[np.ndarray, np.ndarray]:
+    """Section 5's bet rule and settlement for one side. Returns (bet mask, pnl).
+
+    `p_paid = p + half_spread + fee_rate * p * (1 - p)`; bet when the fair
+    probability exceeds it; a win returns `1/p_paid - 1`, a loss -1.
+    """
+    paid = p_side + half_spread + fee_rate * p_side * (1 - p_side)
+    take = (fair_side > paid) & (paid < 1.0)
+    pnl = np.where(won, 1.0 / paid - 1.0, -1.0)
+    return take, pnl
+
+
+def prize(p: np.ndarray, y: np.ndarray, liq: np.ndarray, dates: np.ndarray, *,
+          half_spread: float, fee_rate: float, reps: int = 2000,
+          seed: int = 0) -> dict:
+    """The upper bound Signal L was chasing, with TERMINAL-volume strata.
+
+    NOT a strategy: the strata condition on volume that does not exist at bet
+    time. It is computed so the verdict can say what was at stake, from
+    committed code. Per stratum, the map is fitted on the first half of the
+    games in canonical order (roughly the first half of the season) and bets
+    are placed on the second half, at section 4's executable price, the
+    T-1h price. The first, ad hoc version of this figure bet at the CLOSE,
+    which is not executable, and was not committed.
+    """
+    pnl_all, d_all = [], []
+    for stratum in ("low", "high"):
+        idx = np.flatnonzero((liq == stratum) & np.isfinite(p) & (p > 0) & (p < 1))
+        half = idx.size // 2
+        tr, te = idx[:half], idx[half:]
+        b, a = cox_slope_intercept(p[tr], y[tr])
+        fair_home = inv_logit(a + b * logit(p[te]))
+        for side in ("home", "away"):
+            ps = p[te] if side == "home" else 1 - p[te]
+            fs = fair_home if side == "home" else 1 - fair_home
+            won = (y[te] == 1) if side == "home" else (y[te] == 0)
+            take, pnl = settle(ps, fs, won, half_spread=half_spread,
+                               fee_rate=fee_rate)
+            pnl_all.append(pnl[take])
+            d_all.append(dates[te][take])
+    v = np.concatenate(pnl_all)
+    d = np.concatenate(d_all)
+    if v.size == 0:
+        return {"bets": 0, "roi": None, "ci90": None, "dates": 0}
+    rng = np.random.default_rng(seed)
+    uniq = np.unique(d)
+    rows = {x: np.flatnonzero(d == x) for x in uniq}
+    draws = [float(v[np.concatenate([rows[x] for x in rng.choice(
+        uniq, size=uniq.size, replace=True)])].mean()) for _ in range(reps)]
+    lo, hi = np.quantile(draws, [0.05, 0.95])
+    return {"bets": int(v.size), "roi": float(v.mean()),
+            "ci90": [float(lo), float(hi)], "dates": int(uniq.size)}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--snapshot", default=None)
@@ -109,6 +172,9 @@ def main() -> int:
     ap.add_argument("--season", default=DEV_SEASON)
     ap.add_argument("--out", default=OUT)
     ap.add_argument("--no-verify", action="store_true")
+    ap.add_argument("--prize", action="store_true",
+                    help="also compute the terminal-volume upper bound the "
+                         "proxy was chasing (not a strategy)")
     args = ap.parse_args()
 
     if args.season == HOLDOUT_SEASON:
@@ -179,6 +245,24 @@ def main() -> int:
     print(f"  listed hours to T-6h: median {np.nanmedian(hours[usable]):.1f}, "
           f"quartiles {np.nanquantile(hours[usable], [0.25, 0.75]).round(1)}")
 
+    prize_cells = []
+    if args.prize:
+        p_t1h = np.asarray(f["p_t1h"], dtype=float)
+        y = np.asarray(f["y"], dtype=float)
+        dates = np.asarray(f["et_date"]).astype(str)
+        print("\n=== THE PRIZE (terminal-volume strata: NOT tradeable) ===")
+        for hs in HALF_SPREADS:
+            for rate in FEE_RATES:
+                got = prize(p_t1h, y, liq, dates, half_spread=hs, fee_rate=rate)
+                got.update(half_spread=hs, fee_rate=rate)
+                prize_cells.append(got)
+                mark = "  <- pass/kill cell" if (hs, rate) == PASS_KILL_CELL else ""
+                if got["bets"]:
+                    print(f"  half-spread {hs * 100:.0f}c fee {rate:<4}: "
+                          f"{got['bets']:>4} bets  ROI {got['roi']:+.4f}  "
+                          f"90% CI [{got['ci90'][0]:+.4f}, {got['ci90'][1]:+.4f}]"
+                          f"{mark}")
+
     Path(args.out).mkdir(parents=True, exist_ok=True)
     doc = {"sport": args.sport, "season": args.season,
            "proxy_horizon_seconds": PROXY_HORIZON_SECONDS,
@@ -189,7 +273,8 @@ def main() -> int:
            "n_frame": int(gid.size), "n_with_proxy": int(have.sum()),
            "n_usable_for_rho": int(usable.sum()),
            "n_volume_absent": int((have & (vsrc == "absent")).sum()),
-           "listed_hours_median": float(np.nanmedian(hours[usable]))}
+           "listed_hours_median": float(np.nanmedian(hours[usable])),
+           "prize": prize_cells}
     p = Path(args.out) / f"rho-{args.sport}-{args.season}.json"
     p.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n",
                  encoding="utf-8")

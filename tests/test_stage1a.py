@@ -93,3 +93,20 @@ def test_the_measured_verdict_is_recorded_and_is_a_kill():
     assert doc["verdict"] == "kill"
     assert doc["rho"] < s1.RHO_GATE
     assert round(doc["rho"], 4) == 0.2467
+
+
+class TestThePrizeSettlement:
+    """Section 5's bet rule and settlement, as the --prize mode applies them."""
+
+    def test_a_bet_needs_fair_above_price_plus_costs(self):
+        take, _ = s1.settle(np.array([0.50, 0.50]), np.array([0.53, 0.55]),
+                               np.array([True, True]), half_spread=0.02,
+                               fee_rate=0.05)
+        # 0.50 + 0.02 + 0.05*0.25 = 0.5325
+        assert take.tolist() == [False, True]
+
+    def test_a_win_pays_one_over_price_paid_minus_one(self):
+        _, pnl = s1.settle(np.array([0.40, 0.40]), np.array([0.9, 0.9]),
+                              np.array([True, False]), half_spread=0.0,
+                              fee_rate=0.0)
+        assert pnl[0] == pytest.approx(1 / 0.40 - 1) and pnl[1] == -1.0

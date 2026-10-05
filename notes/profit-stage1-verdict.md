@@ -71,9 +71,17 @@ one bet-time substitute Stage 1a pre-committed to does not track it well enough 
 split.
 
 For completeness, the upper bound the signal was chasing, computed on dev with terminal-volume
-strata and the spec's own cost model and settlement rule: ROI **+0.115**, 90% date-clustered CI
-[+0.017, +0.220], 447 bets, at the pass/kill cell (2c half-spread, published fee). That is the
-prize that the proxy failed to reach, not a result. It is quoted here so the size of the loss
+strata and the spec's own cost model and settlement rule: ROI **+0.101**, 90% date-clustered CI
+[+0.0005, +0.206], 443 bets, at the pass/kill cell (2c half-spread, published fee). Within each
+stratum the map is fitted on the first half of the games and bets are placed on the second half,
+at section 4's executable T-1h price. Reproduce with `uv run python scripts/run_stage1a_rho.py
+--prize`, which prints the whole cost grid. That is the prize that the proxy failed to reach,
+not a result.
+
+*Corrected on review, 2026-10-05.* The first version of this paragraph quoted ROI +0.115
+[+0.017, +0.220] over 447 bets from an uncommitted script that bet at the **close**, which is not
+executable, rather than at T-1h as section 4 requires. The corrected figure is a little lower
+and its interval's lower bound sits at zero. It is quoted here so the size of the loss
 is on the record, and it is **not** evidence of anything tradeable: it conditions on
 information unavailable at bet time.
 
