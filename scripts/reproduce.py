@@ -112,6 +112,12 @@ def steps() -> list[dict]:
          "why": "walks all three seasons with the frozen constants, with a "
                 "causality canary that truncates the schedule and compares",
          "network": False},
+        {"name": "Stage 1a rho gate",
+         "cmd": ["scripts/run_stage1a_rho.py"],
+         "makes": "data/stage1a/rho-nba-2024-25.json",
+         "why": "Chira-gamble's pre-committed proxy fitness gate, dev only. "
+                "Measured rho 0.2467 against a 0.5 threshold: KILL",
+         "network": False},
         {"name": "dress rehearsal",
          "cmd": ["scripts/run_dress_rehearsal.py"],
          "makes": "data/rehearsal/dress-rehearsal.json",

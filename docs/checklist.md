@@ -165,6 +165,27 @@ The model:
 
 ---
 
+## Chira-gamble — Signal L — **KILLED 2026-10-05**
+
+Separate track from Chira, behind the holdout firewall. Spec pre-committed 2026-10-01
+→ [notes/profit-stage1-spec.md](../notes/profit-stage1-spec.md); verdict
+→ [notes/profit-stage1-verdict.md](../notes/profit-stage1-verdict.md).
+
+- [x] **Stage 1a proxy fitness gate: rho = 0.2467 against a pre-committed 0.5. KILL** by
+  kill criterion 1 (`scripts/run_stage1a_rho.py`, dev only). The bet-time proxy (price
+  changes to T−6h) misclassifies **37.6%** of games against headline 2's volume strata
+- [x] **Why it failed, measured:** the count tracks listing duration (rho 0.5816) far better
+  than volume (0.2467), and duration is nearly unrelated to volume (0.1021). Listed hours
+  run 0.0 to 1,823, so the count is mostly calendar
+- [x] **No second proxy tried**, as the spec forbids. Changes-per-hour is the obvious repair
+  and testing it on these 1,216 games would void the pre-commitment
+- [x] **Stage 2 vendor spend ceiling: $0.** The ceiling was to be set against a sizing that
+  no longer exists; the gate existed to make that call before money, not after
+- [x] Headline 2 is **untouched** — it remains a descriptive finding on terminal volume. What
+  died is the claim that it is tradeable through this proxy
+- [ ] If Signal L is ever revisited: a fresh pre-commitment with a different proxy, fixed
+  before it meets data unused here. The only such data is live 2026-27
+
 ## Open items that are not week-shaped
 
 Detail and reasoning live in [TODOS.md](../TODOS.md).
