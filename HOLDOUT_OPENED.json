@@ -1,0 +1,9 @@
+{
+  "commit": "dc384cc5f4f61d5326fde5786dfb40e33ea7c976",
+  "games": 2542,
+  "holdout_season": "2025-26",
+  "label_sha256": "e367f5812c7637504f6652da359c553332717b49be314a887ee81b0cc9f8ccb6",
+  "note": "Written by chira.holdout.open_holdout. Its presence is what makes a second call refuse. Do not delete it.",
+  "opened_at": "2026-10-06T16:07:07+00:00",
+  "reason": "open the seal"
+}
