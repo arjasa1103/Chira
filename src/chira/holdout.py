@@ -281,6 +281,22 @@ def _digest(rows: list[dict]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def read_holdout_labels(con) -> list[dict]:
+    """The holdout labels, for a repo where the seal is ALREADY open.
+
+    Not a way around `open_holdout`: it refuses unless the marker exists, so
+    the first look still has to go through the seal and still gets recorded.
+    This exists so the analysis over already-released labels can be re-run --
+    after a crash, or to reproduce a published number -- without pretending
+    a second opening happened.
+    """
+    if not marker_path(".").is_file():
+        raise HoldoutError(
+            "the seal is not open, so there are no released labels to read. "
+            "Use open_holdout, which records the opening.")
+    return _rows(con.execute(_LABELS_SQL, [HOLDOUT_SEASON]))
+
+
 def open_holdout(con, *, reason: str, repo: str | Path = ".") -> list[dict]:
     """Break the seal and return the 2025-26 labels. Once, ever.
 

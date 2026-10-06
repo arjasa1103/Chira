@@ -48,12 +48,14 @@ from chira.holdout import (
     HOLDOUT_SEASON,
     MARKER,
     HoldoutError,
+    _digest,
     head_commit,
     is_clean,
     is_pushed,
     marker_on_remote,
     marker_path,
     open_holdout,
+    read_holdout_labels,
 )
 from chira.model import (
     build_design,
@@ -110,7 +112,8 @@ def readiness(repo: str = ".") -> tuple[bool, list[str]]:
             blockers.append(f"missing {what}: {path}")
 
     if marker_path(repo).is_file():
-        blockers.append(f"{MARKER} already exists here: the holdout is open")
+        ok_lines.append(f"  note    {MARKER} exists: the seal is already "
+                        f"open, so a run recomputes rather than opens")
     else:
         ok_lines.append(f"  ok      no local {MARKER}")
 
@@ -132,8 +135,8 @@ def readiness(repo: str = ".") -> tuple[bool, list[str]]:
 
     try:
         if marker_on_remote(repo):
-            blockers.append(f"{MARKER} is on the remote: the holdout was "
-                            f"already opened")
+            ok_lines.append(f"  note    {MARKER} is on the remote: opened, "
+                            f"and the record is public")
         else:
             ok_lines.append(f"  ok      no {MARKER} on the remote")
     except HoldoutError as e:
@@ -191,11 +194,34 @@ def main() -> int:
     con = open_frame(args.snapshot or snaps[-1], verify=not args.no_verify)
     attach_game_prices(con)
 
-    # THE SEAL. Everything after this line is a second look if re-run.
-    labels = open_holdout(con, reason=args.reason.strip())
-    print(f"\n=== SEAL OPENED: {len(labels):,} {HOLDOUT_SEASON} labels "
-          f"released ===")
-    print(f"  marker committed and pushed; see {MARKER}")
+    # THE SEAL.
+    #
+    # If the marker already exists, the labels are ALREADY OUT and this is a
+    # recomputation, not a second look: `open_holdout` refuses a second call
+    # and should. Recomputing the analysis over labels that have been released
+    # changes nothing about what was seen and when, which the marker records.
+    # This path exists because the first run opened the seal and then crashed
+    # before producing a single number (2026-10-06).
+    if marker_path(".").is_file():
+        prior = json.loads(marker_path(".").read_text(encoding="utf-8"))
+        labels = read_holdout_labels(con)
+        print("\n=== SEAL ALREADY OPEN ===")
+        print(f"  opened {prior['opened_at']} on commit "
+              f"{prior['commit'][:12]}: {prior['reason']!r}")
+        print(f"  {len(labels):,} labels, sha256 "
+              f"{prior['label_sha256'][:16]}")
+        digest = _digest(labels)
+        if digest != prior["label_sha256"]:
+            print(f"  REFUSING: the labels hash to {digest[:16]}, not the "
+                  f"{prior['label_sha256'][:16]} the marker recorded. The "
+                  f"store has changed since the seal was opened.")
+            return 1
+        print("  labels match the marker's hash; this is a recomputation")
+    else:
+        labels = open_holdout(con, reason=args.reason.strip())
+        print(f"\n=== SEAL OPENED: {len(labels):,} {HOLDOUT_SEASON} labels "
+              f"released ===")
+        print(f"  marker committed and pushed; see {MARKER}")
 
     dev = rows(con.execute(_ROWS_SQL, ["data/features/features.parquet",
                                        "data/ratings/ratings.parquet",
