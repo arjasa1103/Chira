@@ -203,12 +203,18 @@ class TestScoring:
     def test_brier(self):
         assert brier([scored(0.75, 1.0)]) == pytest.approx(0.0625)
 
-    def test_scoring_a_sealed_row_is_refused(self):
+    def test_scoring_a_sealed_row_is_refused(self, sealed):
         """The leak this guard exists for: build_ratings.py printed the Elo's
         2025-26 log loss on 2026-10-01 before the seal was open."""
         for fn in (log_loss, brier):
             with pytest.raises(HoldoutError, match="sealed holdout"):
                 fn([scored(0.6, 1.0, season=HOLDOUT_SEASON)])
+
+    def test_scoring_a_sealed_row_is_allowed_once_the_seal_is_open(
+            self, unsealed):
+        """The other half of the contract, and this repo's live state."""
+        assert math.isfinite(log_loss([scored(0.6, 1.0, season=HOLDOUT_SEASON)]))
+        assert math.isfinite(brier([scored(0.6, 1.0, season=HOLDOUT_SEASON)]))
 
     def test_scoring_a_row_with_no_season_is_refused(self):
         """A guard that cannot see the season passes by construction."""
@@ -216,7 +222,7 @@ class TestScoring:
             with pytest.raises(HoldoutError, match="carry no season"):
                 fn([{"p_home_elo": 0.6, "y": 1.0}])
 
-    def test_a_dev_row_beside_a_sealed_one_still_refuses(self):
+    def test_a_dev_row_beside_a_sealed_one_still_refuses(self, sealed):
         with pytest.raises(HoldoutError, match="sealed holdout"):
             log_loss([scored(0.6, 1.0),
                       scored(0.6, 1.0, season=HOLDOUT_SEASON)])

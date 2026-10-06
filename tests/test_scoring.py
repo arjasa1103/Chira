@@ -94,11 +94,17 @@ class TestScoring:
         assert abs(s.decomp_gap) < 0.02
         assert any("binning gap" in x for x in s.lines())
 
-    def test_scoring_the_sealed_season_is_refused(self):
+    def test_scoring_the_sealed_season_is_refused(self, sealed):
         p = np.array([0.6, 0.4])
         y = np.array([1.0, 0.0])
         with pytest.raises(HoldoutError, match="sealed holdout"):
             score_set(p, y, seasons=[HOLDOUT_SEASON] * 2, game_ids=["a", "b"])
+
+    def test_the_sealed_season_is_scorable_once_the_seal_is_open(
+            self, unsealed):
+        s = score_set(np.array([0.6, 0.4]), np.array([1.0, 0.0]),
+                      seasons=[HOLDOUT_SEASON] * 2, game_ids=["a", "b"])
+        assert s.n == 2
 
     def test_scoring_season_less_rows_is_refused(self):
         with pytest.raises(HoldoutError, match="carry no season"):

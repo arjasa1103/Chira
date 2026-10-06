@@ -43,3 +43,28 @@ def _no_network(monkeypatch, request):
         raise RuntimeError("unit tests must not open sockets; stub the client")
 
     monkeypatch.setattr(socket, "socket", boom)
+
+
+@pytest.fixture
+def sealed(monkeypatch, tmp_path):
+    """Point the seal's marker at an empty directory: the holdout is CLOSED.
+
+    This repository's own seal was opened on 2026-10-06, so a test that wants
+    the closed-seal behaviour can no longer get it from the working tree.
+    Both branches of `assert_scorable` are real and both are tested; without
+    this the "refuses a sealed row" tests would silently start passing for
+    the wrong reason, which is the failure mode they exist to catch.
+    """
+    import chira.holdout as H
+    monkeypatch.setattr(H, "marker_path", lambda repo=".": tmp_path / H.MARKER)
+    return tmp_path
+
+
+@pytest.fixture
+def unsealed(monkeypatch, tmp_path):
+    """Point the marker at a directory that HAS one: the holdout is open."""
+    import chira.holdout as H
+    marker = tmp_path / H.MARKER
+    marker.write_text('{"holdout_season": "2025-26"}\n', encoding="utf-8")
+    monkeypatch.setattr(H, "marker_path", lambda repo=".": marker)
+    return tmp_path
