@@ -289,3 +289,84 @@ def chart_strata(f: dict, out: str | Path, *, sport: str = "nba",
     plt.close(fig)
     return {"by_liquidity": stats, "primary": prim,
             "null_at_primary_n": null_reference(sport, pooled["n_low"])}
+
+
+MODEL_COLOR = "#7b3f9f"
+
+
+def chart_reliability(panels: list[dict], out: str | Path, *,
+                      reps: int = 2000, seed: int = 0) -> dict:
+    """Model and market reliability curves side by side, one panel per sport.
+
+    The last figure the writeup needs, and the reason it is cut on DEV: a
+    figure first drawn during the holdout pass is a figure whose design was
+    chosen with holdout data in view. The holdout pass redraws this same
+    function with the same arguments and nothing else.
+
+    Each panel is a dict with `label`, `p_model`, `p_market` and `y`, already
+    aligned game by game. Both curves use the SAME bin edges -- quantiles of
+    the market price -- because two curves on their own quantiles are two
+    different x-axes drawn as if they were one, which is how a reader is
+    invited to compare bins that hold different games.
+    """
+    ncol = len(panels)
+    fig, axes = plt.subplots(1, ncol, figsize=(4.6 * ncol, 5.0), sharey=True)
+    axes = np.atleast_1d(axes)
+    stats: dict = {}
+
+    for ax, panel in zip(axes, panels, strict=True):
+        y = np.asarray(panel["y"], dtype=float)
+        pm = np.asarray(panel["p_market"], dtype=float)
+        pmod = np.asarray(panel["p_model"], dtype=float)
+        edges = quantile_bin_edges(pm, n_bins_for(y.size))
+
+        ax.plot([0, 1], [0, 1], color="0.6", linewidth=1, linestyle="--",
+                label="perfect calibration")
+        panel_stats = {}
+        for name, p, colour in (("market", pm, BAND_COLOR),
+                                ("model", pmod, MODEL_COLOR)):
+            curve = binned_curve(p, y, edges)
+            band = bootstrap_curve(p, y, edges, reps=reps, seed=seed)
+            mp = np.asarray(curve["mean_p"], dtype=float)
+            ax.fill_between(mp, band["lo"], band["hi"], color=colour,
+                            alpha=0.18)
+            ax.plot(mp, curve["obs_rate"], color=colour, marker="o",
+                    markersize=4, linewidth=1.3, label=name)
+            slope, intercept = _safe_cox(p, y)
+            panel_stats[name] = {
+                "curve": curve, "band_lo": list(band["lo"]),
+                "band_hi": list(band["hi"]), "brier": brier(p, y),
+                "ece": ece(p, y), "cox_slope": slope,
+                "cox_intercept": intercept}
+
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_aspect("equal")
+        ax.set_xlabel("forecast probability (home)")
+        ax.set_title(f"{panel['label']}  (n={y.size:,})", fontsize=10)
+        ax.legend(loc="upper left", fontsize=8, frameon=False)
+        stats[panel["label"]] = {
+            **panel_stats,
+            "n": int(y.size),
+            "bins": int(len(edges) - 1),
+            "bin_edges_from": "market price quantiles, shared by both curves"}
+
+    axes[0].set_ylabel("observed home win rate")
+    fig.tight_layout()
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    return stats
+
+
+def _safe_cox(p: np.ndarray, y: np.ndarray) -> tuple[float | None, float | None]:
+    """The Cox fit, or (None, None) when it is not identified.
+
+    A degenerate panel must not take the whole figure down; the caller
+    reports `None` as "degenerate fit", which is what chart 2 already does.
+    """
+    try:
+        slope, intercept = cox_slope_intercept(p, y)
+    except ValueError:
+        return None, None
+    return slope, intercept
