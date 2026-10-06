@@ -65,9 +65,11 @@ from chira.model import (
 )
 from chira.prices import attach_game_prices
 from chira.scoring import (
+    EDGE_FLOOR,
     apply_nested,
     clark_west,
     fit_nested,
+    reliability_buckets,
     risk_tiers,
     score_set,
 )
@@ -100,10 +102,26 @@ def rows(cur) -> list[dict]:
     return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
 
 
-def readiness(repo: str = ".") -> tuple[bool, list[str]]:
-    """Every precondition, with the blockers named. Reads no holdout data."""
+def readiness(repo: str = ".") -> tuple[bool, list[str], bool]:
+    """Every precondition, with the blockers named. Reads no holdout data.
+
+    Returns (ready, blockers, recomputing).
+
+    **The freeze preconditions guard the FIRST look only.** A clean tree, a
+    pushed HEAD and the absence of a marker exist so that the commit which
+    saw the holdout first is public and fixed before any label comes out.
+    Once the marker exists, that moment has happened and is recorded, and
+    re-deriving numbers from labels already released cannot un-happen it. So
+    a recomputation requires the marker, the dev artefacts, and that the
+    labels still hash to what the marker recorded -- not a second freeze.
+
+    This is a real distinction, not a relaxation to make a script run: the
+    marker's commit, time and label hash are what a reader checks, and none
+    of them move when the analysis is re-derived.
+    """
     blockers: list[str] = []
     ok_lines: list[str] = []
+    recomputing = marker_path(repo).is_file()
 
     for path, what in REQUIRED_DEV_ARTEFACTS:
         if Path(path).is_file() or Path(path).is_dir():
@@ -111,40 +129,39 @@ def readiness(repo: str = ".") -> tuple[bool, list[str]]:
         else:
             blockers.append(f"missing {what}: {path}")
 
-    if marker_path(repo).is_file():
-        ok_lines.append(f"  note    {MARKER} exists: the seal is already "
-                        f"open, so a run recomputes rather than opens")
+    if recomputing:
+        prior = json.loads(marker_path(repo).read_text(encoding="utf-8"))
+        ok_lines.append(f"  note    seal already open: {prior['opened_at']} "
+                        f"on {prior['commit'][:12]}")
+        ok_lines.append("  note    this run RECOMPUTES from released labels; "
+                        "the freeze checks below applied at opening")
     else:
-        ok_lines.append(f"  ok      no local {MARKER}")
-
-    if is_clean(repo):
-        ok_lines.append("  ok      working tree is clean")
-    else:
-        blockers.append("working tree is dirty; the marker records a commit "
-                        "hash and that record is the freeze")
-
-    try:
-        if is_pushed(repo):
-            ok_lines.append(f"  ok      HEAD ({head_commit(repo)[:12]}) is on "
-                            f"the remote")
+        if is_clean(repo):
+            ok_lines.append("  ok      working tree is clean")
         else:
-            blockers.append("HEAD is not on the remote; a freeze only the "
-                            "author can see is not a freeze")
-    except HoldoutError as e:
-        blockers.append(f"cannot check the remote: {e}")
-
-    try:
-        if marker_on_remote(repo):
-            ok_lines.append(f"  note    {MARKER} is on the remote: opened, "
-                            f"and the record is public")
-        else:
-            ok_lines.append(f"  ok      no {MARKER} on the remote")
-    except HoldoutError as e:
-        blockers.append(f"cannot read the remote marker: {e}")
+            blockers.append("working tree is dirty; the marker records a "
+                            "commit hash and that record is the freeze")
+        try:
+            if is_pushed(repo):
+                ok_lines.append(f"  ok      HEAD ({head_commit(repo)[:12]}) "
+                                f"is on the remote")
+            else:
+                blockers.append("HEAD is not on the remote; a freeze only "
+                                "the author can see is not a freeze")
+        except HoldoutError as e:
+            blockers.append(f"cannot check the remote: {e}")
+        try:
+            if marker_on_remote(repo):
+                blockers.append(f"{MARKER} is on the remote: the holdout was "
+                                f"already opened elsewhere")
+            else:
+                ok_lines.append(f"  ok      no {MARKER} on the remote")
+        except HoldoutError as e:
+            blockers.append(f"cannot read the remote marker: {e}")
 
     for line in ok_lines:
         print(line)
-    return not blockers, blockers
+    return not blockers, blockers, recomputing
 
 
 def main() -> int:
@@ -161,12 +178,15 @@ def main() -> int:
     args = ap.parse_args()
 
     print(f"=== HOLDOUT READINESS ({HOLDOUT_SEASON}, sealed) ===")
-    ready, blockers = readiness()
+    ready, blockers, recomputing = readiness()
     if blockers:
         print("\n  BLOCKED:")
         for b in blockers:
             print(f"    - {b}")
 
+    if recomputing:
+        print("\n  (the open P1s below mattered before the seal broke; it is "
+              "broken,\n   so they are now reporting obligations, not gates)")
     print("\n=== THINGS NO SCRIPT CAN CHECK ===")
     print("  These are in TODOS.md as P1 'before the holdout opens':")
     print("    - headline 1's framing, decided and written down")
@@ -179,13 +199,15 @@ def main() -> int:
 
     if not args.open_the_seal:
         print(f"\nDRY RUN. Nothing from {HOLDOUT_SEASON} was read.")
-        print("To break the seal: --open-the-seal --reason \"...\"")
+        print("To run: --open-the-seal --reason \"...\""
+              + ("  (recomputation; the seal is already open)"
+                 if recomputing else "  (THIS BREAKS THE SEAL)"))
         return 0 if ready else 1
 
     if not ready:
-        print("\nrefusing to open the seal with blockers outstanding")
+        print("\nrefusing to proceed with blockers outstanding")
         return 1
-    if not args.reason or not args.reason.strip():
+    if not recomputing and (not args.reason or not args.reason.strip()):
         print("\n--reason is required: the marker has to say which frozen "
               "model this single pass was for")
         return 2
@@ -276,10 +298,19 @@ def main() -> int:
         panels.append({"label": sport.upper(), "p_model": pred.p[keep],
                        "p_market": pm, "y": y[keep]})
 
-        tiers = risk_tiers(pred.p, y, reps=args.reps)
-        print("  risk tiers:")
+        # Section 9's tiers are EDGE tiers: |model - market|, so they need
+        # the market price and only exist on games that have one.
+        tiers, below_floor = risk_tiers(pred.p[keep], pm, y[keep],
+                                        reps=args.reps)
+        print(f"  edge tiers (section 9), n={keep.size:,} priced games:")
         for t in tiers:
             print(t.line())
+        print(f"  below the {EDGE_FLOOR:.2f} edge floor, not tiered: "
+              f"{below_floor:,}")
+        buckets = reliability_buckets(pred.p, y, reps=args.reps)
+        print("  reliability buckets (exploratory):")
+        for b in buckets:
+            print(b.line())
 
         nested = {}
         x = np.column_stack([
@@ -314,7 +345,10 @@ def main() -> int:
                 nested.setdefault(horizon, {})[null] = cw.__dict__.copy()
 
         report["sports"][sport] = {"n": h_design.n, "scores": scores,
-                                   "risk_tiers": [t.__dict__ for t in tiers],
+                                   "edge_tiers": [t.__dict__ for t in tiers],
+                                   "edge_below_floor": below_floor,
+                                   "reliability_buckets":
+                                       [b.__dict__ for b in buckets],
                                    "nested": nested,
                                    "unseen_team_seasons":
                                        list(pred.unseen_team_seasons)}
