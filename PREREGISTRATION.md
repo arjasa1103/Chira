@@ -398,6 +398,44 @@ input, the Elo, did on the holdout, which says something about what the model wi
 That is why the no-holdout-justified-changes rule above exists. Artifact v2's limitations
 section will cite this deviation.
 
+### Deviation 2 (2026-10-06): the holdout runner crashed after the seal opened, and was fixed after
+
+**What happened.** `open_holdout` ran once, at 16:07:07 UTC on 2026-10-06, on the frozen and
+pushed commit `dc384cc5f4f6`, releasing 2,542 labels (marker `72b9387`). The runner,
+`scripts/run_holdout.py`, then died on a `TypeError`: it called `risk_tiers(p, y)`, a
+signature that the 2026-10-04 review (`041cc42`) had changed to `risk_tiers(p_model,
+p_market, y)` for section 9's edge tiers. Before dying it had printed the **NBA** score table
+and the NBA headline-1 deficit (+0.01152 Brier); nothing was computed for the NHL.
+
+**Two departures from the plan.**
+1. **The runner was never executed, or reviewed, before the seal opened.** Section 6's dress
+   rehearsal exercised the statistics through `run_dress_rehearsal.py`, not the runner that
+   would use them once; the checklist's "written, reviewed and pushed before opening" was met
+   on pushed only.
+2. **Code changed after the seal opened.** `06712ed` and `6aa7ea2` add a recomputation path
+   and fix the call; `dfe3833` updates tests that asserted the seal was closed. None of the
+   three touches the model, its fit, its prediction path, the scoring functions or the seeds.
+   The diff from `dc384cc` to `6aa7ea2` changes only the readiness checks, how the labels are
+   read once the marker exists, and the risk-tier and reliability-bucket reporting.
+
+**Why the numbers stand.** The recomputation reads the labels only when the marker exists
+(`holdout.read_holdout_labels`) and refuses unless they hash to the marker's recorded
+SHA-256, so it scored the same 2,542 labels. It reproduced the NBA lines the crashed run had
+printed (model 0.20592, market 0.19413). No model, threshold or test was chosen after any
+holdout number was seen, and none was changed: the frozen commit is still `dc384cc5f4f6`.
+
+**Corrections made on review (2026-10-20).** The commit messages of `06712ed` and `6aa7ea2`
+say the run crashed "before printing a single number"; it printed the NBA's. The first
+week-9 note reported headline-1 deficits of +0.01179 (NBA) and +0.00512 (NHL), which subtract
+a model score over all games from a market score over priced games only. The pre-registered
+comparison, as the runner computes it on the same priced games, is **+0.01152 (NBA) and
++0.00499 (NHL)**. Both readings are under the 0.02-0.03 band, so the verdict is unchanged;
+the numbers are corrected in [notes/week9-holdout.md](notes/week9-holdout.md).
+
+**What stops it recurring.** Nothing structural yet: the seal is spent for 2025-26. Any future
+one-shot runner gets a dry-run mode that executes every call on dev rows before the
+irreversible step. Artifact v2's limitations section cites this deviation beside Deviation 1.
+
 ## 7. Nested test
 
 - **Model A:** market price only. **Model B:** market price + features.

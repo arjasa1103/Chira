@@ -20,12 +20,19 @@ re-running, and `open_holdout` would refuse anyway.
 
 ## How the pass actually went — two attempts, one look
 
-The first invocation **opened the seal and then crashed before printing a number.**
+The first invocation **opened the seal and then crashed partway through the NBA.**
 `run_holdout.py` called `scoring.risk_tiers(p, y)` against a signature that a review
 commit (`041cc42`) had already changed to `risk_tiers(p_model, p_market, y)`. The seal
-broke at 16:07:07Z; the script died seconds later on a `TypeError`.
+broke at 16:07:07Z; the script died on a `TypeError` at the NBA's risk tiers.
 
-**The labels were out and nothing had been computed from them.** The fix was a
+**It had already printed the NBA's scores and its headline-1 deficit** (+0.01152): the
+score table and the deficit come before the tiers in the loop, and NBA runs first. The
+commit messages of `06712ed` and `6aa7ea2` say it crashed "before printing a single
+number"; corrected on review 2026-10-20 against the dev session's own log of that run.
+Nothing was computed for the NHL. The recomputation reproduced the NBA score lines to
+the fifth decimal (model 0.20592, market 0.19413, identical code up to the crash), so
+the first look and the reported numbers are the same numbers; the NBA deficit quoted
+below is the one the first run printed. The fix was a
 recomputation path (`06712ed`, `6aa7ea2`) whose preconditions are deliberately different
 from the opening's:
 
@@ -56,10 +63,17 @@ it, and there was no such mode.
 falsification condition (section 11) was a Brier deficit against the market **exceeding the
 0.02-0.03 band**. Measured:
 
-| | model | market | deficit | band |
-|---|---|---|---|---|
-| NBA | 0.20592 | 0.19413 | **+0.01179** | 0.02-0.03 |
-| NHL | 0.24971 | 0.24459 | **+0.00512** | 0.02-0.03 |
+| | priced games | deficit (model − market, same games) | band |
+|---|---|---|---|
+| NBA | 1,226 | **+0.01152** | 0.02-0.03 |
+| NHL | 1,310 | **+0.00499** | 0.02-0.03 |
+
+The deficit is the runner's own `HEADLINE 1` line, which scores the model on exactly the
+games that have a closing price. **Do not re-derive it from section 1's tables**: there
+the model is scored on all games (NBA 1,230, NHL 1,312) and the market on priced games
+only, and subtracting across them gives +0.01179 and +0.00512, which this note first
+reported (corrected on review 2026-10-20). `holdout.json` does not store the
+matched-sample model score, so these two values come from the run's output (section 10).
 
 Both deficits are *under* the band's lower edge. On the pre-registered criterion, a
 transparent schedule-and-rating model reaches parity with Polymarket's closing price.
@@ -304,7 +318,7 @@ available, and the seal is spent, so this stays an open question rather than a c
 
 ## 9. Against the pre-registered falsification conditions
 
-- **Headline 1 — passes as parity.** Deficits +0.01179 (NBA) and +0.00512 (NHL), both below
+- **Headline 1 — passes as parity.** Deficits +0.01152 (NBA) and +0.00499 (NHL), both below
   the 0.02-0.03 band that would have falsified it. Decomposed in section 1, as PLAN Phase 5
   required. The NHL pass is qualified in the headline above and must stay qualified wherever
   it is quoted.
@@ -337,6 +351,11 @@ available, and the seal is spent, so this stays an open question rather than a c
 4. **The dress rehearsal did not rehearse the runner.** Section "how the pass went". A
    `--dry-run-the-analysis` mode that exercises every call on dev rows would have cost
    nothing and saved the crash.
+5. **The headline number is not in the JSON.** `holdout.json` stores the model's score on
+   all games and the market's on priced games, but not the model on priced games, which is
+   what headline 1 compares. The deficits above come from the run's printed output. The
+   runner should persist `deficit` and the matched-sample model score, so a reader can
+   check the headline from the file and is never tempted to subtract across samples.
 
 ## 11. What this pass does not say
 
