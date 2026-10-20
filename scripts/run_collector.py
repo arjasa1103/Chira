@@ -50,7 +50,12 @@ from chira.collector import (
 )
 from chira.http import Client
 from chira.telemetry import Telemetry, run_id
-from chira.upcoming import nhl_upcoming, parse_start
+from chira.upcoming import (
+    ALL_STATES_BY_SPORT,
+    nba_upcoming,
+    nhl_upcoming,
+    parse_start,
+)
 
 ABBR = "data/abbr_map_resolved.json"
 
@@ -110,10 +115,25 @@ def abbr_map_for(sport: str, season: str) -> tuple[dict, str]:
         return load_abbr_map(path, prior, sport), prior
 
 
-# Every schedule state, not only games still to come: a run that arrives while
-# the day's matinee is being played must compute the SAME opening as one that
-# arrived before it, or the window would jump back to 16:00 mid-afternoon.
-ALL_GAME_STATES = ("FUT", "PRE", "LIVE", "CRIT", "OFF", "FINAL")
+# The NHL's every-state tuple, kept as a name because the tests refer to it.
+# `upcoming.ALL_STATES_BY_SPORT` is the general form, and carries the reason:
+# a run arriving while the day's matinee is being played must compute the SAME
+# opening as one that arrived before it. The two leagues spell their schedule
+# states differently, which is why it is a table and not one tuple.
+ALL_GAME_STATES = ALL_STATES_BY_SPORT["nhl"]
+
+# Which enumerator serves each sport. The values are the function NAMES, taken
+# from the functions themselves so a rename cannot desync them, and they are
+# resolved through this module's globals at CALL time rather than bound here:
+# that is what lets a test monkeypatch `run_collector.nhl_upcoming` or
+# `.nba_upcoming` and have the collector actually use the fake.
+ENUMERATORS = {"nhl": nhl_upcoming.__name__, "nba": nba_upcoming.__name__}
+
+
+def enumerator_for(sport: str):
+    """The upcoming-games function for `sport`, or None if none is wired."""
+    name = ENUMERATORS.get(sport)
+    return globals()[name] if name else None
 
 
 def first_tip_today(now=None) -> tuple:
@@ -122,17 +142,24 @@ def first_tip_today(now=None) -> tuple:
     One schedule read per run, before anything is logged, because it decides
     whether this run polls at all. Any failure is None, which `window_start_for`
     turns into the old 16:00 ET opening: a broken schedule read can make the
-    window as late as it always was, never later. NBA enumeration is not wired
-    yet, so NBA afternoon games do not move the opening until it is.
+    window as late as it always was, never later.
+
+    Both leagues count, so an NBA matinee moves the opening exactly as an NHL
+    one does. A game whose start time is unknown contributes no tip and cannot
+    move the window later -- including an NBA game whose ESPN time was
+    discarded as stale (`upcoming.nba_upcoming`), where the rest of the slate
+    still sets the opening.
     """
     today = et_now(now).date()
     try:
         client = Client()
         tips = []
         for sport, _season in (active_seasons() or [("nhl", "2026-27")]):
-            if sport != "nhl":
+            enumerate_sport = enumerator_for(sport)
+            if enumerate_sport is None:
                 continue
-            for g in nhl_upcoming(client, today, days=1, states=ALL_GAME_STATES):
+            for g in enumerate_sport(client, today, days=1,
+                                     states=ALL_STATES_BY_SPORT[sport]):
                 if str(g.get("et_date")) == str(today):
                     t = parse_start(g.get("start_time_utc"))
                     if t is not None:
@@ -152,12 +179,13 @@ def collect_targets(client, tel, days: int = LOOKAHEAD_DAYS
     unresolved: list[dict] = []
     today = datetime.now(UTC).astimezone(ET).date()
     for sport, season in (active_seasons() or [("nhl", "2026-27")]):
-        if sport != "nhl":
-            # NBA upcoming enumeration is not wired yet; the NBA 2026-27 season
-            # tips late October. Recorded rather than silently skipped.
+        enumerate_sport = enumerator_for(sport)
+        if enumerate_sport is None:
+            # Recorded rather than silently skipped: a sport in season with no
+            # enumerator captures nothing, and nothing else would say so.
             tel.event("sport_not_wired", sport=sport, season=season)
             continue
-        games = nhl_upcoming(client, today, days=days)
+        games = enumerate_sport(client, today, days=days)
         amap, used = abbr_map_for(sport, season)
         if used != season:
             tel.event("abbr_map_fallback", sport=sport, season=season, used=used)
@@ -206,10 +234,8 @@ def main() -> int:
         print("\n=== SEASON WINDOW CHECK (against the league's own schedule) ===")
         bad = 0
         for (sport, season), window in SEASON_WINDOWS.items():
-            if sport != "nhl":
-                print(f"  {sport} {season}: no upcoming enumerator wired; skipped")
-                continue
-            got = check_season_window(probe, window[0] - timedelta(days=10), window)
+            got = check_season_window(probe, window[0] - timedelta(days=10),
+                                      window, sport=sport)
             flag = "ok" if got["covered"] else "WINDOW MISSES OPENING NIGHT"
             bad += 0 if got["covered"] else 1
             print(f"  {sport} {season}: first game {got['first_game']}, "

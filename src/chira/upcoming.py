@@ -19,9 +19,9 @@ market. Measured while writing this: the Oct 1 slate includes games at
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
-from .constants import NHL_API
+from .constants import ESPN_NBA_API, NHL_API
 from .http import Client, SchemaError
 
 REGULAR_SEASON = 2
@@ -141,6 +141,188 @@ def nhl_upcoming(client: Client, start: date, days: int = 7, *,
     return sorted(by_id.values(), key=lambda g: (g["et_date"], g["game_id"]))
 
 
+# --- NBA -----------------------------------------------------------------
+#
+# ESPN's abbreviations are not the census's for six teams. Read from
+# `.../nba/teams` on 2026-10-20 (all 30) and diffed against the 30 codes in
+# `data/abbr_map_resolved.json`; the other 24 are identical once lowercased.
+# Vendored rather than fetched: a translation table that can change under the
+# collector mid-season is a table that can silently stop resolving markets,
+# and `scripts/fetch_espn_nba_codes.py` re-runs the diff and exits non-zero.
+ESPN_TO_CENSUS = {"gs": "gsw", "no": "nop", "ny": "nyk", "sa": "sas",
+                  "utah": "uta", "wsh": "was"}
+
+# ESPN writes the Clippers' city as "LA" and the Lakers' as "Los Angeles".
+# `resolve.team_labels` only accepts a place name that is UNIQUE in the
+# league, precisely so a Lakers/Clippers slug cannot confirm with the sides
+# swapped. Two different spellings both look unique and quietly defeat that
+# guard, so they are collapsed to one before it runs.
+ESPN_PLACE_FIXES = {"LA": "Los Angeles"}
+
+# ESPN's `status.type.state`. "pre" is not-yet-started; the collector's window
+# computation wants every state, for the same reason ALL_GAME_STATES exists.
+NBA_UPCOMING_STATES = ("pre",)
+NBA_ALL_STATES = ("pre", "in", "post")
+
+# How long after a scheduled tipoff a game may still say "pre" before this
+# module stops believing the clock. See `nba_upcoming`.
+STALE_PRE_GRACE = timedelta(minutes=20)
+
+
+def nba_season_label(year: object) -> str:
+    """ESPN's season year is the END year: 2027 -> '2026-27'."""
+    try:
+        y = int(str(year))
+    except (TypeError, ValueError):
+        raise SchemaError(f"unexpected ESPN season year {year!r}") from None
+    if not 1950 <= y <= 2100:
+        raise SchemaError(f"implausible ESPN season year {year!r}")
+    return f"{y - 1}-{str(y)[2:]}"
+
+
+def espn_abbrev(code: object) -> str:
+    """ESPN team code -> the census's. Raises rather than guessing."""
+    c = str(code or "").strip().lower()
+    if not c:
+        raise SchemaError("ESPN competitor has no abbreviation; refusing to "
+                          "build a slug from a blank side")
+    return ESPN_TO_CENSUS.get(c, c)
+
+
+def validate_scoreboard(payload: object) -> bool:
+    """`/scoreboard?dates=YYYYMMDD` -> {"events": [...]}.
+
+    Cacheable only when it carries events, for `validate_week`'s reason: a
+    dark day is a real answer and freezing one would blind the collector for
+    as long as the entry lived.
+    """
+    if not isinstance(payload, dict):
+        raise SchemaError(f"/scoreboard expected an object, got "
+                          f"{type(payload).__name__}")
+    events = payload.get("events")
+    if not isinstance(events, list):
+        raise SchemaError("/scoreboard has no events list")
+    return bool(events)
+
+
+def _espn_side(competitor: dict) -> tuple[str, str, str]:
+    """(census abbrev, nickname, place) for one side of an ESPN event."""
+    team = competitor.get("team") or {}
+    place = str(team.get("location") or "")
+    return (espn_abbrev(team.get("abbreviation")),
+            str(team.get("name") or ""),
+            ESPN_PLACE_FIXES.get(place, place))
+
+
+def nba_upcoming(client: Client, start: date, days: int = 7, *,
+                 states: tuple[str, ...] = NBA_UPCOMING_STATES,
+                 bypass_cache: bool = True,
+                 now: datetime | None = None) -> list[dict]:
+    """Regular-season NBA games from `start` for `days` days, via ESPN.
+
+    Same dict shape as `nhl_upcoming`, so `resolve_targets`,
+    `upcoming_targets` and `poll_target` need no NBA branch.
+
+    **The ET date is the date requested, never the event's timestamp.** The
+    endpoint is queried one day at a time and groups games by US calendar day,
+    so a 21:30 ET tipoff in San Antonio arrives under `dates=20261020` with
+    `date: 2026-10-21T01:30Z`. Deriving the date from that timestamp would
+    slug the whole late slate one day forward and find no market -- the same
+    trap `nhl_upcoming` documents, in a different shape. One request per day
+    rather than ESPN's `dates=A-B` range form, because a range response gives
+    no per-day attribution and would force exactly that derivation.
+
+    **ESPN's tipoff time is third-party and is not trusted past its own
+    deadline.** Amendment 1 established the league's own time as the
+    trustworthy one, and for the NHL this module reads it from the league.
+    There is no reachable NBA equivalent (see `constants.ESPN_NBA_API`), and
+    ESPN's times have been seen to look like placeholders: on 2026-10-20,
+    opening day, it published BOS@DET as 19:00Z / "3:00 PM EDT" on a slate
+    whose other two games were 19:00 and 21:30 ET.
+
+    So when a game's scheduled time is more than `STALE_PRE_GRACE` in the past
+    and ESPN still reports it as not started, `start_time_utc` comes back
+    **None** instead of a time this function can see is wrong. That is not a
+    special case: `collector.upcoming_targets` already KEEPS games whose start
+    time is unknown, by documented design, and `live_quotes.secs_to_tipoff`
+    is nullable. The alternative is worse in exactly the way that matters --
+    `upcoming_targets` drops a game 30 minutes past its scheduled tipoff, so
+    one bad time silently ends pre-game capture for that game, and pre-game
+    prices cannot be fetched later.
+
+    A game that ESPN reports as `in` or `post` keeps its time: it started, so
+    the clock is corroborated by something other than itself.
+    """
+    if days < 1:
+        raise ValueError("days must be >= 1")
+    n = (now or datetime.now(UTC)).astimezone(UTC)
+    out: dict[str, dict] = {}
+    for offset in range(days):
+        day = start + timedelta(days=offset)
+        payload = client.get_json(
+            f"{ESPN_NBA_API}/scoreboard?dates={day.strftime('%Y%m%d')}",
+            validator=validate_scoreboard, bypass_cache=bypass_cache)
+        for ev in (payload or {}).get("events") or []:
+            comps = (ev.get("competitions") or [{}])[0]
+            season = ev.get("season") or {}
+            if str(season.get("slug") or "") != "regular-season":
+                # Preseason runs to 2026-10-16 and the NBA window opens
+                # 2026-10-15, so two preseason days fall inside it.
+                continue
+            status = ((comps.get("status") or {}).get("type") or {})
+            state = str(status.get("state") or "")
+            if state not in states:
+                continue
+            sides = comps.get("competitors") or []
+            if len(sides) != 2:
+                raise SchemaError(f"ESPN event {ev.get('id')!r} has "
+                                  f"{len(sides)} competitors, expected 2")
+            by_side = {str(s.get("homeAway") or ""): s for s in sides}
+            if set(by_side) != {"home", "away"}:
+                raise SchemaError(f"ESPN event {ev.get('id')!r} does not have "
+                                  f"one home and one away side")
+            away, away_name, away_place = _espn_side(by_side["away"])
+            home, home_name, home_place = _espn_side(by_side["home"])
+            start_utc = parse_start(ev.get("date"))
+            if (start_utc is not None and state == "pre"
+                    and start_utc < n - STALE_PRE_GRACE):
+                start_utc = None
+            out[str(ev["id"])] = {
+                "sport": "nba",
+                "season": nba_season_label(season.get("year")),
+                "game_id": str(ev["id"]),
+                "et_date": day.isoformat(),
+                "away": away, "home": home,
+                "away_name": away_name, "home_name": home_name,
+                "away_place": away_place, "home_place": home_place,
+                "start_time_utc": (None if start_utc is None
+                                   else start_utc.isoformat().replace(
+                                       "+00:00", "Z")),
+                # ESPN's own flag, passed through unverified. The census does
+                # NOT use it: the league's `isNeutral` was wrong for all four
+                # 2023-24 neutral games, so the feature store derives neutral
+                # sites from a vendored arena list instead
+                # (notes/week7-neutral-and-holdout.md). Nothing in the
+                # collector reads this column; it is stored for the record.
+                "neutral_site": bool(comps.get("neutralSite")),
+            }
+    return sorted(out.values(), key=lambda g: (g["et_date"], g["game_id"]))
+
+
+UPCOMING_BY_SPORT = {"nhl": nhl_upcoming, "nba": nba_upcoming}
+
+# Every schedule state each source can report, not only the not-yet-played
+# ones. The collector's window computation needs these: a run arriving while
+# the day's matinee is being played must compute the SAME opening as one
+# that arrived before it, or the window would jump back to 16:00 ET
+# mid-afternoon. The two leagues spell their states differently, which is
+# why this is a table and not one tuple.
+ALL_STATES_BY_SPORT = {
+    "nhl": ("FUT", "PRE", "LIVE", "CRIT", "OFF", "FINAL"),
+    "nba": NBA_ALL_STATES,
+}
+
+
 def check_season_window(client: Client, start: date, window: tuple[date, date],
                         *, scan_days: int = 45, sport: str = "nhl") -> dict:
     """Does the configured window actually contain the league's first game?
@@ -150,24 +332,29 @@ def check_season_window(client: Client, start: date, window: tuple[date, date],
     gate. This scans the real schedule from `start` and reports the first
     regular-season date it finds against the window.
 
-    **NHL only, and it raises rather than answering for another sport.** The
-    scan is `nhl_upcoming`, so pointing it at an NBA window would compare that
-    window against the NHL schedule and return a confident, wrong `covered`.
-    A checker that can quietly validate the wrong league is worse than no
-    checker, which is the whole lesson of the window this function exists to
-    catch.
+    **It scans the sport it was asked about, and raises for a sport with no
+    enumerator.** The scan used to be `nhl_upcoming` unconditionally, so
+    pointing it at an NBA window compared that window against the NHL
+    schedule and returned a confident, wrong `covered`. A checker that can
+    quietly validate the wrong league is worse than no checker, which is the
+    whole lesson of the window this function exists to catch. It now
+    dispatches through `UPCOMING_BY_SPORT`, and an unknown sport raises as
+    before rather than falling back to any league's schedule.
 
     Network. Deliberately NOT part of `--dry-run`, which promises no calls.
     """
-    if sport != "nhl":
+    enumerate_sport = UPCOMING_BY_SPORT.get(sport)
+    if enumerate_sport is None:
         raise ValueError(
-            f"check_season_window scans the NHL schedule; it cannot verify a "
-            f"{sport!r} window. Wire an upcoming-games source for {sport!r} first")
-    games = nhl_upcoming(client, start, days=scan_days)
+            f"check_season_window has no upcoming-games source for {sport!r}; "
+            f"it can scan {sorted(UPCOMING_BY_SPORT)}. Wire one first rather "
+            f"than letting it verify a window against another league")
+    games = enumerate_sport(client, start, days=scan_days)
     dates = sorted({g["et_date"] for g in games})
     first = date.fromisoformat(dates[0]) if dates else None
     lo, hi = window
     return {
+        "sport": sport,
         "scanned_from": start.isoformat(),
         "scan_days": scan_days,
         "first_game": first.isoformat() if first else None,

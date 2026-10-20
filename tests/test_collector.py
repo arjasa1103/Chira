@@ -858,6 +858,82 @@ class TestTheRunnerReadsTodaysSchedule:
         assert tip == datetime(2026, 10, 4, 17, 0, tzinfo=UTC)
         assert "first start" in note
 
+    def test_an_nba_matinee_moves_the_opening_too(self, monkeypatch, tmp_path):
+        """Both leagues set the window. Before this, NBA afternoons did not.
+
+        2026-10-20 is the NBA's opening day and the NHL's season is already
+        running, so a real run reads two schedules and must take the earlier
+        tip from either.
+        """
+        mod = _load_runner(monkeypatch, tmp_path)
+        monkeypatch.setattr(mod, "Client", lambda *a, **k: None)
+        monkeypatch.setattr(mod, "active_seasons", lambda *a, **k: [
+            ("nba", "2026-27"), ("nhl", "2026-27")])
+        monkeypatch.setattr(mod, "nhl_upcoming", lambda *a, **k: [
+            {"et_date": date(2026, 10, 20),
+             "start_time_utc": "2026-10-20T23:00:00Z"}])
+        monkeypatch.setattr(mod, "nba_upcoming", lambda *a, **k: [
+            {"et_date": date(2026, 10, 20),
+             "start_time_utc": "2026-10-20T19:00:00Z"}])
+        tip, note = mod.first_tip_today(et(2026, 10, 20, 8, 0))
+        assert tip == datetime(2026, 10, 20, 19, 0, tzinfo=UTC)
+        assert "first start" in note
+
+    def test_each_sport_is_asked_with_its_own_state_names(
+            self, monkeypatch, tmp_path):
+        """The NHL says FUT/PRE/LIVE, ESPN says pre/in/post."""
+        mod = _load_runner(monkeypatch, tmp_path)
+        seen = {}
+
+        def record(name):
+            def f(client, day, days=1, states=None, **k):
+                seen[name] = states
+                return []
+            return f
+
+        monkeypatch.setattr(mod, "Client", lambda *a, **k: None)
+        monkeypatch.setattr(mod, "active_seasons", lambda *a, **k: [
+            ("nba", "2026-27"), ("nhl", "2026-27")])
+        monkeypatch.setattr(mod, "nhl_upcoming", record("nhl"))
+        monkeypatch.setattr(mod, "nba_upcoming", record("nba"))
+        mod.first_tip_today(et(2026, 10, 20, 8, 0))
+        assert seen["nhl"] == ("FUT", "PRE", "LIVE", "CRIT", "OFF", "FINAL")
+        assert seen["nba"] == ("pre", "in", "post")
+
+    def test_a_game_with_no_known_start_cannot_move_the_window_later(
+            self, monkeypatch, tmp_path):
+        """An NBA game whose stale ESPN time was discarded must not win.
+
+        `nba_upcoming` returns None for a tipoff it can see is wrong. That
+        game contributes no tip, and the rest of the slate still opens the
+        window.
+        """
+        mod = _load_runner(monkeypatch, tmp_path)
+        monkeypatch.setattr(mod, "Client", lambda *a, **k: None)
+        monkeypatch.setattr(mod, "active_seasons", lambda *a, **k: [
+            ("nba", "2026-27")])
+        monkeypatch.setattr(mod, "nba_upcoming", lambda *a, **k: [
+            {"et_date": date(2026, 10, 20), "start_time_utc": None},
+            {"et_date": date(2026, 10, 20),
+             "start_time_utc": "2026-10-20T23:00:00Z"}])
+        tip, _ = mod.first_tip_today(et(2026, 10, 20, 8, 0))
+        assert tip == datetime(2026, 10, 20, 23, 0, tzinfo=UTC)
+
+    def test_an_unwired_sport_is_skipped_not_scanned_with_another_league(
+            self, monkeypatch, tmp_path):
+        mod = _load_runner(monkeypatch, tmp_path)
+        called = []
+        monkeypatch.setattr(mod, "Client", lambda *a, **k: None)
+        monkeypatch.setattr(mod, "active_seasons", lambda *a, **k: [
+            ("mlb", "2027")])
+        monkeypatch.setattr(mod, "nhl_upcoming",
+                            lambda *a, **k: called.append("nhl") or [])
+        monkeypatch.setattr(mod, "nba_upcoming",
+                            lambda *a, **k: called.append("nba") or [])
+        tip, note = mod.first_tip_today(et(2026, 10, 20, 8, 0))
+        assert called == []
+        assert tip is None and "no games today" in note
+
     def test_an_unreadable_schedule_falls_back_to_the_old_window(
             self, monkeypatch, tmp_path):
         mod = _load_runner(monkeypatch, tmp_path)

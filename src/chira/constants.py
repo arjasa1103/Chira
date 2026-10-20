@@ -10,6 +10,15 @@ CLOB = "https://clob.polymarket.com"
 # peers so "which third parties does this study depend on" is one file, not three.
 NHL_API = "https://api-web.nhle.com/v1"
 
+# The NBA has no equivalent open endpoint. Probed 2026-10-01 and again
+# 2026-10-20 from this machine: `stats.nba.com` times out at the connection
+# (the census reaches it through nba_api on a residential IP and even that
+# is unreliable), and every `cdn.nba.com` / `data.nba.com` schedule path
+# answers 403 with browser headers. ESPN's public scoreboard is the only
+# source that answers, so the collector uses it and treats its tipoff times
+# as third-party rather than authoritative -- see upcoming.nba_upcoming.
+ESPN_NBA_API = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
+
 # Slug dates are USUALLY the US-Eastern local game date, but NOT ALWAYS.
 #
 # CORRECTED in week 1. An earlier probe of 11 games concluded "always ET"; that
