@@ -29,9 +29,10 @@ The claim is about calibration, not profit. Nothing here places bets.
 > reaches parity with the market's close in both sports.** The Brier deficit against
 > Polymarket's closing price is **+0.01152 in the NBA and +0.00499 in the NHL**, on matched
 > priced games, both under the pre-registered 0.02-0.03 band that would have falsified it.
-> **In the NHL that parity is close to empty:** forecasting the season's own home-win rate, a
-> constant known only in hindsight, scores 0.24951 against the model's 0.24971, and the NHL
-> market resolves about a ninth of what the NBA's does. Where the NBA model disagrees with the
+> **In the NHL that parity is close to empty:** the model (0.24971) loses to a constant at the
+> season's own home-win rate, known only in hindsight (0.24951), and beats one at the previous
+> season's rate, which a forecaster could have used (0.25114, as of 2026-10-23, to be re-run
+> at the end of 2026-27). The NHL market resolves about a ninth of what the NBA's does. Where the NBA model disagrees with the
 > market, the market is right more often in every edge tier, and the nested test finds
 > nothing the model adds to the NBA close. Two deviations from the plan are recorded in
 > [PREREGISTRATION.md](PREREGISTRATION.md). Nothing here claims a betting edge.
@@ -957,6 +958,7 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 | `make_reliability.py` | Chart 4: model and market reliability side by side, on dev | snapshot, features, ratings | `docs/charts/chart4-reliability.png`, `reliability.json` | none |
 | `run_holdout.py` | The single pass over 2025-26. Dry run by default; with the marker present it recomputes, and refuses unless the result reproduces the first look | snapshot, features, ratings, `HOLDOUT_OPENED.json` | `docs/charts/holdout.json`, `chart5-holdout-reliability.png` | none (git, to check the remote marker) |
 | `fetch_espn_nba_codes.py` | Re-derive the ESPN-to-census NBA abbreviation map and diff it against the vendored one; exits 1 on drift | `data/abbr_map_resolved.json` | stdout | ESPN |
+| `run_exante_baseline.py` | Score constant forecasters at the 2024-25 (ex-ante) and 2025-26 (hindsight) home-win rates on the holdout, from released labels only; refuses unless it reproduces | snapshot, `HOLDOUT_OPENED.json` | `docs/charts/holdout-exante.json` | none |
 | `predict_slate.py` | Log one NHL slate's frozen-Elo odds before puck drop; `--score` grades the first blind record per game | snapshot, burn-in | `data/predictions/slate-log.jsonl` | NHL |
 | `run_stage1a_rho.py` | Chira-gamble's Stage 1a proxy gate, dev only: rho 0.2467 against 0.5, KILL | snapshot | `data/stage1a/` | none |
 | `learn_abbr.py` | Learn the `{slug_abbr: nickname}` prior from Gamma | none | `data/abbr_map.json` | Gamma, ~180 requests |
@@ -1023,6 +1025,7 @@ own UTC tipoff (None if the league source had none). NHL games also carry `neutr
 | `data/ratings/ratings.parquet` | `build_ratings.py` | Pre-game Elo for every game of three seasons, frozen constants |
 | `data/rehearsal/dress-rehearsal.json` | `run_dress_rehearsal.py` | Every headline-1 table, on 2024-25 only |
 | `data/holdout/holdout.json` | `run_holdout.py`, 2026-10-06 | The first recomputation's record, kept as written; superseded by `docs/charts/holdout.json` |
+| `docs/charts/holdout-exante.json` | `run_exante_baseline.py` | **Committed.** The ex-ante and hindsight constant baselines, `as_of` 2026-10-23 |
 | `docs/charts/holdout.json` | `run_holdout.py` | **Committed.** Headline 1: scores, the matched-sample deficit, fit diagnostics, tiers, nested test, the chart-5 statistics |
 | `data/predictions/slate-log.jsonl` | `predict_slate.py` | One row per forecast game, blind or not, never edited |
 | `.http-cache/<2 hex>/<sha256>.json` | `Client` via `Cache` | `{url, schema_version, abbr_version, payload}` |

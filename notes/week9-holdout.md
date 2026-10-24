@@ -87,9 +87,22 @@ transparent schedule-and-rating model reaches parity with Polymarket's closing p
   0.00135 against the market's 0.00095. Two forecasters that both say something, close
   together.
 - **NHL parity is vacuity.** Market resolution is **0.00571** and the model's **0.00362**,
-  roughly a ninth of the NBA's. The NHL model's Brier (0.24971) is **worse than always
-  forecasting the base rate** (0.24951) by 0.00020. The market beats the base rate by
-  0.00492. The deficit is small because there is almost nothing to be better at.
+  roughly a ninth of the NBA's. Against a constant forecaster, the model lands between the
+  two that matter, and the market beats both. The deficit is small because there is almost
+  nothing to be better at.
+
+| NHL constant, every 2025-26 game | Home rate used | Brier | Against the model's 0.24971 |
+|---|---|---|---|
+| **hindsight**: 2025-26's own rate | 0.5221 | **0.24951** | beats it by 0.00020 |
+| **ex-ante**: 2024-25's rate, knowable before the season | 0.5625 | **0.25114** | loses to it by 0.00143 |
+
+The hindsight constant bounds what any constant could have done; nobody knew 2025-26's home
+rate before 2025-26. The ex-ante one is a forecast someone could have committed to. The
+whole difference between them is the NHL's home-win rate falling from 0.5625 to 0.5221
+between seasons. **The ex-ante baseline is as of 2026-10-23, to be re-run at the end of the
+2026-27 season** (`scripts/run_exante_baseline.py`, `docs/charts/holdout-exante.json`);
+it was added on 2026-10-23, after this note first stated the caveat against the hindsight
+constant alone.
 
 Reporting "parity in both sports" without that second bullet would be the most misleading
 true sentence available in this project.
@@ -113,12 +126,16 @@ Uncertainty 0.24703. Model skill over the base rate: **+0.04111** Brier.
 | forecaster | n | Brier | log loss | ECE | reliability | resolution |
 |---|---|---|---|---|---|---|
 | market (close) | 1,310 | **0.24459** | 0.68207 | 0.03209 | 0.00136 | 0.00571 |
-| base rate | 1,312 | 0.24951 | 0.69217 | 0.01826 | 0.00052 | 0.00052 |
+| base rate, hindsight (2025-26's rate) | 1,312 | 0.24951 | 0.69217 | 0.01826 | 0.00052 | 0.00052 |
 | model | 1,312 | 0.24971 | 0.69302 | 0.05641 | 0.00406 | 0.00362 |
 | Elo (frozen) | 1,312 | 0.25065 | 0.69488 | 0.06264 | 0.00544 | 0.00438 |
+| base rate, ex-ante (2024-25's rate) | 1,312 | 0.25114 | 0.69547 | 0.04040 | 0.00215 | 0.00052 |
 
-Uncertainty 0.24951. Model skill over the base rate: **−0.00020** Brier. The ordering is
-the finding: in the NHL, *the base rate outscores both the model and the rating.*
+Uncertainty 0.24951. Model skill over the hindsight base rate: **−0.00020** Brier; over the
+ex-ante one, **+0.00143** (as of 2026-10-23, to be re-run at the end of 2026-27). The
+ordering is the finding: in the NHL, *only a constant chosen with the season's outcome in
+hand outscores the model and the rating.* The constant a forecaster could have used is
+beaten by both, the Elo by 0.00049.
 
 ## 2. The dress rehearsal's headline partly inverts
 
@@ -381,7 +398,8 @@ where it disagrees with that market in the NBA it is **wrong more often than rig
 tier** (section 7).
 
 It does not say the NHL is predictable. Both forecasters sit within 0.005 Brier of a
-constant, and the model sits on the wrong side of it.
+constant: the model is on the wrong side of the season's own home rate (0.24951) and on the
+right side of the previous season's (0.25114, as of 2026-10-23).
 
 It does not license a second look. `open_holdout` refuses a second call, the marker records
 what was seen and when, and every number above is final.

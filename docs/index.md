@@ -11,8 +11,8 @@ Artifact v2, 23 October 2026. Both headlines are now here. **Headline 2**, below
 unchanged from artifact v1 of 25 September 2026. **[Headline 1](#headline-1-a-transparent-model-against-the-markets-close)**,
 a transparent model against the market's close on the sealed 2025-26 season, follows it:
 parity in both sports (NBA +0.01152, NHL +0.00499 Brier, both under the pre-registered
-0.02–0.03 band), with the NHL's parity close to empty because the season's own home-win rate
-scores better than the model there. Pre-registered in
+0.02–0.03 band). In the NHL that parity is close to empty: the model beats a constant set at
+the previous season's home-win rate, but not one set at the season's own. Pre-registered in
 [PREREGISTRATION.md](https://github.com/arjasa1103/Chira/blob/main/PREREGISTRATION.md)
 before any statistic was computed, with every amendment and deviation dated and its reason
 recorded.
@@ -259,18 +259,29 @@ Reporting the bands is not modesty; it is what makes the pooled claim legible.
 
 **A simple, transparent model reaches parity with Polymarket's closing price in both sports,
 by the measure fixed before it was fitted. In the NHL that parity is close to empty: neither
-forecaster says much, and the model scores worse than the season's own home-win rate.**
+forecaster says much, and the model beats a constant set at the previous season's home-win
+rate but not one set at the season's own.**
 
 | Sport | Priced games | Brier deficit, model − market (same games) | Pre-registered band |
 |---|---|---|---|
 | NBA | 1,226 | **+0.01152** | 0.02–0.03 |
 | NHL | 1,310 | **+0.00499** | 0.02–0.03 |
 
-**Read the NHL row with this beside it.** Forecasting 2025-26's own home-win rate for every
-game scores a Brier of **0.24951**; the NHL model scores **0.24971**, so that constant beats
-it. It is a constant known only in hindsight, because nobody knew the season's home rate
-before the season, so it bounds what any constant could have done. The
-NHL market resolves outcome variance **0.00571**, about **a ninth** of the NBA market's
+**Read the NHL row with this beside it.** The NHL model, at **0.24971**, sits between two
+constant forecasters:
+
+| NHL constant, every 2025-26 game | Home rate used | Brier | Against the model |
+|---|---|---|---|
+| **hindsight**: 2025-26's own home-win rate | 0.5221 | **0.24951** | beats it |
+| **ex-ante**: 2024-25's home-win rate, as of 2026-10-23 | 0.5625 | **0.25114** | loses to it |
+
+The hindsight constant bounds what any constant could have done, because nobody knew the
+season's home rate before the season. The ex-ante one is a forecast someone could actually
+have committed to. All of the gap between them comes from the NHL's home-win rate falling
+between seasons. The ex-ante baseline is **as of 2026-10-23, to be re-run at the end of the
+2026-27 season**.
+
+The NHL market resolves outcome variance **0.00571**, about **a ninth** of the NBA market's
 0.05201. The NHL deficit is small because there is almost nothing to be better at, not
 because the model got close to a good forecaster.
 
@@ -314,21 +325,24 @@ the pre-registered ceiling of 1.01.
 | frozen Elo | 1,230 | 0.20421 | 0.59517 | 0.02843 |
 | model | 1,230 | 0.20592 | 0.59827 | 0.03001 |
 | model, priced games only | 1,226 | 0.20566 | 0.59770 | 0.03302 |
-| base rate | 1,230 | 0.24703 | 0.68720 | 0.04228 |
+| base rate, hindsight (2025-26's rate) | 1,230 | 0.24703 | 0.68720 | 0.04228 |
+| base rate, ex-ante (2024-25's rate) | 1,230 | 0.24714 | 0.68743 | 0.04407 |
 
 **NHL**
 
 | Forecaster | n | Brier | Log loss | ECE |
 |---|---|---|---|---|
 | market (close) | 1,310 | **0.24459** | 0.68207 | 0.03209 |
-| **base rate** | 1,312 | **0.24951** | 0.69217 | 0.01826 |
+| **base rate, hindsight (2025-26's rate)** | 1,312 | **0.24951** | 0.69217 | 0.01826 |
 | model | 1,312 | 0.24971 | 0.69302 | 0.05641 |
 | model, priced games only | 1,310 | 0.24958 | 0.69274 | 0.05561 |
 | frozen Elo | 1,312 | 0.25065 | 0.69488 | 0.06264 |
+| base rate, ex-ante (2024-25's rate) | 1,312 | 0.25114 | 0.69547 | 0.04040 |
 
 Log loss is clipped to [0.01, 0.99]; Brier is primary, for the reason in
-[PLAN.md](https://github.com/arjasa1103/Chira/blob/main/PLAN.md) Phase 5. In the NHL the
-base rate outscores both the model and the rating.
+[PLAN.md](https://github.com/arjasa1103/Chira/blob/main/PLAN.md) Phase 5. In the NHL, only
+the hindsight base rate outscores the model and the rating; the ex-ante one, as of
+2026-10-23, is beaten by both. The two base rates are constants scored on every game.
 
 ### Where the gap comes from
 
@@ -465,8 +479,9 @@ Both are recorded in full in
   rating and a schedule meets the pre-registered parity bar against a prediction market. In
   the NBA, where it disagrees with that market, it is **wrong more often than right, in every
   tier**.
-- **It does not say the NHL is predictable.** Both forecasters sit within 0.005 Brier of the
-  season's own home-win rate used as a constant, and the model is on the wrong side of it.
+- **It does not say the NHL is predictable.** Both forecasters sit within 0.005 Brier of a
+  constant. The model is on the wrong side of the season's own home-win rate (0.24951) and on
+  the right side of the previous season's (0.25114, as of 2026-10-23).
 - **It is not a betting edge.** The risk tiers argue directly against one. There is no
   staking model, no fees and no fill model either.
 - **The rating comparison on 2024-25 carries a bias that was disclosed and never measured.**
@@ -528,6 +543,11 @@ They come from a single pass over the sealed 2025-26 season, which cannot be rep
 ```bash
 uv run python scripts/run_holdout.py     # readiness report; reads nothing from 2025-26
 ```
+
+The two constant baselines are in
+[`docs/charts/holdout-exante.json`](https://github.com/arjasa1103/Chira/blob/main/docs/charts/holdout-exante.json),
+from `uv run python scripts/run_exante_baseline.py`, which reads the same released labels
+and fits nothing.
 
 With the seal's marker present, `--open-the-seal` **recomputes** from the labels already
 released rather than opening anything. It refuses unless those labels hash to the value the
