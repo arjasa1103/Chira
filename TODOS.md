@@ -754,3 +754,67 @@ established edge is currently nothing.
 
 **Effort:** S (human) → S (with CC). **Priority:** P3.
 **Depends on:** a positive nested-test result.
+
+## P3 — A fundamental-analysis track: player stats and lineups in the team rating
+
+**What:** The direction the user stated on 2026-10-23. In their framing, what Chira does now
+is technical analysis of Polymarket prices: headline 2 measures how the market's own prices
+are calibrated, and headline 1 scores those prices against a model that knows only the
+schedule and past results. A later fundamental-analysis track would use player statistics
+and lineups to build a better team rating, combining the current Elo with information about
+who is actually playing.
+
+**Why it is the obvious next model, measured:** on the 2025-26 NBA holdout the model's gap to
+the market is mostly **resolution**, not calibration. It resolves 79% of what the market
+does (0.04118 against 0.05201) at nearly the same reliability (0.00135 against 0.00095), so
+it separates games less sharply rather than being biased. Injuries, rest decisions and
+lineup news are exactly what would sharpen it. And every NBA edge tier's model-side hit rate
+lies below 0.5: where the two disagreed, what the market knew and the model did not decided
+the outcome. Wilkens (2026, prior-art section 5) is a published case of a richer in-match
+input, xG, scored against a market.
+
+**Constraints that are not optional:**
+- **Its own pre-registration**, committed with its own hash before any fit, under the same
+  rules as PREREGISTRATION.md. Lineups are availability information, so section 10 applies:
+  the availability hypothesis gets a separate addendum only once a source is proven.
+- **A fresh holdout. 2025-26 is spent:** opened once on 2026-10-06 and every number
+  published. A new model scored on it would be a second look at a season this project has
+  already read, which is what the seal exists to prevent. The candidates are games after a
+  pre-registered freeze date: the rest of 2026-27 from a frozen commit, or 2027-28.
+- **Point-in-time lineups.** A lineup known at tip is not one known an hour before, and
+  section 10's problem is unsolved: `nba_api` inactives arrive after the game with no
+  announcement timestamp. E7, proving an availability source, has not started.
+- **The frozen Elo and the frozen model stay as they are.** This is a new model with a new
+  name, not a change to the one headline 1 scored. Deviation 1's rule holds: no model change
+  is justified by holdout behaviour.
+
+**Effort:** L. **Priority:** P3, after the season.
+**Depends on:** a proven availability source (E7); the 2026-27 season ending.
+
+## P3 — Re-run the NHL ex-ante baseline at the end of 2026-27
+
+**What:** `uv run python scripts/run_exante_baseline.py`, as the user asked on 2026-10-23,
+to see whether anything changes. The baseline is a constant forecaster at the 2024-25 NHL
+home-win rate (0.5625), which scores 0.25114 on 2025-26 against the model's 0.24971 and the
+hindsight constant's 0.24951. It is stated in v2 and the week-9 note as "as of 2026-10-23, to
+be re-run at the end of the 2026-27 season".
+
+**Read this before running it: on 2025-26 the number cannot change.** The labels are pinned by
+the marker's hash and the 2024-25 rate by the snapshot. The script refuses to write unless it
+reproduces 0.25114, and a second run on 2026-10-23 was byte-identical. Re-running it checks
+that nothing underneath has drifted. It is not a new measurement.
+
+**The run that can say something new** is the same comparison on 2026-27: a constant at
+2025-26's NHL home rate (0.5221) against 2026-27's outcomes, beside the market's close (the
+collector's) and the frozen Elo (a walk with the frozen constants). It would show whether
+the NHL home rate keeps moving, since its fall from 0.5625 to 0.5221 is the whole gap
+between the two baselines. It would also show whether the frozen Elo still beats a constant
+a forecaster could have used. Exploratory and not pre-registered: 2026-27 is not a holdout
+for anything already fitted, so its results are reported and never used to change a model.
+
+**Needs:** the script parameterized by season (today it reads the sealed 2025-26 path only),
+2026-27 NHL results, and the collector's 2026-27 closing prices.
+
+**Effort:** S. **Priority:** P3, after the 2026-27 regular season (the collector's NHL window
+closes 2027-04-30). **Pairs with:** the fundamental-analysis track above, which needs the same
+season to end.
