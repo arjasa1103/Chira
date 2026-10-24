@@ -106,7 +106,7 @@ Feature store half, **done 2026-09-27** → [notes/week7-features.md](../notes/w
 - [x] No price column in the feature frame, asserted by a test
 - [ ] E7: prove an availability source, timeboxed, needs live games from late October
 
-## Weeks 8-9 — the model — **in progress: rating frozen 2026-10-01; model not started**
+## Weeks 8-9 — the model — **done 2026-10-06** (frozen on `dc384cc`, holdout opened once) → [notes/week9-holdout.md](../notes/week9-holdout.md)
 
 Before the first fit (engineering review, 2026-09-27):
 
@@ -149,18 +149,20 @@ The model:
 - [x] **Full dress rehearsal on 2024-25** (`scripts/run_dress_rehearsal.py`, 2026-10-02): rolling origin per fold and pooled, model vs Elo vs base rate vs ceiling, sensitivity, risk tiers, and the nested test under both nulls and both closing constructions → [notes/week8-model.md](../notes/week8-model.md), JSON in `data/rehearsal/`
 - [x] **Rolling origin (Amendment 5c)**: six monthly origins, October training-only, scaler and fill medians refitted per fold. All twelve fits converged, worst R-hat 1.0042
 - [x] **Nested-test code (section 7)**: Clark-West with the MSPE adjustment, both nulls with B literally nesting the recalibration, stationary bootstrap over calendar dates — all behind `assert_scorable`. Review fix 2026-10-04: an unconverged logistic fit now raises instead of returning its last iterate
-- [ ] **Reliability diagrams for model and market side by side, cut on dev** — section 6 wants every table *and figure* before the holdout; the one figure still missing
-- [ ] **`scripts/run_holdout.py`**: calls `open_holdout()` once and runs the identical pipeline (Model B fitted on all of dev, applied to 2025-26; section 9 tiers; scores; reliability diagrams) with the rehearsal's seeds. Written, reviewed and pushed **before** opening: the seal refuses an unpushed HEAD
-- [ ] **Freeze**: commit and push the above; that commit is the frozen model
+- [x] **Reliability diagrams for model and market side by side, cut on dev** (`dc384cc`, 2026-10-06, before the seal): `charts.chart_reliability`, both curves on the market's quantile bins so they share an x-axis; chart 4 on dev. The holdout pass redrew it with the same function as chart 5
+- [x] **`scripts/run_holdout.py`** (`dc384cc`, 2026-10-06): calls `open_holdout()` once and runs the identical pipeline with the rehearsal's seeds. Written and pushed before opening, **but never executed or reviewed** — it crashed on a `risk_tiers` signature `041cc42` had changed, after the seal broke. Fixed in `06712ed` and `6aa7ea2` through a recomputation path that requires the marker and the label hash → **Deviation 2**
+- [x] **Freeze** (`dc384cc5f4f6`, pushed 2026-10-06): the commit the marker records. No model, fit, prediction, scoring or seed change since
 - [x] **Headline 1's framing decided (2026-10-04): freeze the model as it is.** Out of sample the model does **not** beat the Elo it is built on (NBA Brier 0.21250 vs 0.20968; NHL 0.23954 vs 0.23685), and its calibration is worse too (ECE 0.0301 vs 0.0175). Amendment 5b's disclosed overlap biases that comparison toward the rating by an unmeasured amount; refitting K/H/c inside each fold would settle it on dev; the holdout settles it anyway, since the constants were never tuned on 2025-26. No model change: the pre-registration fixed its form, and after Deviation 1 a change would read as steered
 - [x] **Not a risk tier (review 2026-10-04):** the NHL [0.35, 0.45) bucket is a model-probability bin, which section 9 never defined. Kept as an exploratory reliability row: 185 games, mean p 0.4069, actual 0.5243, 95% CI [0.4595, 0.5892] excluding the forecast. The NHL's busiest region, going into a pass that cannot be repeated
 - [x] **Nested test re-run out of sample (review 2026-10-04).** The first rehearsal fitted B and the null on the games it scored, and gave B two unscaled features with missing rest filled as 0. Now B carries the model's own covariates and is fitted per fold (PREREGISTRATION section 7 readings). Result: **B adds nothing over the market in either sport, against either null** (NBA primary, close, recalibrated: CW -0.072, bootstrap p 0.51; NHL every CW within 0.06 of zero, 4 folds, Nov and Dec skipped for no priced games). The in-sample "NHL splits on the null, p 0.0015" is withdrawn
 - [x] **Risk tiers are section 9's** (review 2026-10-04): edge bands at the close. No tier's hit rate reaches 0.5 in either sport; NBA T3 (edge >= 0.10, 36% of games) hits 0.354 [0.308, 0.400]. The probability buckets are kept as an exploratory reliability table
 - [x] **CI green again** (review 2026-10-04): `tests.yml` now installs the `model` extra; every run since `6ab56c0` had failed to import numpyro on all three OSes. 1,058 tests pass locally
-- [ ] **The 2025-26 holdout opened exactly once**, after the model is frozen by commit
-- [ ] Nested test: Clark-West against both nulls, under both closing-price constructions
+- [x] **The 2025-26 holdout opened exactly once** (`72b9387`, 2026-10-06T16:07:07Z, on `dc384cc5f4f6`): 2,542 labels, SHA-256 `e367f5812c7637…`, marker committed and pushed before any label was returned
+- [x] **Deviation 2 recorded** (`60b2bed`, 2026-10-20): the runner crashed after the seal opened and was fixed after; it had printed the NBA score table and deficit before dying. The headline is +0.01152 NBA / +0.00499 NHL on matched samples, not the +0.01179 / +0.00512 the first note subtracted across samples → [PREREGISTRATION.md](../PREREGISTRATION.md)
+- [x] **The runner persists what it printed** (`0a223f0`, 2026-10-23): the matched-sample headline, both fits' diagnostics and the reliability figure's statistics, in `docs/charts/holdout.json`; it refuses to write unless a recompute reproduces the first look. The recompute reproduced all 347 values of the original file and the chart-5 PNG byte for byte
+- [x] **Nested test on the holdout** (`6aa7ea2`, reported in `928665d`): Clark-West against both nulls, both closing constructions. NBA primary null (close vs identity CW −1.061, bootstrap p 0.8695). The NHL splits on the null — p 0.218 against the raw price, 0.003 against the recalibrated one — which moves the baseline, not the model
 
-## Weeks 10-11 — artifact v2 — **not started**
+## Weeks 10-11 — artifact v2 — **in progress since 2026-10-23**
 
 - [ ] Headline 1: model Brier and log loss beside the market's
 - [ ] Risk tiers reported with game-level bootstrap intervals
@@ -197,8 +199,8 @@ Detail and reasoning live in [TODOS.md](../TODOS.md).
 
 | Priority | Item | Deadline |
 |---|---|---|
-| P1 | Reliability diagrams, the one rehearsal figure not cut | Before the holdout opens |
-| P1 | `scripts/run_holdout.py`, reviewed and pushed: that push is the freeze | Before the holdout opens |
+| ~~P1~~ | ~~Reliability diagrams, the one rehearsal figure not cut~~ **Done** `dc384cc` | ~~Before the holdout opens~~ |
+| ~~P1~~ | ~~`scripts/run_holdout.py`, reviewed and pushed: that push is the freeze~~ **Done** `dc384cc`, pushed but not reviewed → Deviation 2 | ~~Before the holdout opens~~ |
 | P2 | Chira-gamble docs: Signal L dead, so its runner goes snapshot-only and execution stops at DRY_RUN + SMOKE (its own rule) | In Chira-gamble |
 | P2 | Collector: only 4 of ~46 cron slots delivered in 23 h; a late first poll is not caught by the heartbeat. Check each morning's runs; a dispatch is the fallback | Ongoing |
 | P1 | NBA upcoming enumeration: **wired 2026-10-20**, awaiting an Actions dispatch to prove ESPN answers from a datacentre IP | 2026-10-20 |

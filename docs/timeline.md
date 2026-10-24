@@ -3,7 +3,7 @@
 Living document. Plan calendar against what actually happened, plus the dates ahead that
 cannot move. Companion to [checklist.md](checklist.md), which tracks the work itself.
 
-**Deadline: 2026-11-30.** Last updated 2026-10-05.
+**Deadline: 2026-11-30.** Last updated 2026-10-23.
 
 ---
 
@@ -11,13 +11,13 @@ cannot move. Companion to [checklist.md](checklist.md), which tracks the work it
 
 | | |
 |---|---|
-| Plan weeks complete | 7 of 11. Weeks 8-9: model built and frozen as is (decided 2026-10-04), dress rehearsal on dev done and corrected; reliability diagrams and the holdout script are what remain before the holdout opens |
-| Calendar position | Week 8 starts on the plan's calendar 2026-11-03 |
-| Slack | About 5 weeks ahead |
-| Days to deadline | 56 |
+| Plan weeks complete | 9 of 11. Weeks 8-9 landed 2026-10-06: model frozen on `dc384cc5f4f6`, the 2025-26 holdout opened once, headline 1 passes as parity (NBA +0.01152, NHL +0.00499 Brier). Weeks 10-11, artifact v2, in progress since 2026-10-23 |
+| Calendar position | Week 10 starts on the plan's calendar 2026-11-17 |
+| Slack | About 6 weeks ahead: weeks 8-9 landed 41 days before their window closed |
+| Days to deadline | 38 |
 | Binding constraint | Fixed dates, not effort |
 | Collector | **Live since 2026-09-28.** Every NHL game from 09-29 to 10-04 has pre-game prices; the window opens 3 h before the first game since 10-02. GitHub's late, sparse delivery is covered by hand-dispatch reminders on early days until the collector moves to the Chira-gamble runner |
-| Unpushed | `2d2cf67` (forecast log), `54ecb12` (Stage 1a kill), `26a0c83` (TODOS), `090f6b3` (review: the corrected prize figure) |
+| Unpushed | Two branches, both awaiting review: `nba-upcoming` (`ebf95c8`, NBA enumeration for the collector) and `headline1-v2` (artifact v2) |
 
 ---
 
@@ -35,8 +35,8 @@ landed ahead of its window.
 | 5 | Oct 13-26 | **2026-09-21** | 35 days | Headline 2, the primary test, Amendments 3 and 4 |
 | 6 | Oct 13-26 | **2026-09-25** | 31 days | Artifact v1 published, prior art, reproduction path |
 | 7 | Oct 27-Nov 2 | **2026-09-27** | 30 days | Collector live path (09-26); feature store, `game_prices`, venue table, leakage canary (09-27) |
-| 8-9 | Nov 3-16 | **in progress** | — | Preconditions 09-28/29. **Elo frozen 10-01** (`d66671c`), 2025-26 ratings built, **model fitted on dev** (`f447287`, converges both sports). **Deviation 1**: 2025-26 Elo scores seen before the seal. Next: rolling origins, sensitivity, GBM, dress rehearsal, holdout opened once |
-| 10-11 | Nov 17-30 | not started | — | Headline 1 added as artifact v2 |
+| 8-9 | Nov 3-16 | **2026-10-06** | 41 days | Elo frozen 10-01 (`d66671c`); model fitted on dev (`f447287`); rolling origins, sensitivity, GBM ceiling and the dress rehearsal 10-02 to 10-04; reliability diagram, runner and freeze (`dc384cc`); **holdout opened once** 10-06 (`72b9387`). Headline 1 passes as parity. **Deviation 1** (2025-26 Elo scores seen before the seal) and **Deviation 2** (the runner crashed after the seal opened) |
+| 10-11 | Nov 17-30 | **in progress** since 2026-10-23 | — | Headline 1 added as artifact v2. Runner gaps closed first (`0a223f0`): the recompute reproduced the first look exactly |
 
 ---
 
@@ -49,9 +49,9 @@ Being ahead buys nothing against these. Two are league schedules, one is a platf
 | ~~2026-09-29~~ | NHL 2026-27 opened (FLA@CAR, 21:00Z) | The league's schedule | **Done.** Hand dispatch at 20:01Z; all five games captured from pre-game to tipoff |
 | **every game night** | NHL slate, first puck drops 23:00Z on most nights | The league's schedule | Hand dispatch at 19:55Z (16:55 ADT) until the new schedule proves itself |
 | **2026-10-19** | `ubuntu-latest` migrates to Ubuntu 26 | GitHub Actions runner change | Tracked as P3 in TODOS |
-| **2026-10-20** | NBA 2026-27 regular season opens | The league's schedule | **NBA enumeration not wired**: the collector captures nothing NBA until it is |
+| ~~2026-10-20~~ | NBA 2026-27 regular season opens | The league's schedule | **Missed.** Enumeration was wired that day on `nba-upcoming` (`ebf95c8`) but is **not merged**, so the collector has captured no NBA game yet. Every game until it lands is lost: pre-game prices cannot be fetched later |
 | **late Oct** | Availability source can first be proven (E7) | Needs live games with injury reports | Week-7 timebox, not started |
-| **2026-11-30** | Hard deadline | Semester | 60 days out |
+| **2026-11-30** | Hard deadline | Semester | 38 days out |
 
 ### The collector, night by night
 
