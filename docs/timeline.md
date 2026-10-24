@@ -17,7 +17,7 @@ cannot move. Companion to [checklist.md](checklist.md), which tracks the work it
 | Days to deadline | 38 |
 | Binding constraint | Fixed dates, not effort |
 | Collector | **Live since 2026-09-28.** Every NHL game from 09-29 to 10-04 has pre-game prices; the window opens 3 h before the first game since 10-02. GitHub's late, sparse delivery is covered by hand-dispatch reminders on early days until the collector moves to the Chira-gamble runner |
-| Unpushed | Two branches, both awaiting review: `nba-upcoming` (`ebf95c8`, NBA enumeration for the collector) and `headline1-v2` (artifact v2) |
+| Unpushed | `main` is one commit ahead of `origin/main`: `ebf95c8`, the NBA collector path, fast-forwarded locally 2026-10-23. `headline1-v2` (artifact v2) sits on top of it. Both await the user, and merging `headline1-v2` publishes v2 |
 
 ---
 
@@ -49,7 +49,7 @@ Being ahead buys nothing against these. Two are league schedules, one is a platf
 | ~~2026-09-29~~ | NHL 2026-27 opened (FLA@CAR, 21:00Z) | The league's schedule | **Done.** Hand dispatch at 20:01Z; all five games captured from pre-game to tipoff |
 | **every game night** | NHL slate, first puck drops 23:00Z on most nights | The league's schedule | Hand dispatch at 19:55Z (16:55 ADT) until the new schedule proves itself |
 | **2026-10-19** | `ubuntu-latest` migrates to Ubuntu 26 | GitHub Actions runner change | Tracked as P3 in TODOS |
-| ~~2026-10-20~~ | NBA 2026-27 regular season opens | The league's schedule | **Missed.** Enumeration was wired that day on `nba-upcoming` (`ebf95c8`) but is **not merged**, so the collector has captured no NBA game yet. Every game until it lands is lost: pre-game prices cannot be fetched later |
+| ~~2026-10-20~~ | NBA 2026-27 regular season opens | The league's schedule | **Missed.** Enumeration was written that day (`ebf95c8`) and merged into `main` on 2026-10-23. NBA games played before it reached the scheduled collector have no pre-game prices, and cannot get them later |
 | **late Oct** | Availability source can first be proven (E7) | Needs live games with injury reports | Week-7 timebox, not started |
 | **2026-11-30** | Hard deadline | Semester | 38 days out |
 
