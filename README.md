@@ -13,12 +13,11 @@ Chira asks two questions:
 
 The claim is about calibration, not profit. Nothing here places bets.
 
-> **Project status: week 7 of 11 done (2026-09-27). Artifact v1 is published and live at
-> [arjasa1103.github.io/Chira](https://arjasa1103.github.io/Chira/)**
-> (source: [docs/index.md](docs/index.md)). The first of the two headline results is done
-> and frozen.
+> **Project status: weeks 1-9 of 11 done (2026-10-06); weeks 10-11, artifact v2, in
+> progress.** The writeup is live at [arjasa1103.github.io/Chira](https://arjasa1103.github.io/Chira/)
+> (source: [docs/index.md](docs/index.md)). Both headline results now exist.
 >
-> **The result: thin Polymarket sports markets are underconfident, liquid ones are
+> **Headline 2, published in v1: thin Polymarket sports markets are underconfident, liquid ones are
 > overconfident.** In NBA moneylines the Cox calibration slope is **+1.398 in low-liquidity
 > games against +0.586 in high-liquidity games, a difference of +0.812 with a 95% CI of
 > [+0.602, +1.037]** (date-clustered, the wider of the two schemes computed). It holds in
@@ -26,27 +25,28 @@ The claim is about calibration, not profit. Nothing here places bets.
 > under a caliper match that equalises the price range, and in all 8 sport-season x phase
 > pairs. Unstratified the market looks well calibrated, because the two strata cancel.
 >
-> The census, the immutable snapshot and all three charts are done: 5,084 games settled
-> (4,661 priced, 423 classified misses), the validation gate passing on all four
-> sport-seasons. **Week 7 added the point-in-time feature store** (rest, back-to-backs,
-> 7-day density, travel, time-zone shift, prior results), the narrow `game_prices` table,
-> the leakage canary (the seventh designated P1 test, now passing on the real census), and
-> the forward collector's live polling path, rehearsed against real opening-night markets.
-> **The model (headline 1) is not built yet**, and nothing here claims a betting edge.
+> **Headline 1, from the sealed 2025-26 season opened once on 2026-10-06: a transparent model
+> reaches parity with the market's close in both sports.** The Brier deficit against
+> Polymarket's closing price is **+0.01152 in the NBA and +0.00499 in the NHL**, on matched
+> priced games, both under the pre-registered 0.02-0.03 band that would have falsified it.
+> **In the NHL that parity is close to empty:** forecasting the season's own home-win rate, a
+> constant known only in hindsight, scores 0.24951 against the model's 0.24971, and the NHL
+> market resolves about a ninth of what the NBA's does. Where the NBA model disagrees with the
+> market, the market is right more often in every edge tier, and the nested test finds
+> nothing the model adds to the NBA close. Two deviations from the plan are recorded in
+> [PREREGISTRATION.md](PREREGISTRATION.md). Nothing here claims a betting edge.
 >
-> **Next: week 8, the model**, against a 2025-26 holdout that stays sealed until the model
-> is frozen. The spec choices that must precede the first fit were settled on 2026-09-27
-> (an NHL back-to-back x home term, a dev-only grid for the rating's parameters, monthly
-> rolling origins, Brier kept primary) and go into PREREGISTRATION as Amendment 5 before any
-> fit. Weeks 1-7 finished about 4.5 weeks ahead of the plan's calendar, so the remaining
-> risk is fixed dates rather than effort: **the NHL 2026-27 season opens 2026-09-29** and
-> the collector's cron is still commented out; the NBA opens 2026-10-20.
+> **Next: weeks 10-11, artifact v2**, which adds headline 1 to the writeup. The forward
+> collector has been live for the NHL since 2026-09-28. NBA enumeration is written, on branch
+> `nba-upcoming`, but not merged, so **no NBA game has been captured since the 2026-10-20
+> opener**, and pre-game prices cannot be fetched later.
 >
-> Start with [the writeup](docs/index.md) and its
-> [prior art](docs/prior-art.md). Then [What exists today](#what-exists-today),
-> [notes/week5-headline2.md](notes/week5-headline2.md) for how the result was built,
-> [notes/week7-features.md](notes/week7-features.md) and
-> [notes/week7-collector.md](notes/week7-collector.md) for the latest week, and
+> Start with [the writeup](docs/index.md) and its [prior art](docs/prior-art.md). Then
+> [What exists today](#what-exists-today);
+> [notes/week9-holdout.md](notes/week9-holdout.md) for the holdout pass and headline 1;
+> [notes/week8-model.md](notes/week8-model.md) and
+> [notes/week8-ratings.md](notes/week8-ratings.md) for the model and the rating;
+> [notes/week5-headline2.md](notes/week5-headline2.md) for headline 2; and
 > [docs/timeline.md](docs/timeline.md) and [docs/checklist.md](docs/checklist.md) for where
 > the project stands.
 
@@ -116,17 +116,25 @@ The claim is about calibration, not profit. Nothing here places bets.
 | Snapshot analysis frame (home side, canonical order, the four looks) | Built | `src/chira/analysis.py` |
 | Headline-2 strata, primary test and robustness | **Built** (week 5) | `src/chira/strata.py`, `scripts/run_headline2.py` |
 | Published artifact v1: writeup, charts, prior art | **Built** (week 6) | `docs/index.md`, `docs/prior-art.md`, `docs/charts/` |
+| Artifact v2: headline 1 added to the writeup, headline 2 unchanged | **In progress** (weeks 10-11) | `docs/index.md` |
 | One-command reproduction from public endpoints | **Built** (week 6) | `scripts/reproduce.py` |
 | Narrow price table: close, T-1h, T-6h, T-24h for both sides, 36,976 rows | **Built** (week 7); reproduces the census's anchors with 0 disagreements | `src/chira/prices.py`, `scripts/build_game_prices.py` |
 | Point-in-time feature store with a mandatory `as_of` | **Built** (week 7) | `src/chira/features.py`, `scripts/run_features.py` |
 | Venue table: 62 arenas, coordinates, time zones | **Built** (week 7); pinned against ten published distances | `src/chira/venues.py` |
 | Leakage canary (the seventh P1 test) | **Passing** (week 7) on fakes and on the real census, and shown able to fail | `tests/test_features.py`, `scripts/run_features.py` |
-| Test suite | 821 tests, offline, ruff-clean, run on Linux, Windows and macOS in CI | `tests/` |
+| Test suite | 1,078 tests, offline, ruff-clean, run on Linux, Windows and macOS in CI | `tests/` |
 | Full census of all 5,084 games | **Done** (week 3): 4,661 priced, 423 misses, 145.6M raw price rows | `data/census.duckdb` (gitignored) |
 | Immutable Parquet snapshot | **Cut** (week 3): `census-20260913-224d6ad985e0`, 162 MB | `data/snapshots/` (gitignored) |
 | Coverage and calibration charts | **Built** (week 4) | `src/chira/charts.py`, `scripts/make_charts.py`, `docs/charts/` |
-| Forward prices-only collector and dead-man's switch | **Live path proven, cron NOT yet enabled** (week 7). Rehearsed on 2026-09-26: 47 of 47 upcoming NHL markets resolved, 36 rows captured. NHL only; NBA enumeration not wired. The heartbeat secret is set in the repo | `src/chira/collector.py`, `src/chira/upcoming.py`, `scripts/run_collector.py`, `.github/workflows/collector.yml` |
-| Deterministic team rating, hierarchical model, holdout guard, nested test | **Not built** (weeks 8-9) | |
+| Forward prices-only collector and dead-man's switch | **Live for the NHL since 2026-09-28**, every 30 minutes on Actions, opening 3 h before the first game. **NBA: written on `nba-upcoming`, not merged**, so no NBA game is captured yet | `src/chira/collector.py`, `src/chira/upcoming.py`, `scripts/run_collector.py`, `.github/workflows/collector.yml` |
+| Pre-game Elo rating, constants frozen before any 2025-26 rating existed | **Built** (week 8): NBA K=20 H=50 c=0.6, NHL K=16 H=50 c=0.9, frozen 2026-10-01 (`d66671c`) | `src/chira/ratings.py`, `scripts/run_ratings.py`, `scripts/build_ratings.py` |
+| Hierarchical logistic model (`numpyro`), MCMC diagnostics as hard failures | **Built and frozen** (weeks 8-9) on `dc384cc5f4f6` | `src/chira/model.py` |
+| Rolling-origin evaluation, hyperprior sensitivity, GBM ceiling, dress rehearsal | **Built** (week 8), on 2024-25 only | `src/chira/model.py`, `src/chira/ceiling.py`, `scripts/run_dress_rehearsal.py` |
+| Scoring: Murphy decomposition, Clark-West nested test with a date bootstrap, section 9 risk tiers | **Built** (weeks 8-9) | `src/chira/scoring.py` |
+| Model and market reliability diagrams | **Built** (week 9): chart 4 on dev, chart 5 on the holdout | `src/chira/charts.py`, `scripts/make_reliability.py` |
+| Holdout seal: opened once, by code, marker committed and pushed first | **Opened once** 2026-10-06T16:07:07Z (`72b9387`), 2,542 labels | `src/chira/holdout.py`, `scripts/run_holdout.py`, `HOLDOUT_OPENED.json` |
+| Headline 1 on the 2025-26 holdout | **Done**: parity in both sports, with the NHL's close to empty. Every number in one committed file | `docs/charts/holdout.json`, `notes/week9-holdout.md` |
+| Live Elo forecast log (exploratory, not pre-registered) | **Built** (2026-10-05): logs an NHL slate blind before puck drop, grades it later | `scripts/predict_slate.py` |
 
 Census results (full pass, all four sport-seasons):
 
@@ -878,16 +886,17 @@ Chira/
 ├── PREREGISTRATION.md        analysis commitments made before any model fit
 ├── TODOS.md                  deferred work with measured justification
 ├── CLAUDE.md                 agent instructions
+├── HOLDOUT_OPENED.json       the seal's marker: commit, time and label hash of the one opening
 ├── pyproject.toml            dependencies, extras, ruff and pytest config
 ├── uv.lock                   pinned dependency lock
-├── docs/index.md             artifact v1, published on GitHub Pages
+├── docs/index.md             the writeup, both headlines, published on GitHub Pages
 ├── docs/timeline.md          plan against actual, and the fixed dates (not published)
 ├── docs/checklist.md         per-week progress with links to evidence (not published)
 ├── docs/designs/             design documents (not published)
-├── docs/charts/              the three charts and their data, committed (derived aggregates)
-├── .github/workflows/        tests on push; the collector cron, committed disabled
+├── docs/charts/              the five charts and their data, committed (derived aggregates)
+├── .github/workflows/        tests on push; the collector, every 30 minutes in season
 ├── notes/                    week-by-week measurement write-ups
-├── scripts/                  runnable entry points (census, resolver, probes)
+├── scripts/                  runnable entry points (census, model, holdout, collector)
 ├── src/chira/                the library
 ├── tests/                    offline test suite
 ├── data/                     GITIGNORED: maps, store, gate reports, logs
@@ -939,6 +948,15 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 | `build_game_prices.py` | The narrow price table, cross-checked against the census close | snapshot | `data/game_prices/` | none |
 | `run_features.py` | Leakage canary on the real census, then the feature store | snapshot, `data/game_prices/` | `data/features/` | none |
 | `run_collector.py` | One forward-collector session, a rehearsal, a window check, or a dry run | NHL schedule, Gamma, CLOB | `data/collector/live.duckdb`, log | Polymarket and NHL; none with `--dry-run` |
+| `fetch_burnin.py` | 2023-24 results for the Elo burn-in (Amendment 5b); schedule and scores only, no prices | none | `data/burnin/burnin-2023-24.parquet` | NHL, `nba_api` |
+| `fetch_neutral_sites.py` | Re-derive the NBA neutral-site table and diff it against the vendored copy; exits 1 on a disagreement | none | stdout | `stats.nba.com`, three requests, residential IP |
+| `run_ratings.py` | Reproduce the 245-point Elo grid behind the frozen constants; it does not re-choose them | snapshot, burn-in | `data/ratings/grid-*.json` | none |
+| `build_ratings.py` | Walk the Elo over all three seasons with the frozen constants, with a causality canary | snapshot, burn-in | `data/ratings/ratings.parquet` | none |
+| `run_dress_rehearsal.py` | Every headline-1 table on 2024-25 only: rolling origin, GBM ceiling, sensitivity, tiers, nested test | snapshot, features, ratings | `data/rehearsal/dress-rehearsal.json` | none |
+| `make_reliability.py` | Chart 4: model and market reliability side by side, on dev | snapshot, features, ratings | `docs/charts/chart4-reliability.png`, `reliability.json` | none |
+| `run_holdout.py` | The single pass over 2025-26. Dry run by default; with the marker present it recomputes, and refuses unless the result reproduces the first look | snapshot, features, ratings, `HOLDOUT_OPENED.json` | `docs/charts/holdout.json`, `chart5-holdout-reliability.png` | none (git, to check the remote marker) |
+| `predict_slate.py` | Log one NHL slate's frozen-Elo odds before puck drop; `--score` grades the first blind record per game | snapshot, burn-in | `data/predictions/slate-log.jsonl` | NHL |
+| `run_stage1a_rho.py` | Chira-gamble's Stage 1a proxy gate, dev only: rho 0.2467 against 0.5, KILL | snapshot | `data/stage1a/` | none |
 | `learn_abbr.py` | Learn the `{slug_abbr: nickname}` prior from Gamma | none | `data/abbr_map.json` | Gamma, ~180 requests |
 | `resolve_abbrs.py` | Resolve `{schedule_abbr: slug_abbr}` for both sports and seasons | `data/abbr_map.json` | `data/abbr_map_resolved.json`, cache | Gamma, NHL, `nba_api` |
 | `probe_rate_limit.py` | Burst rate-limit ramp | none | stdout | Gamma, CLOB |
@@ -964,13 +982,18 @@ counts, `http:` status counters, `cache:` counters, `cache WRITE FAILURES:` (onl
 | `chira.gate` | Validation gate checks and report | `run_gate(store, sport, season, require_complete=...)`, `format_report` |
 | `chira.calibration` | Metrics, binning, the game-level bootstrap and the null simulator | `equal_count_bins`, `n_bins_for`, `quantile_bin_edges`, `binned_curve`, `ece`, `max_bin_dev`, `cox_slope_intercept`, `brier`, `murphy`, `bootstrap_curve`, `bootstrap_scalars`, `simulate_null` |
 | `chira.analysis` | The snapshot read as an analysis frame: home side, canonical order, the four looks | `open_frame`, `frame`, `look`, `look_coverage`, `coverage_by_week`, `price_pool`, `sport_seasons`, `assert_canonical` |
-| `chira.charts` | The three charts and every statistic they report | `chart_coverage`, `chart_calibration`, `chart_strata`, `calibration_stats` |
+| `chira.charts` | The five charts and every statistic they report | `chart_coverage`, `chart_calibration`, `chart_strata`, `chart_reliability`, `calibration_stats` |
 | `chira.strata` | Headline 2: the 2x2, the primary directional test, and the artifact checks around it | `assign_strata`, `cell_table`, `primary_test`, `sensitivity`, `range_sensitivity`, `caliper_match`, `cluster_sensitivity`, `slope_difference`, `clustered_slope_difference`, `null_reference` |
 | `chira.collector` | Forward prices-only collector: ET gates, dedup, quote store, heartbeat | `CollectorStore`, `Heartbeat`, `HEARTBEAT_PROVIDERS`, `is_season_active`, `in_poll_window`, `dedup_key`, `quote_row`, `parse_book`, `upcoming_targets`, `zero_capture_is_a_failure`, `describe_plan` |
 | `chira.upcoming` | Forward NHL schedule for the collector, never cached, dated by the enclosing ET day | `nhl_upcoming`, `check_season_window`, `season_label`, `parse_start` |
 | `chira.prices` | The narrow `game_prices` table and point-in-time price reads | `build_game_prices`, `write_game_prices`, `attach_game_prices`, `price_as_of`, `GAME_PRICES` |
-| `chira.venues` | Vendored venue table, great-circle distance, time-zone shift | `venue`, `distance_km`, `tz_shift_hours`, `haversine_km`, `venue_rows` |
+| `chira.venues` | Vendored venue table, great-circle distance, time-zone shift, the NBA neutral-site list | `venue`, `distance_km`, `tz_shift_hours`, `haversine_km`, `venue_rows`, `NBA_NEUTRAL_SITES`, `is_neutral_site` |
 | `chira.features` | Point-in-time feature assembly with a mandatory `as_of` | `assemble`, `assemble_backtest`, `write_backtest`, `attach_features`, `attach_venues`, `FEATURE_COLUMNS`, `RESULT_DELAY_SECONDS` |
+| `chira.ratings` | The frozen pre-game Elo (Amendment 5b): margin multiplier, season carry-over, grid search | `CHOSEN`, `expected_home`, `run_ratings`, `final_ratings`, `is_neutral`, `grid_search`, `log_loss`, `brier` |
+| `chira.model` | The hierarchical logistic model, its design, MCMC diagnostics as hard failures, rolling origin, sensitivity | `fit`, `predict`, `build_design`, `dev_medians`, `diagnostics`, `assert_diagnostics`, `rolling_origin`, `hyperprior_sensitivity`, `configure` |
+| `chira.scoring` | Scores with the Murphy decomposition, the Clark-West nested test, section 9's tiers | `score_set`, `Scores`, `clark_west`, `fit_nested`, `apply_nested`, `risk_tiers`, `reliability_buckets`, `stationary_bootstrap_dates` |
+| `chira.ceiling` | The GBM benchmark ceiling (T17), same folds and covariates as the model | `fit_predict`, `rolling_origin_ceiling`, `pooled_ceiling` |
+| `chira.holdout` | The seal: dev-only guards, and the one function that opens 2025-26 | `open_holdout`, `read_holdout_labels`, `assert_dev_only`, `assert_scorable`, `marker_on_remote`, `HOLDOUT_SEASON`, `DEV_SEASON` |
 | `chira.telemetry` | JSONL event log and run manifest | `Telemetry`, `run_id`, `git_hash` |
 
 **Game dict shape.** `nba_games` and `nhl_games` both return a list sorted by
@@ -994,9 +1017,16 @@ own UTC tipoff (None if the league source had none). NHL games also carry `neutr
 | `data/game_prices/game_prices.parquet` | `build_game_prices.py` | Four anchors for both sides of every priced game |
 | `data/features/features.parquet` | `run_features.py` | One point-in-time feature row per game |
 | `data/collector/live.duckdb` | `run_collector.py` | Live quotes: midpoint, best bid/ask and sizes, spread, last trade, book clock |
+| `data/burnin/burnin-2023-24.parquet` | `fetch_burnin.py` | 2023-24 results for the Elo burn-in, both sports |
+| `data/ratings/ratings.parquet` | `build_ratings.py` | Pre-game Elo for every game of three seasons, frozen constants |
+| `data/rehearsal/dress-rehearsal.json` | `run_dress_rehearsal.py` | Every headline-1 table, on 2024-25 only |
+| `data/holdout/holdout.json` | `run_holdout.py`, 2026-10-06 | The first recomputation's record, kept as written; superseded by `docs/charts/holdout.json` |
+| `docs/charts/holdout.json` | `run_holdout.py` | **Committed.** Headline 1: scores, the matched-sample deficit, fit diagnostics, tiers, nested test, the chart-5 statistics |
+| `data/predictions/slate-log.jsonl` | `predict_slate.py` | One row per forecast game, blind or not, never edited |
 | `.http-cache/<2 hex>/<sha256>.json` | `Client` via `Cache` | `{url, schema_version, abbr_version, payload}` |
 
-All of `data/` and `.http-cache/` are gitignored. `*.duckdb` must never be committed.
+All of `data/` and `.http-cache/` are gitignored, except `data/noise_floor.json`. `*.duckdb`
+must never be committed. `docs/charts/` holds only derived aggregates, never raw prices.
 
 ### Store schema
 
