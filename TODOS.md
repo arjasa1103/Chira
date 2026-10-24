@@ -466,7 +466,13 @@ blind test is live paper trading.
 
 **Effort:** S to spec. **Priority:** P3. **Depends on:** live 2026-27 data accumulating.
 
-## P1 — Reliability diagrams are the one rehearsal figure not cut
+## RESOLVED 2026-10-06 — Reliability diagrams cut on dev, before the seal
+
+Closed by `dc384cc`: `charts.chart_reliability` draws model and market on the market's
+quantile bins so they share an x-axis, and chart 4 was cut on 2024-25 before the holdout
+opened. The holdout pass redrew it unchanged as chart 5 (notes/week9-holdout.md).
+
+*The entry as filed:*
 
 **What:** Model and market reliability curves side by side, for the writeup.
 
@@ -496,7 +502,15 @@ behaviour (Deviation 1's rule), and must not become one.
 
 **Effort:** M (CC ~1h: 12 folds x 245 grid points). **Priority:** P2, before week 9.
 
-## P1 — Headline 1's framing has to be decided before the holdout opens
+## RESOLVED 2026-10-04 — Headline 1's framing decided before the holdout opened
+
+Decided and written down in `369a9d5` (docs/checklist.md), two days before the seal opened:
+freeze the model as it is; out of sample it does not beat the Elo it is built on. PLAN
+Phase 5's 0.02-0.03 pass condition stood unamended, and headline 1 passed it in both sports
+(notes/week9-holdout.md, sections 2 and 9). The framing held in the NBA, was weakened in the
+NHL, and was not amended after the holdout.
+
+*The entry as filed:*
 
 **What:** Decide and write down what headline 1 claims, given the dress rehearsal.
 
@@ -510,7 +524,15 @@ decomposed) still stands and should be restated or amended explicitly.
 
 **Effort:** S to decide. **Priority:** P1, before the holdout is opened.
 
-## P2 — The NHL [0.35, 0.45) risk bucket is miscalibrated
+## RESOLVED 2026-10-04 — The NHL [0.35, 0.45) bucket kept as a stated limitation, not fixed
+
+Decided in `369a9d5`, before the seal: it is a model-probability bin, not one of section 9's
+risk tiers, so it stays an exploratory reliability row, stated rather than recalibrated. On
+the holdout it did not replicate (127 games, forecast 0.4150, actual 0.4252, 95% CI
+[0.3465, 0.5118]). The NHL's miscalibration moved to the favourite side instead
+(notes/week9-holdout.md, section 6).
+
+*The entry as filed:*
 
 **What:** Decide what to do about it before the holdout pass, or state it as a known
 limitation in the writeup.
@@ -729,7 +751,20 @@ historical half ships.
 **Effort:** L (human) → M (with CC). **Priority:** P3.
 **Depends on:** T7 (snapshot release) containing full post-tipoff series.
 
-## P3 — Kelly staking / equity-curve simulation
+## RESOLVED 2026-10-06 — Kelly staking is dead, under its own rule
+
+The entry below closes itself: "Only revisit if the nested test returns a significant
+positive result under both closing-price constructions. If it returns null, this item is
+dead, not deferred." The holdout's primary nested test came back null. NBA, close, against
+the raw price: CW −1.061, bootstrap p 0.8695, with the same pattern one hour before the
+close (notes/week9-holdout.md, section 8). The one significant row, NHL against a
+recalibrated price, does not revive it. It is the contrast sport, it is null against the
+raw price, and it reads as the recalibration moving rather than new information.
+
+It could only come back under a future track with its own pre-registration and a fresh
+holdout, such as the fundamental-analysis track below.
+
+*The entry as filed:*
 
 **What:** Translate edge tiers into fractional-Kelly stake sizes and plot an equity curve.
 
@@ -754,6 +789,11 @@ established edge is currently nothing.
 
 **Effort:** S (human) → S (with CC). **Priority:** P3.
 **Depends on:** a positive nested-test result.
+
+*Note added 2026-10-23:* the 2026-10-05 update above quotes the first, in-sample dress
+rehearsal (CW +1.495 and +1.515). The 2026-10-04 review had already replaced that run with an
+out-of-sample one, in which every dev CW sits within 0.37 of zero with bootstrap p above 0.5
+(`data/rehearsal/dress-rehearsal.json`). Neither version supported an edge.
 
 ## P3 — A fundamental-analysis track: player stats and lineups in the team rating
 
