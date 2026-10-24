@@ -204,7 +204,7 @@ Detail and reasoning live in [TODOS.md](../TODOS.md).
 | P2 | Chira-gamble docs: Signal L dead, so its runner goes snapshot-only and execution stops at DRY_RUN + SMOKE (its own rule) | In Chira-gamble |
 | P2 | Collector: only 4 of ~46 cron slots delivered in 23 h; a late first poll is not caught by the heartbeat. Check each morning's runs; a dispatch is the fallback | Ongoing |
 | P1 | NBA upcoming enumeration: **wired 2026-10-20**, awaiting an Actions dispatch to prove ESPN answers from a datacentre IP | 2026-10-20 |
-| P2 | Wilkens (2026) citation unverified (SSRN 5910522 read 2026-10-01: contribution stands) | Before v2 |
+| ~~P2~~ | ~~Wilkens (2026) citation unverified~~ **Found 2026-10-23**: *J. Sports Analytics* 12, DOI 10.1177/22150218261416681, recorded from the abstract in prior-art section 5 | ~~Before v2~~ |
 | P3 | Verify `last_trade_price` is market-level before anything reads it | Unscheduled |
 | P2 | Cache sizing, store hardening, test-fixture consolidation | Unscheduled |
 | P3 | CI actions on deprecated Node 20; Ubuntu 26 migration | 2026-10-19 |

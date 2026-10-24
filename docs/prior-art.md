@@ -2,7 +2,8 @@
 
 T12. Four sources were named in the planning documents and none were cited; this is that
 section. Two were read in full, one blocked automated access and was read by hand on
-2026-10-01, one could not be found,
+2026-10-01, one was found on 2026-10-23 after a month marked "not found" and has been read
+at the abstract only,
 and **one turns out to contradict a claim this project's own plan made about it.** Each entry
 says which, because a prior-art section whose citations were never opened is worse than none.
 
@@ -120,13 +121,54 @@ thin markets that are too timid and liquid markets that are too extreme pull in 
 directions. That consistency is not a confirmation, since the domains differ (tennis and
 politics against NBA and NHL). It is a reason to expect a pooled test to miss the effect.
 
-## 5. Wilkens (2026), "Can simple models predict football and beat the odds?"
+## 5. Wilkens (2026), "Can simple models predict football — and beat the odds? Lessons from the German Bundesliga"
 
-**NOT FOUND.** No arXiv match for the title or for the author in the relevant categories
-(searched 2026-09-25). It may exist on SSRN or in a journal, both outside what could be
-checked here. Recorded as a citation this project cannot currently substantiate. Its likely
-relevance is to headline 1 (a simple model against the market) rather than to headline 2, so
-it is not load-bearing for artifact v1.
+Sascha Wilkens (independent researcher), *Journal of Sports Analytics* 12, SAGE, published
+online 2026-02-06. DOI [10.1177/22150218261416681](https://doi.org/10.1177/22150218261416681).
+Open access under CC BY-NC 4.0.
+
+**Found 2026-10-23; read at the abstract only.** It was marked "not found" from 2026-09-25
+because the search covered arXiv and the paper is a journal article. The title, author,
+venue, date, DOI and licence above come from the publisher's own Crossref record, and so
+does the abstract. **The full text has not been read**, so nothing below goes beyond what the
+abstract states.
+
+**What it does, per the abstract:**
+- A simple model built on recent **expected goals (xG)**, turned into win–draw–loss
+  probabilities through a Skellam distribution and calibrated with isotonic regression.
+- Eleven Bundesliga seasons, 2014/15 through 2024/25, against bookmaker odds.
+- **The bookmakers are better calibrated than the model.**
+- The model nonetheless "captures certain signals not fully reflected in market prices":
+  simulated betting returns about **10%** on average odds and nearly **15%** at the best
+  available prices.
+- Profits come mostly from home-win bets. Backing away wins loses money consistently, and
+  profitability varies considerably by season and bet type.
+
+**What that means for this project.** It is the closest published result to headline 1: a
+simple, transparent model scored against the market's prices.
+
+- **It agrees on calibration.** Headline 1 finds the same ordering, the market ahead of the
+  model in both sports (NBA +0.01152 Brier, NHL +0.00499 on matched priced games).
+- **It disagrees on the part a bettor would care about.** On the 2025-26 NBA holdout, every
+  one of section 9's edge tiers has its model-side hit rate's 95% interval entirely below
+  0.5. Where this project's model disagreed with the closing price, the market was right
+  more often than the model, and most often where the disagreement was largest. The nested
+  test adds nothing over the NBA close either. Nothing here reproduces "signals not fully
+  reflected in market prices".
+
+The two results differ on enough that neither contradicts the other:
+- **The sport.** Football's three-way market against NBA and NHL moneylines.
+- **The input.** xG measures chance quality inside a match. This project's model is a
+  results-based Elo plus schedule terms, which carries less information about how a team
+  actually plays.
+- **The venue.** Bookmaker odds carry a margin, and "best available prices" means choosing
+  the best of several books. This project scores one market's close.
+- **The test.** Wilkens's returns are simulated across eleven seasons. Whether the isotonic
+  calibration and the betting rules were fixed out of sample is not stated in the abstract,
+  and it matters, because this project's own dev-period edge did not survive its holdout.
+
+Not load-bearing for artifact v1. Cited in v2 as the nearest comparison for headline 1, and
+as a contrast rather than as support.
 
 ## Data sources this project did not reuse
 

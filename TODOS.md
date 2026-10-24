@@ -284,17 +284,21 @@ Brier score, calibration slope or intercept, and makes no split by liquidity or 
 artifact v1's "what this project adds" is not overstated. Recorded in `docs/prior-art.md`
 section 4, with no number quoted because none was transcribed.
 
-## P2 — Wilkens (2026) is unverified (before artifact v2)
+## RESOLVED 2026-10-23 — Wilkens (2026) found, and recorded as a contrast
 
-**What:** Find "Can simple models predict football and beat the odds?" and record its claims
-in `docs/prior-art.md` section 5, or drop the citation.
+Sascha Wilkens, "Can simple models predict football — and beat the odds? Lessons from the
+German Bundesliga", *Journal of Sports Analytics* 12 (2026), DOI 10.1177/22150218261416681,
+open access. It was never on arXiv, which is all the 2026-09-25 search covered; the
+publisher's Crossref record confirms author, venue, date and DOI.
 
-**Why:** No arXiv match for the title or author (searched 2026-09-25). It is likely relevant to
-headline 1, a simple model against the market, rather than headline 2, so it moves nothing in
-v1. It was P1 only as the second half of an item whose first half could have moved the
-contribution claim; that half is resolved.
+Recorded in `docs/prior-art.md` section 5 **from the abstract only**; the full text has not
+been read. It agrees with headline 1 that the market is better calibrated than a simple
+model, and reports simulated betting profits that this project's NBA holdout does not
+reproduce: every NBA edge tier's model-side hit rate lies below 0.5. Kept as a citation, as
+a contrast rather than as support.
 
-**Effort:** S (human, SSRN or a journal search). **Priority:** P2, before v2.
+**Still open, optional:** read the full text, which is open access, to settle whether its
+calibration and betting rules were fixed out of sample.
 
 ## RESOLVED 2026-10-01 — Brier stays primary, and PLAN.md now says why
 

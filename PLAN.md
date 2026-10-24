@@ -121,8 +121,9 @@ which is where this result sits; and Wheatcroft (arXiv:1908.08980, 2019 not 2022
 **contradicts** this plan's claim that it "recommends Brier/log-loss over RPS" -- it finds
 the log score beats RPS *and* Brier, while PREREGISTRATION section 3 makes Brier primary.
 Both are now stated in docs/prior-art.md. SSRN 5910522 blocks automated access (403), so it was read by hand on 2026-10-01: no
-liquidity split, no NBA or NHL, so the contribution stands. The Wilkens 2026 paper could
-not be found and is still marked unverified rather than cited.
+liquidity split, no NBA or NHL, so the contribution stands. The Wilkens 2026 paper was
+found on 2026-10-23 (*Journal of Sports Analytics* 12, DOI 10.1177/22150218261416681; it
+was never on arXiv) and is recorded from its abstract as a contrast to headline 1.
 
 **Le's paper also changed the analysis.** It reports that event-clustered errors absorb
 roughly half of raw slope variation, so a date-clustered bootstrap was added beside the
