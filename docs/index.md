@@ -279,7 +279,8 @@ The hindsight constant bounds what any constant could have done, because nobody 
 season's home rate before the season. The ex-ante one is a forecast someone could actually
 have committed to. All of the gap between them comes from the NHL's home-win rate falling
 between seasons. The ex-ante baseline is **as of 2026-10-23, to be re-run at the end of the
-2026-27 season**.
+2026-27 season on 2026-27 data**: a constant at 2025-26's home rate against the frozen model
+and Elo, on that season's outcomes.
 
 The NHL market resolves outcome variance **0.00571**, about **a ninth** of the NBA market's
 0.05201. The NHL deficit is small because there is almost nothing to be better at, not

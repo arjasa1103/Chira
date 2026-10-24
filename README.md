@@ -32,7 +32,7 @@ The claim is about calibration, not profit. Nothing here places bets.
 > **In the NHL that parity is close to empty:** the model (0.24971) loses to a constant at the
 > season's own home-win rate, known only in hindsight (0.24951), and beats one at the previous
 > season's rate, which a forecaster could have used (0.25114, as of 2026-10-23, to be re-run
-> at the end of 2026-27). The NHL market resolves about a ninth of what the NBA's does. Where the NBA model disagrees with the
+> on 2026-27 data at the season's end). The NHL market resolves about a ninth of what the NBA's does. Where the NBA model disagrees with the
 > market, the market is right more often in every edge tier, and the nested test finds
 > nothing the model adds to the NBA close. Two deviations from the plan are recorded in
 > [PREREGISTRATION.md](PREREGISTRATION.md). Nothing here claims a betting edge.

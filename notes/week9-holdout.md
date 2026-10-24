@@ -100,7 +100,8 @@ The hindsight constant bounds what any constant could have done; nobody knew 202
 rate before 2025-26. The ex-ante one is a forecast someone could have committed to. The
 whole difference between them is the NHL's home-win rate falling from 0.5625 to 0.5221
 between seasons. **The ex-ante baseline is as of 2026-10-23, to be re-run at the end of the
-2026-27 season** (`scripts/run_exante_baseline.py`, `docs/charts/holdout-exante.json`);
+2026-27 season on 2026-27 data**, with 2025-26's rate as the constant
+(`scripts/run_exante_baseline.py`, `docs/charts/holdout-exante.json`);
 it was added on 2026-10-23, after this note first stated the caveat against the hindsight
 constant alone.
 
@@ -132,7 +133,7 @@ Uncertainty 0.24703. Model skill over the base rate: **+0.04111** Brier.
 | base rate, ex-ante (2024-25's rate) | 1,312 | 0.25114 | 0.69547 | 0.04040 | 0.00215 | 0.00052 |
 
 Uncertainty 0.24951. Model skill over the hindsight base rate: **−0.00020** Brier; over the
-ex-ante one, **+0.00143** (as of 2026-10-23, to be re-run at the end of 2026-27). The
+ex-ante one, **+0.00143** (as of 2026-10-23, to be re-run on 2026-27 data at the season's end). The
 ordering is the finding: in the NHL, *only a constant chosen with the season's outcome in
 hand outscores the model and the rating.* The constant a forecaster could have used is
 beaten by both, the Elo by 0.00049.

@@ -828,33 +828,42 @@ input, xG, scored against a market.
   name, not a change to the one headline 1 scored. Deviation 1's rule holds: no model change
   is justified by holdout behaviour.
 
+**A separate lane.** This is its own simulation, built on player statistics and lineups, with
+its own data, pre-registration and holdout. It is not part of the end-of-season re-run below,
+which scores the frozen model unchanged, and it never touches the frozen model or the frozen
+Elo.
+
 **Effort:** L. **Priority:** P3, after the season.
 **Depends on:** a proven availability source (E7); the 2026-27 season ending.
 
-## P3 — Re-run the NHL ex-ante baseline at the end of 2026-27
+## P3 — At the end of 2026-27, run the ex-ante comparison on 2026-27's own data
 
-**What:** `uv run python scripts/run_exante_baseline.py`, as the user asked on 2026-10-23,
-to see whether anything changes. The baseline is a constant forecaster at the 2024-25 NHL
-home-win rate (0.5625), which scores 0.25114 on 2025-26 against the model's 0.24971 and the
-hindsight constant's 0.24951. It is stated in v2 and the week-9 note as "as of 2026-10-23, to
-be re-run at the end of the 2026-27 season".
+**What:** the re-run the user asked for on 2026-10-23, clarified the same day: after the
+season, **on that season's data**. The NHL comparison headline 1 makes for 2025-26, moved one
+season on:
+- the ex-ante constant at **2025-26's NHL home rate (0.5221)**, the last thing knowable
+  before 2026-27;
+- the **frozen model** (`dc384cc5f4f6`) and the **frozen Elo** (`d66671c`), unchanged, scored
+  on 2026-27's outcomes;
+- the market's close beside them, from the collector.
 
-**Read this before running it: on 2025-26 the number cannot change.** The labels are pinned by
-the marker's hash and the 2024-25 rate by the snapshot. The script refuses to write unless it
-reproduces 0.25114, and a second run on 2026-10-23 was byte-identical. Re-running it checks
-that nothing underneath has drifted. It is not a new measurement.
+It answers the two questions 2025-26 raised. Does the NHL home rate keep moving? Its fall
+from 0.5625 to 0.5221 is the whole gap between 2025-26's two baselines. And do the frozen
+model and Elo still beat a constant a forecaster could have used? On 2025-26 they did, by
+0.00143 and 0.00049.
 
-**The run that can say something new** is the same comparison on 2026-27: a constant at
-2025-26's NHL home rate (0.5221) against 2026-27's outcomes, beside the market's close (the
-collector's) and the frozen Elo (a walk with the frozen constants). It would show whether
-the NHL home rate keeps moving, since its fall from 0.5625 to 0.5221 is the whole gap
-between the two baselines. It would also show whether the frozen Elo still beats a constant
-a forecaster could have used. Exploratory and not pre-registered: 2026-27 is not a holdout
-for anything already fitted, so its results are reported and never used to change a model.
+Out of sample for both frozen forecasters, but not pre-registered, so exploratory: its
+results are reported and never used to change either. v2, the week-9 note and the README
+state the 2025-26 baseline as "as of 2026-10-23, to be re-run at the end of the 2026-27
+season on 2026-27 data".
 
-**Needs:** the script parameterized by season (today it reads the sealed 2025-26 path only),
-2026-27 NHL results, and the collector's 2026-27 closing prices.
+*Aside: running `scripts/run_exante_baseline.py` again on 2025-26 can only reproduce 0.25114,
+because the labels and the 2024-25 rate are both pinned. It is a drift check, not this.*
 
-**Effort:** S. **Priority:** P3, after the 2026-27 regular season (the collector's NHL window
-closes 2027-04-30). **Pairs with:** the fundamental-analysis track above, which needs the same
-season to end.
+**Needs:** a season-parameterized version of the baseline script; 2026-27 NHL results;
+2026-27 features for the frozen model, since the feature store covers the census seasons
+only; a 2026-27 Elo walk with the frozen constants; the collector's 2026-27 closing prices.
+
+**Effort:** M. **Priority:** P3, after the 2026-27 regular season (the collector's NHL window
+closes 2027-04-30). **Separate from** the fundamental-analysis track above, which is its own
+lane.

@@ -14,12 +14,12 @@ which requires the seal's marker, and are refused unless they hash to the value
 the marker recorded. `open_holdout` is not imported and cannot be reached from
 here. Nothing is fitted: both forecasters are constants.
 
-**Deterministic, and that is the point of `EXPECTED`.** The 2025-26 labels are
-pinned by the marker's hash and the 2024-25 rate by the snapshot, so a rerun
-reproduces these numbers exactly or the data underneath has moved. The run that
-can tell you something new at the end of 2026-27 is the same comparison on
-2026-27 -- 2025-26's rate as the constant -- which is TODOS.md's, not this
-script's.
+**The end-of-season re-run is on 2026-27 data, not this script on 2025-26.**
+It is the same comparison one season on: 2025-26's home rate as the constant,
+scored with the frozen model and Elo on 2026-27's outcomes (TODOS.md). This
+script stays fixed to 2025-26, and since those labels are pinned by the marker's
+hash and the 2024-25 rate by the snapshot, running it again reproduces these
+numbers exactly -- which is what `EXPECTED` checks.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ from chira.holdout import (
 from chira.scoring import score_set
 
 AS_OF = "2026-10-23"
-RERUN = "end of the 2026-27 season"
+RERUN = "end of the 2026-27 season, on 2026-27 data"
 OUT = "docs/charts/holdout-exante.json"
 
 # What this run must reproduce, to the five decimals it was first quoted with
