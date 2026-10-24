@@ -9,7 +9,9 @@ single label came back.
 
 That moment cannot be repeated. Everything below is what it bought.
 
-Numbers: `data/holdout/holdout.json`. Figure: `docs/charts/chart5-holdout-reliability.png`,
+Numbers: `docs/charts/holdout.json` (tracked; written by the recomputation of 2026-10-23,
+which reproduced all 347 values of the original `data/holdout/holdout.json` exactly and
+adds what section 10 found missing). Figure: `docs/charts/chart5-holdout-reliability.png`,
 drawn by the same `charts.chart_reliability` that cut chart 4 on dev. The dev counterparts
 every table here mirrors are in [notes/week8-model.md](week8-model.md) and
 `data/rehearsal/dress-rehearsal.json`.
@@ -336,26 +338,40 @@ available, and the seal is spent, so this stays an open question rather than a c
 
 ## 10. Gaps this pass leaves, recorded rather than hidden
 
-1. **`chart_reliability`'s statistics were computed and thrown away.** It returns Cox slope,
-   intercept, per-bin curve and bootstrap band per panel; `run_holdout.py` calls it for the
-   PNG and discards the return. The figure carries the slopes visually and the JSON does not
-   carry them at all. Re-deriving them from released labels is a legitimate recomputation
-   (section "how the pass went"), and `CENSUS_NULL_SLOPE_CI_BY_N` holds the per-n nulls to
-   read them against. **The runner should persist what it draws.**
-2. **The holdout fits' diagnostics are not in the JSON either.** Divergences and R-hat went
-   to stdout. The gate is enforced in code — an unconverged fit raises — so the pass could
-   not have proceeded without them, but "T5 passed" is currently an assertion backed by a
-   raise rather than a recorded number.
+1. **CLOSED 2026-10-23. `chart_reliability`'s statistics were computed and thrown away.**
+   The runner now keeps them, per panel, under `reliability_figure`: each curve's bins,
+   bootstrap band, Brier, ECE, and Cox slope and intercept, on the figure's 6 shared bins
+   over priced games. Read against `CENSUS_NULL_SLOPE_CI_BY_N` at the matching n — a
+   reference, not a gate, for section 5's reason:
+
+   | | Cox slope | intercept | null 95% CI at this n | |
+   |---|---|---|---|---|
+   | NBA market | 1.0447 | +0.0074 | [0.868, 1.154] (n=1,226) | inside |
+   | NBA model | 1.0811 | +0.0293 | [0.868, 1.154] | inside |
+   | NHL market | 0.7903 | −0.0182 | [0.740, 1.267] (n=1,310) | inside |
+   | NHL model | **0.5566** | −0.0490 | [0.740, 1.267] | **below** |
+
+   The NHL model's slope is the one outside its null, and below it: forecasts too extreme,
+   which is section 6's overconfident favourite side seen as one number rather than two
+   buckets. The NBA model is indistinguishable from calibrated.
+2. **CLOSED 2026-10-23. The holdout fits' diagnostics are not in the JSON either.** Now under
+   `fit_diagnostics`. NBA: 0 divergences, max R-hat 1.0013 (`e_home`), min ESS 1,123
+   (`tau_team`). NHL: 0 divergences, max R-hat 1.0006 (`e_team`), min ESS 2,309
+   (`tau_team`). Both inside T5's 1.01, as the raise that did not happen already implied;
+   now it is a number.
 3. **The Elo overlap is still unmeasured on dev** (section 3). No longer a blocker; still the
    number that would tell you how much of the rehearsal's +0.00282 was artefact.
 4. **The dress rehearsal did not rehearse the runner.** Section "how the pass went". A
    `--dry-run-the-analysis` mode that exercises every call on dev rows would have cost
    nothing and saved the crash.
-5. **The headline number is not in the JSON.** `holdout.json` stores the model's score on
-   all games and the market's on priced games, but not the model on priced games, which is
-   what headline 1 compares. The deficits above come from the run's printed output. The
-   runner should persist `deficit` and the matched-sample model score, so a reader can
-   check the headline from the file and is never tempted to subtract across samples.
+5. **CLOSED 2026-10-23. The headline number is not in the JSON.** Now under `headline1`,
+   per sport: the matched-sample model Brier (NBA **0.205655**, NHL **0.249577**, on 1,226
+   and 1,310 priced games), the market's (0.194132, 0.244587), the all-games model Brier
+   beside them so the two can never be confused (0.205923, 0.249711), and the deficit
+   (**+0.011524**, **+0.004990**). The runner also refuses to write anything unless the
+   recompute reproduces what the first look printed — NBA model 0.20592, market 0.19413,
+   deficit +0.01152; NHL deficit +0.00499 — to the five decimals they were printed with.
+   This one did, and reproduced every value of the original file besides.
 
 ## 11. What this pass does not say
 

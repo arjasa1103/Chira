@@ -32,6 +32,7 @@ import argparse
 import glob
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 sys.path.insert(0, "src")
@@ -74,9 +75,27 @@ from chira.scoring import (
     score_set,
 )
 
-OUT = "data/holdout"
+# Tracked, beside headline2.json and reliability.json: every published number
+# is rounded from a committed file, so headline 1's source has to be one.
+# data/holdout/holdout.json is the 2026-10-06 recomputation's record and is
+# left as it was written; this file is a strict superset of it.
+OUT = "docs/charts"
 PNG = "docs/charts/chart5-holdout-reliability.png"
 PRICE_LOOKS = ("close", "t1h")
+
+# What the seal-opening runs PRINTED, transcribed from the dev session's log
+# (notes/week9-holdout.md, corrected on review 2026-10-20). The first run, on
+# dc384cc5f4f6, printed the NBA lines and died at the NBA's risk tiers; the
+# recomputation printed the NHL deficit. A recompute that does not land on
+# these, to the five decimals they were printed with, is not a recomputation of
+# the first look -- it is a different analysis -- and writes nothing.
+FIRST_LOOK = {
+    ("nba", "model_brier_all_games"): 0.20592,
+    ("nba", "market_brier"): 0.19413,
+    ("nba", "deficit"): 0.01152,
+    ("nhl", "deficit"): 0.00499,
+}
+PRINTED_DECIMALS = 5
 
 # The dev artefacts section 6 requires to exist BEFORE the seal breaks.
 REQUIRED_DEV_ARTEFACTS = (
@@ -95,6 +114,40 @@ JOIN games g USING (sport, season, game_id)
 WHERE f.season = ?
 ORDER BY f.sport, f.game_id
 """
+
+
+def reproduction_failures(report: dict, known: dict | None = None,
+                           decimals: int = PRINTED_DECIMALS) -> list[str]:
+    """Every FIRST_LOOK value this report does not reproduce, as messages.
+
+    A printed value carries `decimals` places, so it pins the true value only to
+    within half a unit in the last place. Anything inside that is the same
+    number; anything outside is not, and is named.
+    """
+    tol = 0.5 * 10 ** -decimals
+    out = []
+    for (sport, key), want in (known or FIRST_LOOK).items():
+        h1 = (report.get("sports", {}).get(sport) or {}).get("headline1") or {}
+        got = h1.get(key)
+        if got is None:
+            out.append(f"{sport} {key}: missing from the report")
+        elif abs(got - want) > tol + 1e-12:
+            out.append(f"{sport} {key}: {got:.{decimals + 3}f}, but the first "
+                       f"look printed {want:.{decimals}f}")
+    return out
+
+
+def jsonable(o):
+    """numpy arrays and scalars, which the figure's curve dicts are full of.
+
+    The writer used `default=str`, which would have turned an array into the
+    string "[0.1 0.2]" -- valid JSON, silently unreadable as numbers.
+    """
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    if isinstance(o, np.generic):
+        return o.item()
+    raise TypeError(f"not JSON serialisable: {type(o).__name__}")
 
 
 def rows(cur) -> list[dict]:
@@ -345,6 +398,21 @@ def main() -> int:
                 nested.setdefault(horizon, {})[null] = cw.__dict__.copy()
 
         report["sports"][sport] = {"n": h_design.n, "scores": scores,
+                                   # Headline 1 as it is quoted: model and
+                                   # market on the SAME priced games. Stored so
+                                   # a reader never subtracts across samples
+                                   # (week-9 note, section 10 item 5).
+                                   "headline1": {
+                                       "n_priced": int(keep.size),
+                                       "model_on_priced": s_mod.__dict__.copy(),
+                                       "market_brier": s_mkt.brier,
+                                       "model_brier_priced": s_mod.brier,
+                                       "model_brier_all_games":
+                                           scores["model"]["brier"],
+                                       "deficit": s_mod.brier - s_mkt.brier},
+                                   # T5 as numbers, not only as a raise that
+                                   # did not happen (section 10 item 2).
+                                   "fit_diagnostics": asdict(f.diag),
                                    "edge_tiers": [t.__dict__ for t in tiers],
                                    "edge_below_floor": below_floor,
                                    "reliability_buckets":
@@ -353,10 +421,26 @@ def main() -> int:
                                    "unseen_team_seasons":
                                        list(pred.unseen_team_seasons)}
 
-    chart_reliability(panels, args.png, reps=args.reps)
+    # Check BEFORE anything is written: the figure overwrites a tracked PNG,
+    # and a recompute that does not reproduce the first look must leave the
+    # published figure and the stored numbers exactly as they were.
+    failures = reproduction_failures(report)
+    if failures:
+        print("\nREFUSING TO WRITE: this run does not reproduce the first look")
+        for msg in failures:
+            print(f"  - {msg}")
+        return 1
+    print("\nreproduces the first look: "
+          + ", ".join(f"{s} {k} {v:+.5f}" for (s, k), v in FIRST_LOOK.items()))
+
+    fig = chart_reliability(panels, args.png, reps=args.reps)
+    # What the figure draws, kept (section 10 item 1): per panel, each curve's
+    # bins, bootstrap band, Brier, ECE and Cox slope and intercept.
+    for sport in report["sports"]:
+        report["sports"][sport]["reliability_figure"] = fig[sport.upper()]
     Path(args.out).mkdir(parents=True, exist_ok=True)
     p = Path(args.out) / "holdout.json"
-    p.write_text(json.dumps(report, indent=1, sort_keys=True, default=str)
+    p.write_text(json.dumps(report, indent=1, sort_keys=True, default=jsonable)
                  + "\n", encoding="utf-8")
     print(f"\nwrote {p} and {args.png}")
     print("\nThe seal is spent. These numbers are final; re-running "
