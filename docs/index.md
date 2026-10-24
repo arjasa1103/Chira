@@ -7,10 +7,15 @@ title: "Where a real-money market is miscalibrated"
 **Thin Polymarket sports markets are underconfident. Liquid ones are overconfident. The gap
 is large, and it survives every check we could throw at it.**
 
-Artifact v1, 25 September 2026. Headline 2 of two; the model half (headline 1) is not in
-this document and is not claimed here. Pre-registered in
+Artifact v2, 23 October 2026. Both headlines are now here. **Headline 2**, below, is
+unchanged from artifact v1 of 25 September 2026. **[Headline 1](#headline-1-a-transparent-model-against-the-markets-close)**,
+a transparent model against the market's close on the sealed 2025-26 season, follows it:
+parity in both sports (NBA +0.01152, NHL +0.00499 Brier, both under the pre-registered
+0.02–0.03 band), with the NHL's parity close to empty because the season's own home-win rate
+scores better than the model there. Pre-registered in
 [PREREGISTRATION.md](https://github.com/arjasa1103/Chira/blob/main/PREREGISTRATION.md)
-before any statistic was computed, with every amendment dated and its reason recorded.
+before any statistic was computed, with every amendment and deviation dated and its reason
+recorded.
 
 ---
 
@@ -250,10 +255,241 @@ Reporting the bands is not modesty; it is what makes the pooled claim legible.
 
 ---
 
+## Headline 1: a transparent model against the market's close
+
+**A simple, transparent model reaches parity with Polymarket's closing price in both sports,
+by the measure fixed before it was fitted. In the NHL that parity is close to empty: neither
+forecaster says much, and the model scores worse than the season's own home-win rate.**
+
+| Sport | Priced games | Brier deficit, model − market (same games) | Pre-registered band |
+|---|---|---|---|
+| NBA | 1,226 | **+0.01152** | 0.02–0.03 |
+| NHL | 1,310 | **+0.00499** | 0.02–0.03 |
+
+**Read the NHL row with this beside it.** Forecasting 2025-26's own home-win rate for every
+game scores a Brier of **0.24951**; the NHL model scores **0.24971**, so that constant beats
+it. It is a constant known only in hindsight, because nobody knew the season's home rate
+before the season, so it bounds what any constant could have done. The
+NHL market resolves outcome variance **0.00571**, about **a ninth** of the NBA market's
+0.05201. The NHL deficit is small because there is almost nothing to be better at, not
+because the model got close to a good forecaster.
+
+The pre-registration
+([section 11](https://github.com/arjasa1103/Chira/blob/main/PREREGISTRATION.md)) fixed the
+test before any model was fitted: headline 1 is **falsified as parity** if the model's holdout
+Brier deficit against the market exceeds 0.02–0.03. Both deficits are below the band's lower
+edge, so it passes in both sports. In the NBA the pass means something: the model resolves
+79% of what the market resolves. In the NHL it does not, for the reason above.
+
+The deficit compares the two forecasters on **exactly the games that have a closing price**.
+Do not re-derive it from the score tables below, where the model is scored on every game
+and the market only on priced ones; subtracting across them gives +0.01179 and +0.00512,
+which this project's own first note did before review caught it.
+
+### What was scored
+
+- **The model.** A hierarchical logistic regression. Its inputs are a pre-game Elo rating,
+  with constants tuned on 2024-25 and frozen on 2026-10-01; rest days, back-to-backs, travel
+  distance and time-zone shift; and pooled team-season strength and home advantage. Fitted on
+  **2024-25 only**, and frozen by commit `dc384cc5f4f6` before the holdout was opened.
+- **The holdout.** The whole **2025-26** season: 1,230 NBA games (1,226 with a closing price)
+  and 1,312 NHL games (1,310 priced). It was sealed from the start of the project. It was
+  opened **once**, by code, on 2026-10-06, and that function refuses a second call.
+- **The market.** Polymarket's closing midpoint for the home side. The market price never
+  enters the model.
+- **One thing the holdout changes about the model.** Every 2025-26 team-season is unseen by a
+  2024-25 fit (30 of 30 NBA, 32 of 32 NHL), so the team-season effects are integrated out
+  rather than estimated. On the holdout, the model is in effect the Elo plus schedule terms.
+
+Both fits converged cleanly: 0 divergences, max R-hat 1.0013 (NBA) and 1.0006 (NHL), against
+the pre-registered ceiling of 1.01.
+
+### The scores
+
+**NBA**
+
+| Forecaster | n | Brier | Log loss | ECE |
+|---|---|---|---|---|
+| market (close) | 1,226 | **0.19413** | 0.56879 | 0.02407 |
+| frozen Elo | 1,230 | 0.20421 | 0.59517 | 0.02843 |
+| model | 1,230 | 0.20592 | 0.59827 | 0.03001 |
+| model, priced games only | 1,226 | 0.20566 | 0.59770 | 0.03302 |
+| base rate | 1,230 | 0.24703 | 0.68720 | 0.04228 |
+
+**NHL**
+
+| Forecaster | n | Brier | Log loss | ECE |
+|---|---|---|---|---|
+| market (close) | 1,310 | **0.24459** | 0.68207 | 0.03209 |
+| **base rate** | 1,312 | **0.24951** | 0.69217 | 0.01826 |
+| model | 1,312 | 0.24971 | 0.69302 | 0.05641 |
+| model, priced games only | 1,310 | 0.24958 | 0.69274 | 0.05561 |
+| frozen Elo | 1,312 | 0.25065 | 0.69488 | 0.06264 |
+
+Log loss is clipped to [0.01, 0.99]; Brier is primary, for the reason in
+[PLAN.md](https://github.com/arjasa1103/Chira/blob/main/PLAN.md) Phase 5. In the NHL the
+base rate outscores both the model and the rating.
+
+### Where the gap comes from
+
+Brier decomposes into reliability (how far the forecasts are off; lower is better) minus
+resolution (how much they separate wins from losses; higher is better) plus the outcome's
+own uncertainty.
+
+| | Reliability | Resolution | Uncertainty |
+|---|---|---|---|
+| NBA market | 0.00095 | **0.05201** | 0.24710 |
+| NBA model | 0.00135 | **0.04118** | 0.24703 |
+| NHL market | 0.00136 | **0.00571** | 0.24948 |
+| NHL model | 0.00406 | **0.00362** | 0.24951 |
+
+**The NBA gap is mostly resolution.** The model is nearly as well calibrated as the market,
+but it separates games less sharply: 0.04118 against 0.05201, or **79%**. That is the
+information a schedule-and-rating model does not have, such as injuries, rest decisions and
+lineup news. **In the NHL both resolutions are tiny**, and the model's reliability term is
+the larger of its two.
+
+The decomposition is binned, so its three terms add up to a Brier within 0.002 of the exact
+one.
+
+![Headline 1: model and market reliability on the 2025-26 holdout](charts/chart5-holdout-reliability.png)
+
+Model and market reliability curves, priced games only. Both curves use the same six bins,
+cut on the market price's quantiles so the x-axis is shared. Bands are 95% game bootstraps.
+Cox calibration slopes:
+
+| | Cox slope | 95% null band at this n | |
+|---|---|---|---|
+| NBA market | 1.045 | [0.868, 1.154] | inside |
+| NBA model | 1.081 | [0.868, 1.154] | inside |
+| NHL market | 0.790 | [0.740, 1.267] | inside |
+| NHL model | **0.557** | [0.740, 1.267] | **below** |
+
+The null band is the range a **perfectly calibrated** forecaster's slope covers at that
+sample size, simulated on the census's own prices. The NBA model cannot be told apart from
+calibrated. The NHL model is the one outside its band, and below it: its forecasts are too
+extreme. Bucketed by the model's own probability, the NHL games it put at 0.60 and 0.70
+were won at 0.53 and 0.62.
+
+### Does the model add anything to the market?
+
+**No, in the NBA, under every construction tested.** This is the nested test: a model "B"
+that contains the market's price plus the model's covariates, scored against the market
+alone by a Clark-West statistic, with a bootstrap over calendar dates. B is tested against
+two versions of the market: the raw price ("identity"), and the price recalibrated through a
+logistic fitted on 2024-25.
+
+| | Null | CW | Bootstrap p | n (dates) |
+|---|---|---|---|---|
+| **NBA (primary)** | **identity** | **−1.061** | **0.870** | 1,226 (164) |
+| NBA | recalibrated | −0.967 | 0.839 | 1,226 (164) |
+| NHL | identity | +0.671 | 0.218 | 1,310 (167) |
+| NHL | recalibrated | +2.355 | 0.003 | 1,310 (167) |
+
+The NBA is the pre-registered primary sample, and its test is null in the strongest sense
+available. The CW statistic is negative even after the adjustment that credits B for its
+extra parameters. The one-hour-before-close prices give the same pattern (NBA CW −1.002 and
+−0.928).
+
+**The NHL row that looks significant is a recalibration effect, not new information.**
+Against the market's actual price, B adds nothing (p 0.218). Against the recalibrated price,
+it appears to (p 0.003). But it is the same B, on the same games, with the same covariates.
+Its mean adjusted advantage is 0.00080 over the raw price and 0.00182 over the recalibrated
+one. What moved is the baseline: B contains that recalibration, so part of what it is
+credited for is undoing it. The result is also an inversion from the 2024-25 rehearsal,
+where every NHL statistic sat near zero on 717 games. With the season sealed again by use,
+it stays an open question.
+
+### Risk tiers
+
+These are pre-registered as exploratory, never headline. Games are grouped by how far the
+model's price is from the market's, `|p_model − p_market|`. "Model-side hit" is how often the
+outcome went the way the model leaned *relative to the market*.
+
+**NBA: 1,226 priced games, 203 under the 0.02 floor and not tiered**
+
+| Tier | Edge | n | Model-side hit | 95% CI |
+|---|---|---|---|---|
+| T1 | 0.02–0.05 | 311 | 0.402 | [0.347, 0.460] |
+| T2 | 0.05–0.10 | 360 | 0.314 | [0.269, 0.361] |
+| T3 | ≥ 0.10 | 352 | 0.324 | [0.276, 0.378] |
+
+**Every NBA tier's interval lies entirely below 0.5.** Where the model disagreed with the
+NBA close, the market was right 60–69% of the time, and most often where the model
+disagreed most. The pre-registration expected the top tier's apparent edge to *shrink* out
+of sample. Instead, every tier's edge reversed.
+
+**NHL: 1,310 priced games, 333 under the floor**
+
+| Tier | Edge | n | Model-side hit | 95% CI |
+|---|---|---|---|---|
+| T1 | 0.02–0.05 | 404 | 0.446 | [0.396, 0.495] |
+| T2 | 0.05–0.10 | 427 | 0.522 | [0.471, 0.569] |
+| T3 | ≥ 0.10 | 146 | 0.425 | [0.349, 0.507] |
+
+In the NHL, nothing here is a disagreement worth acting on in either direction.
+
+### Against its own rating
+
+The model was built on the frozen Elo, so the obvious secondary question is whether it beats
+that rating. On the holdout it does not, and it does not lose either. The model minus the
+Elo is **+0.00171** Brier in the NBA and **−0.00094** in the NHL, both far inside anything
+this sample can separate. The framing was written down on 2026-10-04, before the holdout
+opened: *out of sample the model does not beat the Elo it is built on*. It holds in the NBA,
+is weakened in the NHL, and is not amended.
+
+### Deviations, stated plainly
+
+- **Deviation 1 (2026-10-01): holdout scores were seen before the seal.** A summary table
+  scored the frozen Elo against 2025-26 outcomes, for both sports, before the holdout was
+  opened. The NHL values were quoted at the time (log loss 0.69488, Brier 0.25065). The
+  Elo's constants had already been frozen and pushed, so that choice could not have been
+  affected. The rule adopted that day held for everything after: **no model change may be
+  justified by holdout behaviour, and none was made.** It is now enforced in code: a sealed
+  row cannot be scored until the marker exists.
+- **Deviation 2 (2026-10-06): the runner crashed after the seal opened, and was fixed
+  after.** It had never been executed or reviewed before the opening. It died on a function
+  signature changed in a review two days earlier, after printing the NBA score table and the
+  NBA deficit. The fix added a recomputation path that requires the seal's marker and
+  refuses unless the labels hash to what the marker recorded. It touched no model, fit,
+  prediction, scoring function or seed. That recomputation reproduced the NBA numbers the
+  crashed run had printed. A second recomputation, on 2026-10-23, reproduced every value
+  stored by the first and the figure above byte for byte.
+
+Both are recorded in full in
+[PREREGISTRATION.md](https://github.com/arjasa1103/Chira/blob/main/PREREGISTRATION.md).
+
+### What headline 1 does not say
+
+- **It does not say the model is good.** It says a transparent model made from a frozen
+  rating and a schedule meets the pre-registered parity bar against a prediction market. In
+  the NBA, where it disagrees with that market, it is **wrong more often than right, in every
+  tier**.
+- **It does not say the NHL is predictable.** Both forecasters sit within 0.005 Brier of the
+  season's own home-win rate used as a constant, and the model is on the wrong side of it.
+- **It is not a betting edge.** The risk tiers argue directly against one. There is no
+  staking model, no fees and no fill model either.
+- **The rating comparison on 2024-25 carries a bias that was disclosed and never measured.**
+  The Elo's three constants were tuned on all of 2024-25, the same season the dev rehearsal
+  scored, so on dev the rating was in-sample for three parameters while the model was not.
+  The holdout is clean on this, because the constants never saw 2025-26. The size of the
+  dev bias is unmeasured and listed as a limitation.
+- **It cannot be repeated.** One season, opened once. The code refuses a second opening, and a
+  recomputation refuses to write anything that does not reproduce the first look. Every
+  number here is in
+  [`docs/charts/holdout.json`](https://github.com/arjasa1103/Chira/blob/main/docs/charts/holdout.json),
+  and the full account is the
+  [week-9 note](https://github.com/arjasa1103/Chira/blob/main/notes/week9-holdout.md).
+- **One platform, two sports, one season.**
+
+---
+
 ## Prior art
 
-Four sources, two read in full, one blocked to automated access, one not found, and one that
-**contradicts a claim our own plan made about it.** The closest work is Le (2026), which
+Five sources. Two were read in full. Reichenbach and Walther (SSRN 5910522) refuses automated
+access and was **read by hand on 2026-10-01**: it has no liquidity split and no NBA or NHL
+markets, so the contribution stands. Wilkens (2026) was found on 2026-10-23 and is read at
+the abstract only. One source **contradicts a claim our own plan made about it.** The closest work is Le (2026), which
 decomposes the same estimand across 353M trades on Kalshi and Polymarket and finds
 trade-size compression that is *not robust on Polymarket* — the platform where this result
 sits. Full positioning: **[prior-art.md](prior-art.md)**.
@@ -277,13 +513,26 @@ Full instructions, per-command costs and the resume path are in the
 16,400 requests at 5 requests/second against a public API; it needs a residential IP because
 `stats.nba.com` blocks most cloud ranges, and roughly 6 GB of disk.
 
-Once the census and snapshot exist, this page's numbers come from one command:
+Once the census and snapshot exist, headline 2's numbers come from one command:
 
 ```bash
 uv run python scripts/run_headline2.py --reps 2000
 ```
 
 The seed is fixed, so the point estimates and intervals reproduce exactly.
+
+Headline 1's numbers are in
+[`docs/charts/holdout.json`](https://github.com/arjasa1103/Chira/blob/main/docs/charts/holdout.json).
+They come from a single pass over the sealed 2025-26 season, which cannot be repeated:
+
+```bash
+uv run python scripts/run_holdout.py     # readiness report; reads nothing from 2025-26
+```
+
+With the seal's marker present, `--open-the-seal` **recomputes** from the labels already
+released rather than opening anything. It refuses unless those labels hash to the value the
+marker recorded, and it writes nothing unless the result reproduces what the first look
+printed.
 
 ---
 
@@ -293,5 +542,6 @@ Code is MIT. This writeup, its figures and the statistics behind them are
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Neither grants rights over
 Polymarket's market data or the leagues' data, which this project does not redistribute.
 
-> Chira: where a real-money market is miscalibrated. Artifact v1, 25 September 2026.
-> Snapshot `census-20260913-224d6ad985e0`. https://github.com/arjasa1103/Chira
+> Chira: where a real-money market is miscalibrated. Artifact v2, 23 October 2026 (v1,
+> headline 2 only: 25 September 2026). Snapshot `census-20260913-224d6ad985e0`; model frozen
+> at `dc384cc5f4f6`. https://github.com/arjasa1103/Chira
